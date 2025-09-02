@@ -1,0 +1,652 @@
+<style>
+  /* Loader overlay - Tailwind compatible */
+  #loader {
+    /* Let Tailwind handle positioning and display */
+    z-index: 2000;
+  }
+  /* Ensure hidden state works with Tailwind */
+  #loader.hidden { 
+    display: none !important; 
+  }
+
+  /* Navbar */
+  .navbar {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    z-index: 1030 !important;
+    width: 100% !important;
+  }
+  
+  /* Navbar positioning for Tailwind */
+  .navbar {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    width: 100% !important;
+  }
+
+  /* Main content area */
+  #mainContent {
+    margin-top: 56px; /* Add margin to account for fixed navbar */
+    padding: 1rem;
+    box-sizing: border-box;
+    min-height: calc(100vh - 56px);
+  }
+  
+  /* Ensure body doesn't interfere with fixed navbar */
+  body {
+    padding-top: 0 !important;
+    margin-top: 0 !important;
+  }
+  
+  /* Force navbar to stay fixed */
+  nav.navbar {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    width: 100% !important;
+    z-index: 1030 !important;
+  }
+  @media (max-width: 600px) {
+    #mainContent {
+      padding: 1rem;
+    }
+  }
+
+  /* Toast positioning */
+  .toast-container {
+    position: fixed;
+    top: 70px;
+    right: 20px;
+    z-index: 1020;
+  }
+
+  /* Sidebar */
+  .sidebar {
+    height: calc(100vh - 56px); /* Subtract navbar height */
+    position: fixed;
+    padding-top: 1rem;
+    transition: margin-left 0.3s ease;
+    top: 56px; /* Add top margin to account for fixed navbar */
+    z-index: 1020;
+  }
+  /* Sidebar collapse - Tailwind compatible */
+  body.sidebar-collapsed #sidebar { 
+    margin-left: -16rem; /* -64 in Tailwind units */
+  }
+  body.sidebar-collapsed .sidebar-content {
+    margin-left: 0 !important; 
+    width: 100% !important; 
+  }
+  
+  /* Ensure main content takes full height */
+  #mainContent {
+    height: calc(100vh - 4rem); /* 100vh minus navbar height (pt-16 = 4rem) */
+  }
+
+  /* Details card */
+  .details-card {
+    background:#fff; border-radius:.5rem;
+    box-shadow:0 2px 15px rgba(0,0,0,0.1);
+    padding:1.5rem; margin-bottom:1rem;
+  }
+  .details-header { display:flex; align-items:center; margin-bottom:1rem; }
+  .details-user { display:flex; align-items:center; }
+
+  /* Summary table */
+  
+  /* Modal card shadow */
+  .modal-card{ 
+    box-shadow:0 10px 25px rgba(0,0,0,.12), 0 4px 8px rgba(0,0,0,.06); 
+  }
+  .summary-table th, .summary-table td {
+    border-top:none; padding:.5rem 1rem;
+  }
+
+  /* Payments & notes tables */
+  #paymentsTable th, #notesTable th {
+    background:#27ae60; color:#fff; padding:.5rem;
+  }
+  #paymentsTable td, #notesTable td { padding:.5rem; }
+
+  /* Remove default card borders */
+  .card { border:none; }
+
+  /* Modal layering */
+  /* Modal backdrop and content - Tailwind compatible */
+  .modal-backdrop { 
+    z-index: 50 !important; 
+  }
+  .modal-content  { 
+    z-index: 60 !important; 
+  }
+
+  /* Sticky header and search bar */
+  .sticky-header {
+    position: sticky;
+    top: 56px;
+    background: white;
+    z-index: 1000;
+    padding: 1rem 0 0.5rem 0;
+    margin-bottom: 1rem;
+    border-bottom: 1px solid #e9ecef;
+  }
+
+  /* Reduce spacing in main content */
+  .d-flex.justify-content-between.align-items-center.pt-3.pb-2.mb-3.border-bottom {
+    padding-top: 0.5rem !important;
+    padding-bottom: 0.5rem !important;
+    margin-bottom: 1rem !important;
+  }
+
+  /* Search bar styling */
+  .search-container {
+    margin-bottom: 1rem;
+  }
+
+  /* Clean table styling */
+  .table {
+    border-collapse: collapse;
+  }
+  
+  .table th,
+  .table td {
+    border: 1px solid #dee2e6;
+    padding: 0.75rem;
+  }
+  
+  .table thead th {
+    background-color: #f8f9fa;
+    border-bottom: 2px solid #dee2e6;
+    font-weight: 600;
+  }
+  
+  .table-hover tbody tr:hover {
+    background-color: rgba(0,0,0,.075);
+  }
+
+  /* Notes scrolling: header + ~3 rows, then scroll */
+  .notes-scroll {
+    max-height: 200px;    /* <-- reduced from 260/180 to 150 */
+    overflow-y: auto;
+  }
+  .notes-scroll thead th {
+    position: sticky;
+    top: 0;
+    background: #27ae60;
+    color: #fff;
+    z-index: 1;
+  }/* Payments scrolling: header + ~4 rows, then scroll */
+  .payments-scroll {
+    max-height: 175px;    /* adjust to show ~4–5 rows */
+    overflow-y: auto;
+  }
+  .payments-scroll thead th {
+    position: sticky;
+    top: 0;
+    background: #007bff;
+    color: #fff;
+    z-index: 1;
+  }
+  /* Make both the Status and 当日キャンセル badges the same font-size as the form controls */
+  #detailsStatus .badge,
+  #detailsCancel .badge {
+    font-size: 1.5rem;
+    line-height: 1.2;
+    padding: 0.25em 0.5em;
+  }
+
+  #notesTable th.date-col, #notesTable td.date-col {
+    width: 10%;
+    min-width: 60px;
+    max-width: 120px;
+    white-space: nowrap;
+  }
+  #notesTable th.staff-col, #notesTable td.staff-col {
+    width: 10%;
+    min-width: 60px;
+    max-width: 120px;
+    white-space: nowrap;
+  }
+  #notesTable th.note-col, #notesTable td.note-col {
+    width: 80%;
+  }
+
+  /* Top navbar */
+  .navbar.bg-primary {
+    background-color: #00994d !important;
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    width: 100% !important;
+    z-index: 1030 !important;
+  }
+
+  /* Loader spinner */
+  .spinner-border.text-primary {
+    color: #27ae60 !important;
+  }
+
+  [data-lucide] {
+    width: 1.25rem;
+    height: 1.25rem;
+    vertical-align: middle;
+  }
+
+  .sidebar-toggle {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    cursor: pointer;
+  }
+
+  .sidebar-toggle:focus {
+    outline: 2px solid #27ae60;
+  }
+
+  .sidebar-toggle [data-lucide] {
+    width: 2rem;
+    height: 2rem;
+    color: #fff;
+    display: block;
+  }
+
+  .badge-child {
+    background-color: orange !important;
+    color: #fff !important;
+    font-weight: 600;
+    margin-left: 0.5em;
+  }
+
+  /* Card improvements */
+  .card, .details-card {
+    margin-bottom: 2rem;
+    border-radius: 1rem;
+    box-shadow: 0 2px 15px rgba(0,0,0,0.07);
+    padding: 2rem 2.5rem;
+    background: #fff;
+  }
+
+  /* Table improvements */
+  .table {
+    margin-bottom: 0; /* Remove bottom margin to prevent spacing issues */
+    border-radius: 0; /* Remove border radius since container handles it */
+    overflow: visible; /* Allow sticky headers to work */
+    background: #fff;
+    box-shadow: none; /* Remove shadow since container handles styling */
+  }
+  .table th, .table td {
+    padding: 1rem 1.25rem;
+    vertical-align: middle;
+  }
+  .table-striped tbody tr:nth-of-type(odd) {
+    background-color: #f8f9fa;
+  }
+
+  /* Button improvements */
+  .btn {
+    border-radius: 0.5rem;
+    font-weight: 500;
+    padding: 0.75rem 1.5rem;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+    transition: box-shadow 0.2s, background 0.2s;
+  }
+  .btn:hover, .btn:focus {
+    box-shadow: 0 2px 8px rgba(39,174,96,0.12);
+    opacity: 0.95;
+  }
+
+  /* Student list table: Modern styling with sticky columns */
+  /* --- STUDENT LIST TABLE STYLING --- */
+  
+                       /* Sticky column functionality temporarily disabled to fix z-index issue */
+  
+  /* Table wrapper styling */
+  .table-wrapper {
+    max-height: 70vh;
+    overflow: auto;
+    border-radius: 0.75rem;
+    border: 1px solid rgba(0, 0, 0, 0.05);
+    background: white;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  }
+  
+  /* Table base styling */
+  #studentTable {
+    min-width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 0.875rem;
+  }
+  
+           /* Header styling - Tailwind defaults */
+    #studentTable thead,
+    table.table thead.bg-green-600 {
+      position: sticky !important;
+      top: 0 !important;
+      z-index: 100 !important;
+      background: #16a34a !important; /* green-600 */
+      color: white !important;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1) !important;
+    }
+  
+  #studentTable th,
+  table.table thead.bg-green-600 th {
+    padding: 0.5rem 0.75rem !important;
+    font-weight: 600 !important;
+    text-align: center !important;
+    border: none !important;
+    background: inherit !important;
+    color: white !important;
+  }
+  
+     /* Header alignment - updated to match new requirements */
+   #studentTable th:first-child {
+     text-align: center !important;
+   }
+   
+   #studentTable th:nth-child(2), /* Name */
+   #studentTable th:nth-child(3), /* 漢字 */
+   #studentTable th:nth-child(5) { /* Email */
+     text-align: left !important;
+   }
+   
+   #studentTable th:nth-child(6) { /* Phone */
+     text-align: center !important;
+   }
+  
+     /* Body styling */
+   #studentTable tbody tr {
+     border: none;
+   }
+   
+   /* Ensure table body doesn't overlap header */
+   #studentTable tbody {
+     z-index: 1;
+   }
+  
+  /* Alternating row colors (zebra striping) - Tailwind compatible */
+  #studentTable tbody tr:nth-child(odd) {
+    background-color: #f9fafb !important; /* gray-50 */
+  }
+  
+  #studentTable tbody tr:nth-child(even) {
+    background-color: #ffffff !important; /* white */
+  }
+  
+  #studentTable tbody tr:hover {
+    background-color: #e5e7eb !important; /* gray-200 - darker hover */
+  }
+  
+  /* Force zebra striping with higher specificity */
+  table tbody tr:nth-child(odd) {
+    background-color: #f9fafb !important; /* gray-50 */
+  }
+  
+  table tbody tr:nth-child(even) {
+    background-color: #ffffff !important; /* white */
+  }
+  
+  table tbody tr:hover {
+    background-color: #e5e7eb !important; /* gray-200 - darker hover */
+  }
+  
+  #studentTable td {
+    padding: 0.5rem 0.75rem;
+    border: none;
+    vertical-align: middle;
+  }
+  
+     /* Column-specific styling */
+   #studentTable td:first-child {
+     text-align: center;
+     font-weight: 500;
+   }
+   
+   #studentTable td:nth-child(2) {
+     white-space: nowrap;
+   }
+   
+   /* Email column - left aligned */
+   #studentTable td:nth-child(5) {
+     max-width: 240px;
+     text-align: left;
+   }
+   
+   /* Phone column - center aligned */
+   #studentTable td:nth-child(6) {
+     max-width: 160px;
+     text-align: center;
+   }
+   
+   /* Group column - center aligned */
+   #studentTable td:nth-child(10) {
+     text-align: center;
+   }
+  
+  /* Text truncation for long content */
+  .truncate {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  
+  /* Badge styling */
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 9999px;
+    padding: 0.125rem 0.5rem;
+    font-weight: 700;
+    font-size: 0.75rem;
+  }
+  
+  .badge-status-active {
+    background-color: #059669; /* emerald-600 */
+    color: white;
+  }
+  
+  .badge-status-dormant {
+    background-color: #475569; /* slate-600 */
+    color: white;
+  }
+  
+  .badge-status-demo {
+    background-color: #7c3aed; /* violet-600 */
+    color: white;
+  }
+  
+  .badge-pay-neo {
+    background-color: #0284c7; /* sky-600 */
+    color: white;
+  }
+  
+  .badge-pay-old {
+    background-color: #475569; /* slate-600 */
+    color: white;
+  }
+  
+  .badge-cancel-yes {
+    background-color: #dc2626; /* rose-600 */
+    color: white;
+  }
+  
+  .badge-cancel-no {
+    background-color: #f59e0b; /* amber-500 */
+    color: white;
+  }
+  
+  .badge-group-individual {
+    background-color: #059669; /* emerald-600 - same as active status */
+    color: white;
+  }
+  
+  .badge-group-group {
+    background-color: #7c3aed; /* violet-600 - same as demo status */
+    color: white;
+  }
+  
+  /* Responsive adjustments */
+  @media (max-width: 768px) {
+    .table-wrapper {
+      max-height: 60vh;
+    }
+    
+    #studentTable {
+      font-size: 0.75rem;
+    }
+    
+    #studentTable th,
+    #studentTable td {
+      padding: 0.375rem 0.5rem;
+    }
+  }
+
+  /* --- Latest Record Component Styles --- */
+.lr-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: 0.5rem;
+  overflow: hidden;
+}
+.lr-cards.dense {
+  grid-template-columns: repeat(auto-fill, minmax(95px, 1fr));
+}
+
+.lr-card {
+  position: relative;
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  border-radius: 0.75rem;
+  border: 1px solid #e5e7eb;
+  padding: 0.75rem;
+  width: 100%;
+  text-align: left;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  transition: all 0.2s ease;
+}
+
+.lr-card:hover {
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  transform: translateY(-2px);
+}
+
+.lr-card:focus {
+  outline: none;
+  ring: 2px;
+}
+
+.lr-card .accent-bar {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  width: 6px;
+  border-radius: 0.75rem 0 0 0.75rem;
+}
+
+  .lr-card .status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: 0.25rem;
+  }
+
+  /* Unscheduled lesson card styling */
+  .lr-card[data-status="unscheduled"] {
+    border-color: #ef4444;
+    background-color: #fef2f2;
+    overflow: hidden; /* Ensure content doesn't overflow */
+  }
+  
+  .lr-card[data-status="unscheduled"]:hover {
+    background-color: #fee2e2;
+    border-color: #dc2626;
+    box-shadow: 0 4px 6px rgba(239, 68, 68, 0.1); /* Red-tinted shadow */
+  }
+  
+  .lr-card[data-status="unscheduled"] .accent-bar {
+    background-color: #ef4444;
+  }
+  
+  .lr-card[data-status="unscheduled"] .status-dot {
+    background-color: #ef4444;
+  }
+  
+  /* Ensure focus ring stays within bounds */
+  .lr-card:focus {
+    outline: none;
+    box-shadow: inset 0 0 0 2px currentColor;
+  }
+
+/* --- Latest Record summary table improvements --- */
+.summary-table {
+  width: 100%;
+  table-layout: fixed;
+  margin-bottom: 0.5rem !important;
+  background: #fff;
+}
+.summary-table th,
+.summary-table td {
+  padding: 0.35rem 0.5rem !important;
+  font-size: 1rem;
+  vertical-align: middle;
+  word-break: break-word;
+  border-top: none;
+}
+.summary-table th {
+  font-weight: 600;
+  background: #f8fafc;
+}
+.summary-table tr {
+  border-bottom: 1px solid #f0f0f0;
+}
+.summary-table tr:last-child {
+  border-bottom: none;
+}
+
+/* Reduce spacing above/below the summary table */
+.details-card .col-md-3 > .table-responsive {
+  margin-bottom: 0.5rem;
+}
+
+/* Ensure the summary card and table are the same width as the parent */
+.details-card .col-md-3 {
+  max-width: 260px;
+  min-width: 200px;
+  width: 100%;
+}
+
+/* Make the summary table fit its container, but not overflow */
+.summary-table {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  margin-bottom: 0.5rem !important;
+  background: #fff;
+}
+
+/* Edit Record button: auto width, centered */
+.details-card .col-md-3 > .btn {
+  width: auto;
+  min-width: 120px;
+  display: block;
+  margin: 0.75rem auto 0 auto;
+  box-sizing: border-box;
+}
+
+</style>

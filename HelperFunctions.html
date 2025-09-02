@@ -1,0 +1,114 @@
+<script>
+    // Loader overlay
+    function showLoader(){
+      const loader = document.getElementById('loader');
+      if (loader) {
+        loader.classList.remove('hidden');
+        console.log('Loader shown');
+      }
+    }
+    function hideLoader(){
+      const loader = document.getElementById('loader');
+      if (loader) {
+        loader.classList.add('hidden');
+        console.log('Loader hidden');
+      }
+    }
+  
+    // General-purpose sort for ListScripts
+    function sortDisplayRows(){
+      if (window._sortCol == null) return;
+      window._displayRows.sort(function(a,b){
+        var va = a[window._sortCol],
+            vb = b[window._sortCol],
+            na = parseFloat(va),
+            nb = parseFloat(vb);
+        if (!isNaN(na) && !isNaN(nb)) return window._sortAsc ? na-nb : nb-na;
+        if (va < vb) return window._sortAsc ? -1 : 1;
+        if (va > vb) return window._sortAsc ? 1 : -1;
+        return 0;
+      });
+    }
+
+    // Custom Modal System (replacing Bootstrap modals)
+    function showModal(modalId) {
+      const modal = document.getElementById(modalId);
+      if (!modal) {
+        console.error('Modal not found:', modalId);
+        return;
+      }
+      
+      // Create backdrop
+      const backdrop = document.createElement('div');
+      backdrop.className = 'modal-backdrop fixed inset-0 bg-black bg-opacity-50';
+      backdrop.id = 'modalBackdrop';
+      backdrop.style.zIndex = '50';
+      document.body.appendChild(backdrop);
+      
+      // Show modal
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+      modal.style.zIndex = '60';
+      
+      // Focus management
+      const focusableElements = modal.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+      if (focusableElements.length > 0) {
+        focusableElements[0].focus();
+      }
+      
+      // Close on backdrop click
+      backdrop.addEventListener('click', () => hideModal(modalId));
+      
+      // Close on ESC key
+      const escHandler = (e) => {
+        if (e.key === 'Escape') {
+          hideModal(modalId);
+        }
+      };
+      document.addEventListener('keydown', escHandler);
+      modal.dataset.escHandler = 'true';
+      // Store the handler function reference
+      modal._escHandler = escHandler;
+    }
+    
+    function hideModal(modalId) {
+      const modal = document.getElementById(modalId);
+      if (!modal) return;
+      
+      // Hide modal
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+      
+      // Remove backdrop
+      const backdrop = document.getElementById('modalBackdrop');
+      if (backdrop) {
+        backdrop.remove();
+      }
+      
+      // Remove ESC handler
+      if (modal.dataset.escHandler && modal._escHandler) {
+        document.removeEventListener('keydown', modal._escHandler);
+        delete modal.dataset.escHandler;
+        delete modal._escHandler;
+      }
+    }
+    
+    // Clean up any stuck modal backdrops
+    function cleanupStuckBackdrops() {
+      const backdrops = document.querySelectorAll('.modal-backdrop');
+      backdrops.forEach(backdrop => backdrop.remove());
+    }
+    
+    // Modal wrapper functions for compatibility
+    function showStudentModal() { showModal('studentModal'); }
+    function hideStudentModal() { hideModal('studentModal'); }
+    function showDetailsModal() { showModal('detailsModal'); }
+    function hideDetailsModal() { hideModal('detailsModal'); }
+    function showPaymentModal() { showModal('paymentModal'); }
+    function hidePaymentModal() { hideModal('paymentModal'); }
+    function showNoteModal() { showModal('noteModal'); }
+    function hideNoteModal() { hideModal('noteModal'); }
+    function showEditRecordModal() { showModal('editRecordModal'); }
+    function hideEditRecordModal() { hideModal('editRecordModal'); }
+  </script>
+  

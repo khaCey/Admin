@@ -1,0 +1,2242 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Student Admin – Isolated Nav + Students</title>
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Lucide icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <?!= include('Styles'); ?>
+</head>
+<body class="bg-gray-100">
+  <!-- Fixed top navbar -->
+  <nav class="fixed top-0 left-0 right-0 z-50 bg-green-600 text-white shadow-lg">
+    <div class="flex items-center justify-between px-4 py-3">
+      <div class="flex items-center">
+        <button class="p-2 hover:bg-green-700 rounded-lg transition-colors mr-3" id="toggleSidebarBtn" aria-label="Toggle sidebar">
+          <i id="sidebarMenuIcon" data-lucide="menu" class="w-6 h-6"></i>
+        </button>
+        <a class="text-xl font-semibold" href="#" id="navbarBrand">Green Square</a>
+      </div>
+      <div class="flex items-center space-x-3">
+        <button class="px-4 py-2 border border-white text-white rounded-lg hover:bg-white hover:text-green-600 transition-colors flex items-center space-x-2" onclick="showForm()">
+          <i data-lucide="user-plus" class="w-4 h-4"></i>
+          <span>Add Student</span>
+        </button>
+        <div class="relative notification-wrapper">
+          <button id="notifBtn" type="button" class="px-4 py-2 border border-white text-white rounded-lg hover:bg-white hover:text-green-600 transition-colors flex items-center space-x-2" onclick="toggleNotifications()">
+            <i data-lucide="bell" class="w-4 h-4"></i>
+          </button>
+          <span id="notifCount" class="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center hidden"></span>
+          <div id="notifMenu" class="absolute right-0 mt-2 w-80 bg-white rounded-lg shadow-xl border border-gray-200 hidden z-50">
+            <div class="px-4 py-2 border-b border-gray-200 font-semibold text-gray-700">Notifications</div>
+            <div id="notifList" class="max-h-64 overflow-y-auto"></div>
+            <div class="border-t border-gray-200"></div>
+            <button id="viewAllBtn" class="w-full px-4 py-2 text-left text-green-600 hover:bg-gray-50">View All</button>
+            <button id="newNotifBtn" class="w-full px-4 py-2 text-left text-green-600 hover:bg-gray-50">New Notification</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Sidebar (Students only) -->
+  <nav id="sidebar" class="fixed top-16 left-0 h-screen w-64 bg-gray-50 border-r border-gray-200 transition-transform duration-300 z-40" style="display:none">
+      <div class="p-4">
+        <ul>
+<li>
+            <a class="flex items-center space-x-3 px-4 py-3 text-gray-700 hover:bg-green-100 hover:text-green-700 rounded-lg transition-colors active:bg-green-600 active:text-white" href="#" onclick="showStudents(); return false;">
+              <i data-lucide="users" class="w-5 h-5"></i>
+              <span>Students</span>
+            </a>
+          </li>
+</ul>
+      </div>
+    </nav>
+
+  <!-- Main content -->
+  <main id="mainContent" class="pt-16 h-screen bg-gray-100 transition-all duration-300 w-full sidebar-content flex flex-col">
+    <div class="p-6 w-full flex flex-col h-full">
+      <!-- Students view will be injected here -->
+      <div id="studentsRoot"></div>
+    </div>
+  </main>
+
+  <!-- Loader overlay -->
+  <div id="loader" class="fixed inset-0 bg-black/50 hidden items-center justify-center">
+    <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-white"></div>
+  </div>
+
+  <?!= include('HelperFunctions'); ?>
+  <?!= include('ListScripts'); ?>
+
+  <script>
+    // Minimal showStudents() to render the Students include into mainContent
+    function showStudents() { 
+      google.script.run.withSuccessHandler(function(html) {
+        document.getElementById('mainContent').innerHTML = html;
+        // Run Students' initialiser (scripts inside includes won't auto-execute after innerHTML)
+        if (typeof onLoad === 'function') { try { onLoad(); } catch(e){ console.error(e); } }
+        if (window.lucide && lucide.createIcons) lucide.createIcons();
+        }).include('Students');
+    }
+    document.addEventListener('DOMContentLoaded', function() {
+      // icons + initial view
+      if (window.lucide && lucide.createIcons) lucide.createIcons();
+      showStudents();
+    });
+  </script>
+
+  <!-- Details Modal + Popovers + Forms -->
+  <div id="detailsModalRoot" class="fixed inset-0 z-[70] flex items-center justify-center p-4 sm:p-8 hidden bg-black bg-opacity-50">
+    <div class="relative w-full max-w-[1400px] h-[90vh] rounded-2xl bg-white shadow-2xl ring-1 ring-black/5 overflow-hidden flex flex-col">
+      <div id="detailsLoading" class="absolute inset-0 flex items-center justify-center bg-white z-10 hidden">
+        <div class="w-12 h-12 rounded-full border-4 border-gray-300 border-t-green-600 animate-spin"></div>
+      </div>
+
+      <div class="flex items-start justify-between bg-green-600 text-white px-6 py-4 flex-shrink-0">
+        <div class="min-w-0 pr-4">
+          <h2 id="studentName" class="text-xl sm:text-2xl font-semibold truncate"></h2>
+          <p class="text-white/90 text-sm sm:text-base truncate">
+  <span id="studentKanji"></span>
+  <span id="studentContact" class="ml-2 text-white/80 text-xs sm:text-sm">
+    <span id="studentEmail"></span>
+    <span class="mx-1">•</span>
+    <span id="studentPhone"></span>
+  </span>
+</p>
+        </div>
+        <div class="flex items-center gap-2">
+          <span id="statusPill" class="badge">Status</span>
+        </div>
+      </div>
+
+      <div class="p-4 sm:p-6 flex-1 bg-white overflow-y-auto">
+        <div class="grid grid-cols-1 xl:grid-cols-[576px_1fr] gap-6">
+          <section id="latestSection" class="rounded-xl border border-gray-200 bg-white shadow-card w-[576px] h-[300px] grid grid-rows-[auto,1fr]">
+            <header class="flex items-center justify-between px-4 py-3 border-b border-gray-200">
+              <h3 class="font-semibold">Latest Record</h3>
+              <div id="lr_monthTabs" class="inline-flex rounded-lg overflow-hidden border border-gray-200"></div>
+            </header>
+            <div class="px-4 py-3 space-y-3">
+              <table class="w-full text-sm">
+                <tbody id="lr_table"></tbody>
+              </table>
+              <div class="border-t border-gray-200 my-2"></div>
+              <div id="lr_cards" class="gap-2 lr-cards"></div>
+            </div>
+          </section>
+
+          <section class="rounded-xl border border-gray-200 bg-white shadow h-[300px] flex flex-col">
+            <header class="flex items-center justify-between px-4 py-3 border-b border-gray-200 flex-shrink-0">
+              <h3 class="font-semibold">All Payments</h3>
+              <div class="flex items-center gap-2">
+                <button id="addPaymentBtn" class="inline-flex items-center gap-2 rounded-lg bg-green-600 text-white px-3 py-1.5 text-sm font-semibold hover:bg-green-700">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" class="w-4 h-4"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v14M5 12h14"/></svg>
+                  Add Payment
+                </button>
+              </div>
+            </header>
+            <div class="flex-1 overflow-y-auto">
+              <table class="min-w-full text-sm">
+                <thead class="sticky top-0 bg-green-600 text-white">
+                  <tr>
+                    <th class="px-3 py-2 text-left">Transaction ID</th>
+                    <th class="px-3 py-2 text-left">Date</th>
+                    <th class="px-3 py-2 text-left">Year</th>
+                    <th class="px-3 py-2 text-left">Month</th>
+                    <th class="px-3 py-2 text-left">Price</th>
+                    <th class="px-3 py-2 text-left">Lessons</th>
+                    <th class="px-3 py-2 text-left">Method</th>
+                    <th class="px-3 py-2 text-left">Staff</th>
+                  </tr>
+                </thead>
+                <tbody id="paymentsBody" class="divide-y divide-gray-100"></tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+
+        <section class="mt-5 rounded-xl border border-gray-200 bg-white shadow h-[300px] flex flex-col">
+          <header class="flex items-center justify-between px-4 py-3 border-b border-gray-200 flex-shrink-0">
+  <h3 class="font-semibold">All Notes</h3>
+  <div class="flex items-center gap-2">
+    <input id="noteSearch" type="search" placeholder="Search notes"
+           class="hidden sm:block w-60 rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
+    <button id="addNoteBtn" class="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium hover:bg-gray-50">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" class="w-4 h-4"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v14M5 12h14"/></svg>
+      Add Note
+    </button>
+  </div>
+</header>
+<div class="flex-1 overflow-y-auto">
+            <table class="min-w-full text-sm">
+              <thead class="sticky top-0 bg-green-600 text-white">
+                <tr><th class="px-3 py-2 text-left">Date</th><th class="px-3 py-2 text-left">Note</th><th class="px-3 py-2 text-left">Staff</th></tr>
+              </thead>
+              <tbody id="notesBody" class="divide-y divide-gray-100"></tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+
+      <div class="flex items-center justify-between px-4 sm:px-6 py-4 bg-gray-50 border-t border-gray-200 flex-shrink-0">
+        <button id="deleteBtn" class="inline-flex items-center gap-2 rounded-lg bg-red-600 text-white px-4 py-2 text-sm font-semibold hover:bg-red-700">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" class="w-4 h-4"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+          Delete
+        </button>
+        <div class="flex items-center gap-2">
+          <button id="editBtn" class="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold hover:bg-gray-50">Edit</button>
+          <button id="closeBtn" class="inline-flex items-center gap-2 rounded-lg bg-gray-800 text-white px-4 py-2 text-sm font-semibold hover:bg-black">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Payment Modal (Add/Edit) ===== -->
+  <div id="paymentModal" class="fixed inset-0 z-[9999] hidden">
+    <div class="absolute inset-0 bg-black/50"></div>
+    <div class="absolute inset-0 flex items-center justify-center p-4 sm:p-8 overflow-auto">
+      <form id="paymentForm" class="w-full max-w-xl rounded-2xl bg-white modal-card ring-1 ring-black/5">
+        <header class="flex items-center justify-between px-4 py-3 border-b border-gray-200">
+          <h3 id="paymentModalTitle" class="text-lg font-semibold">Add Payment</h3>
+          <button type="button" id="paymentClose" class="rounded-md border border-gray-300 bg-white px-2.5 py-1 text-xs font-medium hover:bg-gray-50">Close</button>
+        </header>
+        <div class="p-4 grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+          <div class="sm:col-span-2">
+            <label class="block text-gray-600 mb-1">Transaction ID</label>
+            <input id="p_txn" name="transactionId" class="w-full rounded-md border border-gray-300 px-3 py-2 bg-gray-100" readonly required />
+          </div>
+          <div>
+            <label class="block text-gray-600 mb-1">Date</label>
+            <input id="p_date" name="date" type="date" class="w-full rounded-md border border-gray-300 px-3 py-2" required />
+          </div>
+          <div>
+            <label class="block text-gray-600 mb-1">Lessons</label>
+            <input id="p_lessons" name="lessons" type="number" min="0" class="w-full rounded-md border border-gray-300 px-3 py-2" />
+          </div>
+          <div>
+            <label class="block text-gray-600 mb-1">Month</label>
+            <select id="p_month" name="month" class="w-full rounded-md border border-gray-300 px-3 py-2">
+              <option value="January">January</option>
+              <option value="February">February</option>
+              <option value="March">March</option>
+              <option value="April">April</option>
+              <option value="May">May</option>
+              <option value="June">June</option>
+              <option value="July">July</option>
+              <option value="August">August</option>
+              <option value="September">September</option>
+              <option value="October">October</option>
+              <option value="November">November</option>
+              <option value="December">December</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-gray-600 mb-1">Price</label>
+            <input id="p_price" name="price" type="number" min="0" step="100" class="w-full rounded-md border border-gray-300 px-3 py-2 bg-gray-100" readonly />
+          </div>
+          <div>
+            <label class="block text-gray-600 mb-1">Method</label>
+            <select id="p_method" name="method" class="w-full rounded-md border border-gray-300 px-3 py-2">
+              <option>Card</option>
+              <option>Cash</option>
+              <option>Bank</option>
+              <option>PayPay</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-gray-600 mb-1">Staff</label>
+            <input id="p_staff" name="staff" class="w-full rounded-md border border-gray-300 px-3 py-2 bg-gray-100" readonly />
+          </div>
+        </div>
+        <footer class="flex items-center justify-between gap-2 px-4 py-3 bg-gray-50 border-t border-gray-200">
+          <button type="button" id="paymentDelete" class="hidden rounded-md bg-rose-600 text-white px-3 py-1.5 text-sm font-semibold hover:bg-rose-700">Delete</button>
+          <button type="submit" class="rounded-md bg-green-600 text-white px-4 py-1.5 text-sm font-semibold hover:bg-green-700">Save</button>
+        </footer>
+      </form>
+    </div>
+  </div>
+
+  <!-- ===== Lesson Details Modal ===== -->
+  <div id="lessonDetailsModal" class="fixed inset-0 z-[9999] hidden">
+    <div class="absolute inset-0 bg-black/50"></div>
+    <div class="absolute inset-0 flex items-center justify-center p-4 sm:p-8 overflow-auto">
+      <div class="w-full max-w-md rounded-2xl bg-white modal-card ring-1 ring-black/5">
+        <header class="flex items-center justify-between px-4 py-3 border-b border-gray-200">
+          <h3 id="lessonDetailsTitle" class="text-lg font-semibold">Lesson Details</h3>
+          <button type="button" id="lessonDetailsClose" class="rounded-md border border-gray-300 bg-white px-2.5 py-1 text-xs font-medium hover:bg-gray-50">Close</button>
+        </header>
+        <div class="p-4 space-y-4">
+          <div class="flex items-center gap-3">
+            <div id="lessonStatusDot" class="w-3 h-3 rounded-full"></div>
+            <span id="lessonStatusText" class="font-medium"></span>
+          </div>
+          <div class="grid grid-cols-2 gap-4 text-sm">
+            <div>
+              <label class="block text-gray-600 mb-1">Date</label>
+              <div id="lessonDate" class="font-medium"></div>
+            </div>
+            <div>
+              <label class="block text-gray-600 mb-1">Time</label>
+              <div id="lessonTime" class="font-medium"></div>
+            </div>
+            <div>
+              <label class="block text-gray-600 mb-1">Duration</label>
+              <div id="lessonDuration" class="font-medium">60 minutes</div>
+            </div>
+            <div>
+              <label class="block text-gray-600 mb-1">Type</label>
+              <div id="lessonType" class="font-medium">Individual</div>
+            </div>
+          </div>
+          <div>
+            <label class="block text-gray-600 mb-1">Notes</label>
+            <div id="lessonNotes" class="text-sm text-gray-700 bg-gray-50 rounded-md p-3 min-h-[60px]">
+              No additional notes available.
+            </div>
+          </div>
+        </div>
+        <footer class="flex items-center justify-end px-4 py-3 border-t border-gray-200">
+          <button type="button" id="lessonDetailsCancel" class="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50">Close</button>
+        </footer>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Note Modal (Add/Edit) ===== -->
+  <div id="noteModal" class="fixed inset-0 z-[9999] hidden">
+    <div class="absolute inset-0 bg-black/50"></div>
+    <div class="absolute inset-0 flex items-center justify-center p-4 sm:p-8 overflow-auto">
+      <form id="noteForm" class="w-full max-w-xl rounded-2xl bg-white modal-card ring-1 ring-black/5">
+        <header class="flex items-center justify-between px-4 py-3 border-b border-gray-200">
+          <h3 id="noteModalTitle" class="text-lg font-semibold">Add Note</h3>
+          <button type="button" id="noteClose" class="rounded-md border border-gray-300 bg-white px-2.5 py-1 text-xs font-medium hover:bg-gray-50">Close</button>
+        </header>
+        <div class="p-4 grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+          <div>
+            <label class="block text-gray-600 mb-1">Date</label>
+            <input id="n_date" name="date" type="date" class="w-full rounded-md border border-gray-300 px-3 py-2" required />
+          </div>
+          <div>
+            <label class="block text-gray-600 mb-1">Staff</label>
+            <input id="n_staff" name="staff" class="w-full rounded-md border border-gray-300 px-3 py-2 bg-gray-100" readonly />
+          </div>
+          <div class="sm:col-span-2">
+            <label class="block text-gray-600 mb-1">Note</label>
+            <textarea id="n_text" name="text" rows="5" class="w-full rounded-md border border-gray-300 px-3 py-2"></textarea>
+          </div>
+        </div>
+        <footer class="flex items-center justify-between gap-2 px-4 py-3 bg-gray-50 border-t border-gray-200">
+          <button type="button" id="noteDelete" class="hidden rounded-md bg-rose-600 text-white px-3 py-1.5 text-sm font-semibold hover:bg-rose-700">Delete</button>
+          <button type="submit" class="rounded-md bg-green-600 text-white px-4 py-1.5 text-sm font-semibold hover:bg-green-700">Save</button>
+        </footer>
+      </form>
+    </div>
+  </div>
+
+  <!-- ===== Confirmation Modal ===== -->
+  <div id="confirmModal" class="fixed inset-0 z-[9999] hidden">
+    <div class="absolute inset-0 bg-black/50"></div>
+    <div class="absolute inset-0 flex items-center justify-center p-4 sm:p-8 overflow-auto">
+      <div class="w-full max-w-md rounded-2xl bg-white modal-card ring-1 ring-black/5">
+        <header class="flex items-center justify-between px-4 py-3 border-b border-gray-200">
+          <h3 id="confirmModalTitle" class="text-lg font-semibold">Confirm Action</h3>
+          <button type="button" id="confirmClose" class="rounded-md border border-gray-300 bg-white px-2.5 py-1 text-xs font-medium hover:bg-gray-50">Close</button>
+        </header>
+        <div class="p-4">
+          <p id="confirmMessage" class="text-gray-700 mb-4">Are you sure you want to proceed?</p>
+        </div>
+        <footer class="flex items-center justify-end gap-2 px-4 py-3 bg-gray-50 border-t border-gray-200">
+          <button type="button" id="confirmCancel" class="rounded-md border border-gray-300 bg-white px-4 py-1.5 text-sm font-semibold text-gray-700 hover:bg-gray-50">Cancel</button>
+          <button type="button" id="confirmOK" class="rounded-md bg-rose-600 text-white px-4 py-1.5 text-sm font-semibold hover:bg-rose-700">Confirm</button>
+        </footer>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Notification Modal ===== -->
+  <div id="notificationModal" class="fixed inset-0 z-[9999] hidden">
+    <div class="absolute inset-0 bg-black/50"></div>
+    <div class="absolute inset-0 flex items-center justify-center p-4 sm:p-8 overflow-auto">
+      <div class="w-full max-w-md rounded-2xl bg-white modal-card ring-1 ring-black/5">
+        <header class="flex items-center justify-between px-4 py-3 border-b border-gray-200">
+          <h3 id="notificationModalTitle" class="text-lg font-semibold">Notification</h3>
+          <button type="button" id="notificationClose" class="rounded-md border border-gray-300 bg-white px-2.5 py-1 text-xs font-medium hover:bg-gray-50">Close</button>
+        </header>
+        <div class="p-4">
+          <div class="flex items-start space-x-3">
+            <div id="notificationIcon" class="flex-shrink-0 mt-0.5">
+              <!-- Icon will be set dynamically -->
+            </div>
+            <div class="flex-1">
+              <p id="notificationMessage" class="text-gray-700 mb-2"></p>
+              <p id="notificationDetails" class="text-sm text-gray-500"></p>
+            </div>
+          </div>
+        </div>
+        <footer class="flex items-center justify-end gap-2 px-4 py-3 bg-gray-50 border-t border-gray-200">
+          <button type="button" id="notificationOK" class="rounded-md bg-green-600 text-white px-4 py-1.5 text-sm font-semibold hover:bg-green-700">OK</button>
+        </footer>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Add / Edit Student Modal ===== -->
+  <div id="studentModal" class="fixed inset-0 z-[9999] hidden">
+    <div class="absolute inset-0 bg-black/50"></div>
+    <div class="absolute inset-0 flex items-center justify-center p-4 sm:p-8 overflow-auto">
+      <form id="studentForm" class="w-full max-w-2xl rounded-2xl bg-white modal-card ring-1 ring-black/5">
+        <header class="flex items-center justify-between px-4 py-3 bg-green-600 text-white">
+          <h3 id="studentModalTitle" class="text-lg font-semibold">Add Student</h3>
+          <button type="button" id="studentClose" class="rounded-md border border-white/30 bg-white/10 px-2.5 py-1 text-xs font-medium hover:bg-white/20">Close</button>
+        </header>
+
+        <div class="p-4 space-y-6">
+          <!-- Identity -->
+          <section>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+              <div class="sm:col-span-2">
+                <label class="block font-semibold text-gray-800 mb-1 flex items-center gap-2"><i data-lucide="user" class="h-4 w-4 text-gray-500"></i><span>Name <span class="text-rose-600">*</span></span></label>
+                <input id="s_name" name="name" required class="w-full rounded-md border border-gray-300 px-3 py-2" placeholder="Tarou Tanaka" />
+              </div>
+              <div class="sm:col-span-2">
+                <label class="block font-semibold text-gray-800 mb-1 flex items-center gap-2"><i data-lucide="type" class="h-4 w-4 text-gray-500"></i><span>漢字 <span class="text-rose-600">*</span></span></label>
+                <input id="s_kanji" name="kanji" required class="w-full rounded-md border border-gray-300 px-3 py-2" placeholder="田中 太郎" />
+              </div>
+              <div>
+                <label class="block font-semibold text-gray-800 mb-1 flex items-center gap-2"><i data-lucide="phone" class="h-4 w-4 text-gray-500"></i><span>Phone <span class="text-rose-600">*</span></span></label>
+                <div class="flex items-center gap-2">
+                  <input id="s_phone1" inputmode="numeric" pattern="[0-9]{3}" required maxlength="3" class="w-16 rounded-md border border-gray-300 px-2 py-2 text-center" placeholder="090" />
+                  <span class="text-gray-400">-</span>
+                  <input id="s_phone2" inputmode="numeric" pattern="[0-9]{4}" required maxlength="4" class="w-20 rounded-md border border-gray-300 px-2 py-2 text-center" placeholder="0000" />
+                  <span class="text-gray-400">-</span>
+                  <input id="s_phone3" inputmode="numeric" pattern="[0-9]{4}" required maxlength="4" class="w-20 rounded-md border border-gray-300 px-2 py-2 text-center" placeholder="0000" />
+                </div>
+              </div>
+              <div>
+                <label class="block font-semibold text-gray-800 mb-1 flex items-center gap-2"><i data-lucide="mail" class="h-4 w-4 text-gray-500"></i><span>Email <span class="text-rose-600">*</span></span></label>
+                <input id="s_email" name="email" type="email" required class="w-full rounded-md border border-gray-300 px-3 py-2" placeholder="name@example.com" />
+              </div>
+            </div>
+          </section>
+
+          <!-- Meta -->
+          <section>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+              <div>
+                <label class="block font-semibold text-gray-800 mb-1 flex items-center gap-2"><i data-lucide="users" class="h-4 w-4 text-gray-500"></i><span>Group</span></label>
+                <select id="s_group" class="w-full rounded-md border border-gray-300 px-3 py-2">
+                  <option value="Individual">Individual</option>
+                  <option value="Group">Group</option>
+                </select>
+              </div>
+              <div id="s_groupSizeContainer" class="hidden">
+                <label class="block font-semibold text-gray-800 mb-1 flex items-center gap-2"><i data-lucide="hash" class="h-4 w-4 text-gray-500"></i><span>人数 (Group Size)</span></label>
+                <select id="s_groupSize" class="w-full rounded-md border border-gray-300 px-3 py-2">
+                  <option value="2">2</option>
+                  <option value="3">3</option>
+                  <option value="4">4</option>
+                </select>
+              </div>
+              <div class="flex items-center gap-3">
+                <input id="s_child" type="checkbox" class="h-4 w-4 rounded border-gray-300" />
+                <label for="s_child" class="text-sm font-semibold text-gray-800 flex items-center gap-2"><i data-lucide="baby" class="h-4 w-4 text-gray-500"></i><span>子 (Child)</span></label>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <footer class="flex items-center justify-between gap-2 px-4 py-3 bg-gray-50 border-t border-gray-200">
+          <button type="button" id="studentDelete" class="hidden rounded-md bg-rose-600 text-white px-3 py-1.5 text-sm font-semibold hover:bg-rose-700">Delete</button>
+          <div class="flex items-center gap-2">
+            <button type="button" id="studentCancel" class="rounded-md border border-gray-300 bg-white px-4 py-1.5 text-sm font-semibold hover:bg-gray-50">Cancel</button>
+            <button type="submit" class="rounded-md bg-green-600 text-white px-4 py-1.5 text-sm font-semibold hover:bg-green-700">Save</button>
+          </div>
+        </footer>
+      </form>
+    </div>
+  </div>
+
+  <!-- ===== Edit Student Modal ===== -->
+  <div id="editStudentModal" class="fixed inset-0 z-[9999] hidden">
+    <div class="absolute inset-0 bg-black/50"></div>
+    <div class="absolute inset-0 flex items-center justify-center p-4 sm:p-8 overflow-auto">
+      <form id="editStudentForm" class="w-full max-w-2xl rounded-2xl bg-white modal-card ring-1 ring-black/5">
+        <header class="flex items-center justify-between px-4 py-3 bg-green-600 text-white">
+          <h3 id="editStudentTitle" class="text-lg font-semibold">Edit Student</h3>
+          <button type="button" id="editStudentClose" class="rounded-md border border-white/30 bg-white/10 px-2.5 py-1 text-xs font-medium hover:bg-white/20">Close</button>
+        </header>
+
+        <div class="p-4 space-y-6">
+          <!-- Identity -->
+          <section>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+              <div class="sm:col-span-2">
+                <label class="block font-semibold text-gray-800 mb-1 flex items-center gap-2"><i data-lucide="user" class="h-4 w-4 text-gray-500"></i><span>Name <span class="text-rose-600">*</span></span></label>
+                <input id="e_name" required class="w-full rounded-md border border-gray-300 px-3 py-2" placeholder="Tarou Tanaka" />
+              </div>
+              <div class="sm:col-span-2">
+                <label class="block font-semibold text-gray-800 mb-1 flex items-center gap-2"><i data-lucide="type" class="h-4 w-4 text-gray-500"></i><span>漢字 <span class="text-rose-600">*</span></span></label>
+                <input id="e_kanji" required class="w-full rounded-md border border-gray-300 px-3 py-2" placeholder="田中 太郎" />
+              </div>
+              <div>
+                <label class="block font-semibold text-gray-800 mb-1 flex items-center gap-2"><i data-lucide="phone" class="h-4 w-4 text-gray-500"></i><span>Phone <span class="text-rose-600">*</span></span></label>
+                <div class="flex items-center gap-2">
+                  <input id="e_phone1" inputmode="numeric" pattern="[0-9]{3}" required maxlength="3" class="w-16 rounded-md border border-gray-300 px-2 py-2 text-center" placeholder="090" />
+                  <span class="text-gray-400">-</span>
+                  <input id="e_phone2" inputmode="numeric" pattern="[0-9]{4}" required maxlength="4" class="w-20 rounded-md border border-gray-300 px-2 py-2 text-center" placeholder="0000" />
+                  <span class="text-gray-400">-</span>
+                  <input id="e_phone3" inputmode="numeric" pattern="[0-9]{4}" required maxlength="4" class="w-20 rounded-md border border-gray-300 px-2 py-2 text-center" placeholder="0000" />
+                </div>
+              </div>
+              <div>
+                <label class="block font-semibold text-gray-800 mb-1 flex items-center gap-2"><i data-lucide="mail" class="h-4 w-4 text-gray-500"></i><span>Email <span class="text-rose-600">*</span></span></label>
+                <input id="e_email" type="email" required class="w-full rounded-md border border-gray-300 px-3 py-2" placeholder="name@example.com" />
+              </div>
+            </div>
+          </section>
+
+          <!-- Meta -->
+          <section>
+            <div class="grid grid-cols-1 sm:grid-cols-4 gap-3 text-sm">
+              <div class="sm:col-span-1">
+                <label class="block font-semibold text-gray-800 mb-1 flex items-center gap-2"><i data-lucide="badge-check" class="h-4 w-4 text-gray-500"></i><span>Status</span></label>
+                <select id="e_status" class="w-full rounded-md border border-gray-300 px-3 py-2">
+                  <option>Active</option>
+                  <option>Dormant</option>
+                  <option>DEMO</option>
+                </select>
+              </div>
+              <div class="sm:col-span-1">
+                <label class="block font-semibold text-gray-800 mb-1 flex items-center gap-2"><i data-lucide="credit-card" class="h-4 w-4 text-gray-500"></i><span>Payment Type</span></label>
+                <select id="e_paytype" class="w-full rounded-md border border-gray-300 px-3 py-2">
+                  <option>NEO</option>
+                  <option>OLD</option>
+                </select>
+              </div>
+              <div class="sm:col-span-1">
+                <label class="block font-semibold text-gray-800 mb-1 flex items-center gap-2"><i data-lucide="calendar-x" class="h-4 w-4 text-gray-500"></i><span>当日キャンセル</span></label>
+                <select id="e_cancelSD" class="w-full rounded-md border border-gray-300 px-3 py-2">
+                  <option>未</option>
+                  <option>済</option>
+                </select>
+              </div>
+              <div class="sm:col-span-1 flex items-end">
+                <div class="flex items-center gap-3">
+                  <input id="e_child" type="checkbox" class="h-4 w-4 rounded border-gray-300" />
+                  <label for="e_child" class="text-sm font-semibold text-gray-800 flex items-center gap-2"><i data-lucide="baby" class="h-4 w-4 text-gray-500"></i><span>子 (Child)</span></label>
+                </div>
+              </div>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm mt-3">
+              <div>
+                <label class="block font-semibold text-gray-800 mb-1 flex items-center gap-2"><i data-lucide="users" class="h-4 w-4 text-gray-500"></i><span>Group</span></label>
+                <select id="e_group" class="w-full rounded-md border border-gray-300 px-3 py-2">
+                  <option value="Individual">Individual</option>
+                  <option value="Group">Group</option>
+                </select>
+              </div>
+              <div id="e_groupSizeContainer" class="hidden">
+                <label class="block font-semibold text-gray-800 mb-1 flex items-center gap-2"><i data-lucide="hash" class="h-4 w-4 text-gray-500"></i><span>人数 (Group Size)</span></label>
+                <select id="e_groupSize" class="w-full rounded-md border border-gray-300 px-3 py-2">
+                  <option value="2">2</option>
+                  <option value="3">3</option>
+                  <option value="4">4</option>
+                </select>
+              </div>
+            </div>
+            <div class="mt-3">
+              <div class="flex items-center gap-3">
+                <input id="e_child" type="checkbox" class="h-4 w-4 rounded border-gray-300" />
+                <label for="e_child" class="text-sm font-semibold text-gray-800 flex items-center gap-2"><i data-lucide="baby" class="h-4 w-4 text-gray-500"></i><span>子 (Child)</span></label>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <footer class="flex items-center justify-between gap-2 px-4 py-3 bg-gray-50 border-t border-gray-200">
+          <button type="button" id="e_delete" class="rounded-md bg-rose-600 text-white px-3 py-1.5 text-sm font-semibold hover:bg-rose-700">Delete</button>
+          <div class="flex items-center gap-2">
+            <button type="button" id="e_cancel" class="rounded-md border border-gray-300 bg-white px-4 py-1.5 text-sm font-semibold hover:bg-gray-50">Cancel</button>
+            <button type="submit" class="rounded-md bg-green-600 text-white px-4 py-1.5 text-sm font-semibold hover:bg-green-700">Save</button>
+          </div>
+        </footer>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    let student = {}; let latestMap = {}; let displayOrder = [];
+
+    // ---------- Utilities ----------
+    const $$ = (sel, root=document) => Array.from(root.querySelectorAll(sel));
+    const $  = (sel, root=document) => root.querySelector(sel);
+    const show = (el) => el && el.classList.remove('hidden');
+    const hide = (el) => el && el.classList.add('hidden');
+
+    // Generate a 7-character ID using letters and numbers (case-sensitive)
+    function generateNoteId() {
+      const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+      let result = '';
+      for (let i = 0; i < 7; i++) {
+        result += chars.charAt(Math.floor(Math.random() * chars.length));
+      }
+      return result;
+    }
+
+    // Generate transaction ID (TXN-<random string>)
+    function generateTransactionId() {
+      const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+      let result = '';
+      for (let i = 0; i < 8; i++) {
+        result += chars.charAt(Math.floor(Math.random() * chars.length));
+      }
+      return 'TXN-' + result;
+    }
+
+    // Calculate price based on lessons count (client-side for speed)
+    function calculatePrice(lessonsCount) {
+      if (!student || !lessonsCount || lessonsCount <= 0) {
+        payEls.price.value = '';
+        return;
+      }
+
+      // Get student's payment type and group info
+      const paymentType = student.paymentType || 'NEO'; // Default to NEO
+      const group = student.group || 'Individual';
+      const groupSize = student.groupSize || '2';
+
+      console.log('Calculating price client-side:', {
+        lessonsCount,
+        paymentType,
+        group,
+        groupSize
+      });
+
+      // Fee calculation based on actual fee table structure
+      let pricePerLesson = 0;
+      
+      if (paymentType === 'NEO') {
+        if (group === 'Individual') {
+          // Determine frequency based on lesson count
+          if (lessonsCount <= 3) {
+            pricePerLesson = 7150; // 2x rate
+          } else if (lessonsCount <= 7) {
+            pricePerLesson = 5720; // 4x rate
+          } else {
+            pricePerLesson = 4950; // 8x rate
+          }
+        } else if (group === 'Group') {
+          const size = parseInt(groupSize) || 2;
+          if (size === 2) {
+            if (lessonsCount <= 3) pricePerLesson = 4675; // 2x rate
+            else if (lessonsCount <= 7) pricePerLesson = 3960; // 4x rate
+            else pricePerLesson = 3575; // 8x rate
+          } else if (size === 3) {
+            if (lessonsCount <= 3) pricePerLesson = 3850; // 2x rate
+            else if (lessonsCount <= 7) pricePerLesson = 3373; // 4x rate
+            else pricePerLesson = 3117; // 8x rate
+          } else if (size === 4) {
+            if (lessonsCount <= 3) pricePerLesson = 3438; // 2x rate
+            else if (lessonsCount <= 7) pricePerLesson = 3080; // 4x rate
+            else pricePerLesson = 2888; // 8x rate
+          } else {
+            pricePerLesson = 3960; // Default to 2-person group 4x rate
+          }
+        }
+      } else if (paymentType === 'OLD') {
+        if (group === 'Individual') {
+          if (lessonsCount <= 3) {
+            pricePerLesson = 4620; // 2x rate
+          } else if (lessonsCount <= 7) {
+            pricePerLesson = 4400; // 4x rate
+          } else {
+            pricePerLesson = 3960; // 8x rate
+          }
+        } else if (group === 'Group') {
+          const size = parseInt(groupSize) || 2;
+          if (size === 2) {
+            if (lessonsCount <= 3) pricePerLesson = 2860; // 2x rate
+            else if (lessonsCount <= 7) pricePerLesson = 2750; // 4x rate
+            else pricePerLesson = 2530; // 8x rate
+          } else if (size === 3) {
+            if (lessonsCount <= 3) pricePerLesson = 2273; // 2x rate
+            else if (lessonsCount <= 7) pricePerLesson = 2200; // 4x rate
+            else pricePerLesson = 2053; // 8x rate
+          } else if (size === 4) {
+            if (lessonsCount <= 3) pricePerLesson = 1980; // 2x rate
+            else if (lessonsCount <= 7) pricePerLesson = 1925; // 4x rate
+            else pricePerLesson = 1815; // 8x rate
+          } else {
+            pricePerLesson = 2750; // Default to 2-person group 4x rate
+          }
+        }
+      }
+
+      const totalPrice = lessonsCount * pricePerLesson;
+      console.log('Calculated price:', totalPrice, 'using rate:', pricePerLesson, 'for', lessonsCount, 'lessons');
+      payEls.price.value = totalPrice;
+    }
+
+    function formatDateDDMMYYYY(iso){
+      if(!iso) return '';
+      const d = new Date(iso);
+      const dd = String(d.getDate()).padStart(2,'0');
+      const mm = String(d.getMonth()+1).padStart(2,'0');
+      const yyyy = d.getFullYear();
+      return `${dd}/${mm}/${yyyy}`;
+    }
+
+    function monthName(d){
+      return new Date(d).toLocaleString('en-GB', { month:'long' });
+    }
+
+    const el = {
+      name: document.getElementById('studentName'),
+      kanji: document.getElementById('studentKanji'),
+      email: document.getElementById('studentEmail'),
+      phone: document.getElementById('studentPhone'),
+      contact: document.getElementById('studentContact'),
+      statusPill: document.getElementById('statusPill'),
+      latestSection: document.getElementById('latestSection'),
+      paymentsBody: document.getElementById('paymentsBody'),
+      notesBody: document.getElementById('notesBody'),
+      noteSearch: document.getElementById('noteSearch'),
+      editBtn: document.getElementById('editBtn'),
+      deleteBtn: document.getElementById('deleteBtn'),
+      closeBtn: document.getElementById('closeBtn'),
+    };
+
+
+
+    // ---------- Note Modal API ----------
+    const noteEls = {
+      root: $('#noteModal'), form: $('#noteForm'), title: $('#noteModalTitle'),
+      close: $('#noteClose'), del: $('#noteDelete'),
+      date: $('#n_date'), staff: $('#n_staff'), text: $('#n_text')
+    };
+
+    function openNoteModal({ mode='add', note=null, onSave=()=>{}, onDelete=()=>{}, onClose=()=>{} }={}){
+      noteEls.title.textContent = mode === 'edit' ? 'Edit Note' : 'Add Note';
+      noteEls.del.classList.toggle('hidden', mode !== 'edit');
+
+      // Prefill
+      let dateValue = '';
+      if (note?.Date) {
+        // Handle different date formats
+        if (note.Date.includes('/')) {
+          // Convert DD/MM/YYYY to YYYY-MM-DD
+          const parts = note.Date.split('/');
+          if (parts.length === 3) {
+            dateValue = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+          }
+        } else {
+          // Try to parse as ISO date
+          try {
+            dateValue = new Date(note.Date).toISOString().slice(0, 10);
+          } catch (e) {
+            dateValue = '';
+          }
+        }
+      } else if (mode === 'add') {
+        // Default to today's date for new notes
+        dateValue = new Date().toISOString().slice(0, 10);
+      }
+      noteEls.date.value = dateValue;
+      noteEls.staff.value = note?.Staff || note?.staff || '';
+      noteEls.text.value = note?.Note || note?.text || note?.note || '';
+
+              // Auto-fill staff name from Code sheet B1 if adding new note
+        if (mode === 'add' && window.google && google.script && google.script.run) {
+          google.script.run
+            .withSuccessHandler(function(staffName) {
+              if (staffName && !noteEls.staff.value) {
+                noteEls.staff.value = staffName;
+              }
+            })
+            .withFailureHandler(function(error) {
+              console.error('Failed to get staff name:', error);
+            })
+            .getCurrentStaffName();
+        }
+
+      const submit = (e) => {
+        e.preventDefault();
+        const iso = noteEls.date.value;
+        const studentId = student?.id || student?.ID || '';
+        console.log('Creating note with student ID:', studentId);
+        console.log('Student object:', student);
+        const payload = {
+          'StudentID': studentId, // Add Student ID
+          ID: note?.ID || generateNoteId(), // Generate new ID if not editing
+          Date: formatDateDDMMYYYY(iso), // app uses DD/MM/YYYY
+          Note: noteEls.text.value.trim(),
+          Staff: noteEls.staff.value.trim()
+        };
+        console.log('Note payload:', payload);
+        onSave(payload);
+        cleanup();
+      };
+      const doDelete = () => { if(mode==='edit'){ onDelete(note); cleanup(); } };
+      const doClose  = () => { onClose(); cleanup(); };
+
+      function cleanup(){
+        noteEls.form.removeEventListener('submit', submit);
+        noteEls.del.removeEventListener('click', doDelete);
+        noteEls.close.removeEventListener('click', doClose);
+        hide(noteEls.root);
+      }
+
+      noteEls.form.addEventListener('submit', submit);
+      noteEls.del.addEventListener('click', doDelete);
+      noteEls.close.addEventListener('click', doClose);
+      show(noteEls.root);
+      setTimeout(()=> noteEls.date.focus(), 0);
+    }
+
+    // ---------- Confirmation Modal API ----------
+    const confirmEls = {
+      root: $('#confirmModal'), title: $('#confirmModalTitle'), message: $('#confirmMessage'),
+      close: $('#confirmClose'), cancel: $('#confirmCancel'), ok: $('#confirmOK')
+    };
+
+    function openConfirmModal({ title='Confirm Action', message='Are you sure you want to proceed?', onConfirm=()=>{}, onCancel=()=>{}, onClose=()=>{} }={}){
+      confirmEls.title.textContent = title;
+      confirmEls.message.textContent = message;
+
+      const doConfirm = () => { onConfirm(); cleanup(); };
+      const doCancel = () => { onCancel(); cleanup(); };
+      const doClose = () => { onClose(); cleanup(); };
+
+      function cleanup(){
+        confirmEls.ok.removeEventListener('click', doConfirm);
+        confirmEls.cancel.removeEventListener('click', doCancel);
+        confirmEls.close.removeEventListener('click', doClose);
+        hide(confirmEls.root);
+      }
+
+      confirmEls.ok.addEventListener('click', doConfirm);
+      confirmEls.cancel.addEventListener('click', doCancel);
+      confirmEls.close.addEventListener('click', doClose);
+      show(confirmEls.root);
+      setTimeout(()=> confirmEls.ok.focus(), 0);
+    }
+
+    // ---------- Notification Modal API ----------
+    const notificationEls = {
+      root: $('#notificationModal'), title: $('#notificationModalTitle'), message: $('#notificationMessage'),
+      details: $('#notificationDetails'), icon: $('#notificationIcon'), close: $('#notificationClose'), ok: $('#notificationOK')
+    };
+
+    function openNotificationModal({ type='success', title='Notification', message='', details='', onClose=()=>{} }={}){
+      notificationEls.title.textContent = title;
+      notificationEls.message.textContent = message;
+      notificationEls.details.textContent = details;
+
+      // Set icon and colors based on type
+      const iconStyles = {
+        success: {
+          icon: '<svg class="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>',
+          buttonClass: 'bg-green-600 hover:bg-green-700'
+        },
+        error: {
+          icon: '<svg class="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>',
+          buttonClass: 'bg-red-600 hover:bg-red-700'
+        },
+        warning: {
+          icon: '<svg class="w-6 h-6 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"></path></svg>',
+          buttonClass: 'bg-yellow-600 hover:bg-yellow-700'
+        },
+        info: {
+          icon: '<svg class="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>',
+          buttonClass: 'bg-blue-600 hover:bg-blue-700'
+        }
+      };
+
+      const style = iconStyles[type] || iconStyles.info;
+      notificationEls.icon.innerHTML = style.icon;
+      notificationEls.ok.className = `rounded-md text-white px-4 py-1.5 text-sm font-semibold ${style.buttonClass}`;
+
+      const doClose = () => { onClose(); cleanup(); };
+
+      function cleanup(){
+        notificationEls.ok.removeEventListener('click', doClose);
+        notificationEls.close.removeEventListener('click', doClose);
+        hide(notificationEls.root);
+      }
+
+      notificationEls.ok.addEventListener('click', doClose);
+      notificationEls.close.addEventListener('click', doClose);
+      show(notificationEls.root);
+      setTimeout(()=> notificationEls.ok.focus(), 0);
+    }
+
+    // ---------- Payment Modal API ----------
+    const payEls = {
+      root: $('#paymentModal'), form: $('#paymentForm'), title: $('#paymentModalTitle'),
+      close: $('#paymentClose'), del: $('#paymentDelete'),
+      txn: $('#p_txn'), date: $('#p_date'), lessons: $('#p_lessons'), month: $('#p_month'), price: $('#p_price'), method: $('#p_method'), staff: $('#p_staff')
+    };
+
+    // ---------- Lesson Details Modal API ----------
+    const lessonDetailsEls = {
+      root: $('#lessonDetailsModal'), title: $('#lessonDetailsTitle'),
+      close: $('#lessonDetailsClose'), cancel: $('#lessonDetailsCancel'),
+      statusDot: $('#lessonStatusDot'), statusText: $('#lessonStatusText'),
+      date: $('#lessonDate'), time: $('#lessonTime'), duration: $('#lessonDuration'),
+      type: $('#lessonType'), notes: $('#lessonNotes')
+    };
+
+    function openLessonDetailsModal({ lesson=null, student=null, onClose=()=>{} }={}){
+      if (!lesson) {
+        console.error('No lesson data provided');
+        return;
+      }
+
+      // Set status styling
+      const statusStyles = {
+        scheduled: { color: 'bg-emerald-600', text: 'Scheduled' },
+        cancelled: { color: 'bg-slate-500', text: 'Cancelled' },
+        rescheduled: { color: 'bg-amber-500', text: 'Rescheduled' },
+        unbooked: { color: 'bg-orange-500', text: 'Unbooked' },
+        unscheduled: { color: 'bg-red-500', text: 'Unscheduled' }
+      };
+
+      const status = lesson.status || 'scheduled';
+      const style = statusStyles[status] || statusStyles.scheduled;
+
+      lessonDetailsEls.statusDot.className = `w-3 h-3 rounded-full ${style.color}`;
+      lessonDetailsEls.statusText.textContent = style.text;
+
+      // Format date and time in Japanese style
+      let day = lesson.day || '';
+      let time = lesson.time || '';
+      
+      if (day && day !== '--') {
+        day = parseInt(day).toString() + '日';
+      }
+      
+      if (time && time !== '--') {
+        time = time.replace(':', '：');
+      }
+
+      lessonDetailsEls.date.textContent = day || 'Not specified';
+      lessonDetailsEls.time.textContent = time || 'Not specified';
+      
+      // Set lesson type based on student data
+      const lessonType = student?.group || 'Individual';
+      lessonDetailsEls.type.textContent = lessonType;
+
+      // Set notes (placeholder for now)
+      lessonDetailsEls.notes.textContent = 'No additional notes available.';
+
+      const doClose = () => { onClose(); cleanup(); };
+
+      function cleanup(){
+        lessonDetailsEls.close.removeEventListener('click', doClose);
+        lessonDetailsEls.cancel.removeEventListener('click', doClose);
+        hide(lessonDetailsEls.root);
+      }
+
+      lessonDetailsEls.close.addEventListener('click', doClose);
+      lessonDetailsEls.cancel.addEventListener('click', doClose);
+      show(lessonDetailsEls.root);
+    }
+
+    function openPaymentModal({ mode='add', payment=null, onSave=()=>{}, onDelete=()=>{}, onClose=()=>{} }={}){
+      payEls.title.textContent = mode === 'edit' ? 'Edit Payment' : 'Add Payment';
+      payEls.del.classList.toggle('hidden', mode !== 'edit');
+
+      // Auto-generate transaction ID for new payments
+      if (mode === 'add') {
+        payEls.txn.value = generateTransactionId();
+      } else {
+        payEls.txn.value = payment?.['Transaction ID'] || payment?.transactionId || '';
+      }
+      
+      // Default to today's date for new payments
+      if (mode === 'add') {
+        payEls.date.value = new Date().toISOString().slice(0, 10);
+      } else {
+        payEls.date.value = payment?.Date ? new Date(payment.Date).toISOString().slice(0,10) : (payment?.date || '').slice(0,10);
+      }
+      
+      payEls.lessons.value = payment?.Amount ?? payment?.lessons ?? '';
+      payEls.month.value = payment?.Month || payment?.month || new Date().toLocaleString('en-US', { month: 'long' });
+      const rawTotal = payment?.Total ?? (payment?.price ? String(payment.price).replace(/[^0-9]/g,'') : '');
+      payEls.price.value   = rawTotal;
+      payEls.method.value  = payment?.Method || payment?.method || 'Card';
+      payEls.staff.value   = payment?.Staff  || payment?.staff  || '';
+
+      // Auto-fill lessons and staff for new payments
+      if (mode === 'add' && window.google && google.script && google.script.run) {
+        // Get scheduled lessons count
+        const studentId = student?.id || student?.ID || '';
+        if (studentId) {
+          google.script.run
+            .withSuccessHandler(function(lessonsCount) {
+              if (lessonsCount > 0) {
+                payEls.lessons.value = lessonsCount;
+                // Auto-calculate price based on lessons
+                calculatePrice(lessonsCount);
+              }
+            })
+            .withFailureHandler(function(error) {
+              console.error('Failed to get scheduled lessons:', error);
+            })
+            .getScheduledLessonsCount(studentId);
+        }
+        
+        // Get staff name
+        google.script.run
+          .withSuccessHandler(function(staffName) {
+            if (staffName && !payEls.staff.value) {
+              payEls.staff.value = staffName;
+            }
+          })
+          .withFailureHandler(function(error) {
+            console.error('Failed to get staff name:', error);
+          })
+          .getCurrentStaffName();
+      }
+
+      const submit = (e) => {
+        e.preventDefault();
+        const iso = payEls.date.value;
+        const d   = new Date(iso);
+        const payload = {
+          'Student ID': student?.id || student?.ID || '', // Add Student ID
+          'Transaction ID': payEls.txn.value.trim(),
+          Date: iso,
+          Year: String(d.getFullYear()),
+          Month: payEls.month.value,
+          Total: String(payEls.price.value || ''), // store numeric string
+          Amount: String(payEls.lessons.value || ''),
+          Method: payEls.method.value,
+          Staff: payEls.staff.value.trim()
+        };
+        console.log('Payment payload being sent:', payload);
+        console.log('Price value:', payEls.price.value);
+        console.log('Lessons value:', payEls.lessons.value);
+        onSave(payload);
+        cleanup();
+      };
+      const doDelete = () => { if(mode==='edit'){ onDelete(payment); cleanup(); } };
+      const doClose  = () => { onClose(); cleanup(); };
+
+      function cleanup(){
+        payEls.form.removeEventListener('submit', submit);
+        payEls.del.removeEventListener('click', doDelete);
+        payEls.close.removeEventListener('click', doClose);
+        hide(payEls.root);
+      }
+
+      // Add event listener for lessons field to auto-calculate price
+      payEls.lessons.addEventListener('input', function() {
+        const lessonsCount = parseInt(this.value) || 0;
+        if (lessonsCount > 0) {
+          calculatePrice(lessonsCount);
+        } else {
+          payEls.price.value = '';
+        }
+      });
+
+      payEls.form.addEventListener('submit', submit);
+      payEls.del.addEventListener('click', doDelete);
+      payEls.close.addEventListener('click', doClose);
+      show(payEls.root);
+      setTimeout(()=> payEls.txn.focus(), 0);
+    }
+
+    // ---------- Student Modal API ----------
+    const studentEls = {
+      root: $('#studentModal'), form: $('#studentForm'), title: $('#studentModalTitle'),
+      close: $('#studentClose'), cancel: $('#studentCancel'), del: $('#studentDelete'),
+      name: $('#s_name'), kanji: $('#s_kanji'), phone1: $('#s_phone1'), phone2: $('#s_phone2'), phone3: $('#s_phone3'), email: $('#s_email'),
+      child: $('#s_child'), group: $('#s_group'), groupSize: $('#s_groupSize'), groupSizeContainer: $('#s_groupSizeContainer'),
+    };
+
+    const editStudentEls = {
+      root: $('#editStudentModal'), form: $('#editStudentForm'), title: $('#editStudentTitle'),
+      close: $('#editStudentClose'), cancel: $('#e_cancel'), del: $('#e_delete'),
+      name: $('#e_name'), kanji: $('#e_kanji'), phone1: $('#e_phone1'), phone2: $('#e_phone2'), phone3: $('#e_phone3'), email: $('#e_email'),
+      child: $('#e_child'), status: $('#e_status'), paytype: $('#e_paytype'), cancelSD: $('#e_cancelSD'),
+      group: $('#e_group'), groupSize: $('#e_groupSize'), groupSizeContainer: $('#e_groupSizeContainer')
+    };
+
+    // ---- Phone helpers ----
+    function splitPhone(str){
+      const d = (str||'').replace(/[^0-9]/g,'').slice(0,11);
+      return [d.slice(0,3), d.slice(3,7), d.slice(7,11)];
+    }
+    function setPhone(str, els){
+      const [a,b,c] = splitPhone(str);
+      if (els.phone1) els.phone1.value = a || '';
+      if (els.phone2) els.phone2.value = b || '';
+      if (els.phone3) els.phone3.value = c || '';
+    }
+    function combinePhone(els){
+      const a = (els.phone1?.value || '').trim();
+      const b = (els.phone2?.value || '').trim();
+      const c = (els.phone3?.value || '').trim();
+      if (!a && !b && !c) return '';
+      return `${a}-${b}-${c}`;
+    }
+    function attachPhoneHandlers(els){
+      const fields = [els.phone1, els.phone2, els.phone3];
+      const max = [3,4,4];
+      fields.forEach((f,i)=>{
+        if(!f) return;
+        f.addEventListener('input', (e)=>{
+          const clean = e.target.value.replace(/[^0-9]/g,'');
+          e.target.value = clean.slice(0, max[i]);
+          if (e.target.value.length === max[i] && i < fields.length-1) fields[i+1].focus();
+        });
+        f.addEventListener('keydown', (e)=>{
+          if (e.key === 'Backspace' && e.target.selectionStart === 0 && e.target.selectionEnd === 0 && !e.target.value && i>0) {
+            fields[i-1].focus();
+          }
+        });
+      });
+      if (fields[0]) {
+        fields[0].addEventListener('paste', (e)=>{
+          const t = (e.clipboardData || window.clipboardData).getData('text');
+          const d = (t||'').replace(/[^0-9]/g,'').slice(0,11);
+          if(!d) return;
+          e.preventDefault();
+          fields[0].value = d.slice(0,3);
+          fields[1].value = d.slice(3,7);
+          fields[2].value = d.slice(7,11);
+          if (fields[2].value) fields[2].focus(); else if (fields[1].value) fields[1].focus(); else fields[0].focus();
+        });
+      }
+    }
+
+    function openStudentModal({ mode='add', student=null, onSave=()=>{}, onDelete=()=>{}, onClose=()=>{} }={}){
+      studentEls.title.textContent = mode === 'edit' ? 'Edit Student' : 'Add Student';
+      studentEls.del.classList.toggle('hidden', mode !== 'edit');
+
+      // Prefill
+      studentEls.name.value   = student?.student?.Name || student?.name || '';
+      studentEls.kanji.value  = student?.student?.['漢字'] || student?.kanji || '';
+      setPhone(student?.student?.phone || student?.phone || '', studentEls);
+      studentEls.email.value  = student?.student?.email || '';
+      studentEls.child.checked= !!(student?.student?.['子'] || student?.child);
+
+      const submit = (e) => {
+        e.preventDefault();
+        if (!studentEls.form.reportValidity()) { return; }
+        const backend = {
+          student: {
+            Name: studentEls.name.value.trim(),
+            '漢字': studentEls.kanji.value.trim() || undefined,
+            Phone: (combinePhone(studentEls) || undefined),
+            Email: studentEls.email.value.trim() || undefined,
+            'phone (secondary)': '',
+            Status: 'Active',
+            '子': studentEls.child.checked ? '子' : undefined,
+            Payment: 'NEO',
+            Group: studentEls.group.value || 'Individual',
+            '人数': studentEls.group.value === 'Group' ? (studentEls.groupSize.value || '2') : '1',
+            '当日': '未'
+          },
+          payments: [],
+          notes: []
+        };
+        const internal = {
+          name: studentEls.name.value.trim(),
+          kanji: studentEls.kanji.value.trim(),
+          status: 'Active',
+          latestByMonth: {},
+          payments: [],
+          notes: []
+        };
+        onSave({ backend, internal });
+        cleanup();
+      };
+      const doDelete = () => { if (mode==='edit') { onDelete(student); cleanup(); } };
+      const doClose  = () => { onClose(); cleanup(); };
+
+      function cleanup(){
+        studentEls.form.removeEventListener('submit', submit);
+        studentEls.del.removeEventListener('click', doDelete);
+        studentEls.close.removeEventListener('click', doClose);
+        studentEls.cancel.removeEventListener('click', doClose);
+        hide(studentEls.root);
+      }
+
+      studentEls.form.addEventListener('submit', submit);
+      studentEls.del.addEventListener('click', doDelete);
+      studentEls.close.addEventListener('click', doClose);
+      studentEls.cancel.addEventListener('click', doClose);
+
+      show(studentEls.root);
+      setTimeout(()=> studentEls.name.focus(), 0);
+    }
+
+    function openEditStudentModal({ student, onSave=()=>{}, onDelete=()=>{}, onClose=()=>{} }={}){
+      const original = student || {};
+
+      // Prefill from either backend payload or internal model
+      editStudentEls.name.value  = original?.student?.Name || original?.name || '';
+      editStudentEls.kanji.value = original?.student?.['漢字'] || original?.kanji || '';
+      setPhone(original?.student?.phone || original?.phone || '', editStudentEls);
+      editStudentEls.email.value = original?.student?.email || original?.email || '';
+      editStudentEls.child.checked = !!(original?.student?.['子'] || original?.child || original?.child);
+      editStudentEls.status.value  = original?.student?.Status || original?.status || 'Active';
+      editStudentEls.paytype.value = original?.student?.['Payment Type'] || original?.paymentType || original?.paymentType || 'NEO';
+      editStudentEls.cancelSD.value = original?.student?.['当日'] || original?.student?.['当日キャンセル'] || original?.cancelSameDay || original?.cancelSameDay || '未';
+      editStudentEls.group.value = original?.student?.Group || original?.group || original?.group || 'Individual';
+      editStudentEls.groupSize.value = original?.student?.['人数'] || original?.groupSize || original?.groupSize || '2';
+      
+      // Show/hide group size container based on current group value
+      if (editStudentEls.groupSizeContainer) {
+        if (editStudentEls.group.value === 'Group') {
+          editStudentEls.groupSizeContainer.classList.remove('hidden');
+        } else {
+          editStudentEls.groupSizeContainer.classList.add('hidden');
+        }
+      }
+
+      // Custom phone validation - remove pattern validation temporarily
+      if (editStudentEls.phone1) editStudentEls.phone1.removeAttribute('pattern');
+      if (editStudentEls.phone2) editStudentEls.phone2.removeAttribute('pattern');
+      if (editStudentEls.phone3) editStudentEls.phone3.removeAttribute('pattern');
+
+      const submit = (e) => {
+        e.preventDefault();
+        
+        // Custom phone validation
+        const phone1 = editStudentEls.phone1?.value || '';
+        const phone2 = editStudentEls.phone2?.value || '';
+        const phone3 = editStudentEls.phone3?.value || '';
+        
+        if (!phone1 || !phone2 || !phone3) {
+          openConfirmModal({
+            title: 'Validation Error',
+            message: 'Please fill in all phone number fields',
+            onConfirm: () => {
+              // Just close the modal
+            },
+            onCancel: () => {
+              // Just close the modal
+            }
+          });
+          return;
+        }
+        
+        if (!/^\d{3}$/.test(phone1) || !/^\d{4}$/.test(phone2) || !/^\d{4}$/.test(phone3)) {
+          openConfirmModal({
+            title: 'Validation Error',
+            message: 'Please enter valid phone numbers (3 digits, 4 digits, 4 digits)',
+            onConfirm: () => {
+              // Just close the modal
+            },
+            onCancel: () => {
+              // Just close the modal
+            }
+          });
+          return;
+        }
+        
+        if (!editStudentEls.form.reportValidity()) return;
+
+        const status = editStudentEls.status ? editStudentEls.status.value : (original?.student?.Status || original?.status || 'Active');
+        const ptype  = editStudentEls.paytype ? editStudentEls.paytype.value : (original?.student?.['Payment Type'] || 'NEO');
+        const cancelSD = editStudentEls.cancelSD ? editStudentEls.cancelSD.value : (original?.student?.['当日キャンセル'] || '未');
+
+        const backend = {
+          student: {
+            Name: editStudentEls.name.value.trim(),
+            '漢字': editStudentEls.kanji.value.trim() || undefined,
+            Phone: (combinePhone(editStudentEls) || undefined),
+            Email: editStudentEls.email.value.trim() || undefined,
+            'phone (secondary)': '',
+            Status: status,
+            '子': editStudentEls.child.checked ? '子' : undefined,
+            Payment: ptype,
+            '当日': cancelSD,
+            Group: editStudentEls.group.value || 'Individual',
+            '人数': editStudentEls.group.value === 'Group' ? (editStudentEls.groupSize.value || '2') : '1'
+          }
+        };
+
+        const internal = {
+          name: editStudentEls.name.value.trim(),
+          kanji: editStudentEls.kanji.value.trim(),
+          status: status,
+          paymentType: ptype,
+          cancelSameDay: cancelSD,
+          child: editStudentEls.child.checked,
+          phone: combinePhone(editStudentEls),
+          email: editStudentEls.email.value.trim()
+        };
+
+        onSave({ backend, internal, original });
+        cleanup();
+      };
+
+      const doDelete = () => { onDelete(original); cleanup(); };
+      const doClose  = () => { onClose(); cleanup(); };
+
+      function cleanup(){
+        editStudentEls.form.removeEventListener('submit', submit);
+        editStudentEls.del.removeEventListener('click', doDelete);
+        editStudentEls.close.removeEventListener('click', doClose);
+        editStudentEls.cancel.removeEventListener('click', doClose);
+        hide(editStudentEls.root);
+      }
+
+      editStudentEls.form.addEventListener('submit', submit);
+      editStudentEls.del.addEventListener('click', doDelete);
+      editStudentEls.close.addEventListener('click', doClose);
+      editStudentEls.cancel.addEventListener('click', doClose);
+
+      show(editStudentEls.root);
+      setTimeout(()=> editStudentEls.name.focus(), 0);
+    }
+
+    // Attach phone handlers
+    attachPhoneHandlers(studentEls);
+    attachPhoneHandlers(editStudentEls);
+    
+    // Attach group handlers
+    function attachGroupHandlers(els) {
+      if (els.group) {
+        els.group.addEventListener('change', function() {
+          if (els.groupSizeContainer) {
+            if (this.value === 'Group') {
+              els.groupSizeContainer.classList.remove('hidden');
+            } else {
+              els.groupSizeContainer.classList.add('hidden');
+            }
+          }
+        });
+      }
+    }
+    
+    attachGroupHandlers(studentEls);
+    attachGroupHandlers(editStudentEls);
+
+    // Wire up modal buttons
+    document.getElementById('addPaymentBtn').addEventListener('click', () => {
+      openPaymentModal({
+        mode: 'add',
+        onSave: (payment) => {
+          // Add payment to student data and refresh
+          if (!student.payments) student.payments = [];
+          student.payments.push(payment);
+          
+          renderPaymentsTable();
+          
+          // Save to backend
+          if (window.google && google.script && google.script.run) {
+            google.script.run
+              .withSuccessHandler(function(result) {
+                console.log('Payment added successfully:', result);
+              })
+              .withFailureHandler(function(error) {
+                console.error('Failed to add payment:', error);
+                openConfirmModal({
+                  title: 'Error',
+                  message: 'Failed to add payment. Please try again.',
+                  onConfirm: () => {
+                    // Just close the modal
+                  },
+                  onCancel: () => {
+                    // Just close the modal
+                  }
+                });
+              })
+              .insertPayment(payment);
+          }
+        }
+      });
+    });
+
+    document.getElementById('addNoteBtn').addEventListener('click', () => {
+      openNoteModal({
+        mode: 'add',
+        onSave: (note) => {
+          // Add note to student data and refresh
+          if (!student.notes) student.notes = [];
+          student.notes.push(note);
+          renderNotes();
+          
+          // Save to backend
+          if (window.google && google.script && google.script.run) {
+            google.script.run
+              .withSuccessHandler(function(result) {
+                console.log('Note added successfully:', result);
+              })
+              .withFailureHandler(function(error) {
+                console.error('Failed to add note:', error);
+                openConfirmModal({
+                  title: 'Error',
+                  message: 'Failed to add note. Please try again.',
+                  onConfirm: () => {
+                    // Just close the modal
+                  },
+                  onCancel: () => {
+                    // Just close the modal
+                  }
+                });
+              })
+              .addNote(note);
+          }
+        }
+      });
+    });
+
+    // Wire up student edit button
+    el.editBtn.addEventListener('click', () => {
+      // Use the actual student data that's already loaded in the modal
+      const currentStudent = student;
+      
+      // Store the current student ID for later use
+      const currentStudentId = student?.id || student?.ID || '';
+      console.log('Current student ID:', currentStudentId);
+      
+      // Open modal immediately with current data (no backend fetch needed)
+      openEditStudentModal({
+        student: currentStudent,
+        onSave: ({ backend, internal }) => {
+          // Update student data
+          student = { ...student, ...internal };
+          renderHeader();
+          
+          // Save to backend
+          if (window.google && google.script && google.script.run) {
+            // Use the stored student ID
+            const studentId = currentStudentId || student?.id || student?.ID || '';
+            console.log('Attempting to update student with ID:', studentId);
+            console.log('Backend data being sent:', backend.student);
+            if (studentId) {
+              google.script.run
+                .withSuccessHandler(function(result) {
+                  console.log('Student updated successfully:', result);
+                  
+                  // Update the table row with new data
+                  updateStudentTableRow(studentId, backend.student);
+                  
+                  // Optionally refresh the student list
+                  if (typeof window.refreshStudentList === 'function') {
+                    window.refreshStudentList();
+                  }
+                })
+                              .withFailureHandler(function(error) {
+                console.error('Failed to update student:', error);
+                openConfirmModal({
+                  title: 'Error',
+                  message: 'Failed to update student. Please try again.',
+                  onConfirm: () => {
+                    // Just close the modal
+                  },
+                  onCancel: () => {
+                    // Just close the modal
+                  }
+                });
+              })
+                .updateStudent({ ...backend.student, ID: studentId });
+            } else {
+              console.error('No student ID found for update');
+              openConfirmModal({
+                title: 'Error',
+                message: 'Cannot update student: No ID found',
+                onConfirm: () => {
+                  // Just close the modal
+                },
+                onCancel: () => {
+                  // Just close the modal
+                }
+              });
+            }
+          } else {
+            console.log('Student updated (backend not available):', backend);
+          }
+        },
+        onDelete: (studentToDelete) => {
+          // Handle student deletion
+          console.log('Student deleted:', studentToDelete);
+          // Close the details modal
+          const modal = document.getElementById('detailsModalRoot');
+          if (modal) {
+            modal.classList.add('hidden');
+          }
+        }
+      });
+    });
+
+    // Global function for adding new students (called from navbar)
+    window.showForm = function() {
+      openStudentModal({
+        mode: 'add',
+        onSave: ({ backend, internal }) => {
+          // Save to backend
+          console.log('New student created:', backend);
+          
+          if (window.google && google.script && google.script.run) {
+            google.script.run
+              .withSuccessHandler(function(newStudentId) {
+                console.log('Student added successfully with ID:', newStudentId);
+                
+                // Refresh the students list to show the new student
+                if (typeof window.refreshStudentList === 'function') {
+                  window.refreshStudentList();
+                } else {
+                  // Fallback: reload the page to refresh the list
+                  location.reload();
+                }
+                
+                // Show success message
+                openNotificationModal({
+                  type: 'success',
+                  title: 'Student Added Successfully',
+                  message: 'The student has been added to the system.',
+                  details: 'Student ID: ' + newStudentId
+                });
+              })
+              .withFailureHandler(function(error) {
+                console.error('Failed to add student:', error);
+                openNotificationModal({
+                  type: 'error',
+                  title: 'Failed to Add Student',
+                  message: 'There was an error adding the student to the system.',
+                  details: error.message || error.toString()
+                });
+              })
+              .addStudent(backend.student);
+          } else {
+            console.error('Google Apps Script not available');
+            openNotificationModal({
+              type: 'error',
+              title: 'System Error',
+              message: 'Cannot add student at this time.',
+              details: 'Google Apps Script is not available. Please refresh the page and try again.'
+            });
+          }
+        }
+      });
+    };
+    
+    el.deleteBtn.addEventListener('click', () => confirm('Delete this student?'));
+    
+    // Function to update student table row with new data
+    function updateStudentTableRow(studentId, studentData) {
+      // Find the table row for this student
+      const tableRows = document.querySelectorAll('#studentTable tr');
+      const idIndex = window._headers ? window._headers.indexOf('ID') : -1;
+      
+      if (idIndex === -1) {
+        console.log('Headers not found, cannot update table');
+        return;
+      }
+      
+      for (let i = 0; i < tableRows.length; i++) {
+        const row = tableRows[i];
+        const cells = row.querySelectorAll('td');
+        
+        if (cells.length > idIndex) {
+          const rowId = cells[idIndex].textContent.trim();
+          if (rowId === String(studentId)) {
+            // Update the row with new data
+            updateTableRowCells(row, studentData);
+            console.log('Updated table row for student:', studentId);
+            return;
+          }
+        }
+      }
+      console.log('Student row not found in table:', studentId);
+    }
+    
+    function updateTableRowCells(row, studentData) {
+      const cells = row.querySelectorAll('td');
+      const headers = window._headers || [];
+      
+      headers.forEach((header, index) => {
+        if (index < cells.length) {
+          const cell = cells[index];
+          let value = '';
+          
+          switch (header) {
+            case 'Name':
+              value = studentData.Name || '';
+              break;
+            case '漢字':
+              value = studentData['漢字'] || '';
+              break;
+            case 'Email':
+              value = studentData.Email || '';
+              break;
+            case 'Phone':
+              value = studentData.Phone || '';
+              break;
+            case 'Status':
+              value = studentData.Status || '';
+              break;
+            case 'Payment Type':
+              value = studentData['Payment Type'] || '';
+              break;
+            case '当日キャンセル':
+              value = studentData['当日キャンセル'] || '';
+              break;
+            case '子':
+              value = studentData['子'] || '';
+              break;
+            default:
+              // Keep existing value for other columns
+              return;
+          }
+          
+          cell.textContent = value;
+        }
+      });
+    }
+    
+    // Initialize Lucide icons
+    if (window.lucide && lucide.createIcons) {
+      lucide.createIcons();
+    }
+    
+    el.closeBtn.addEventListener('click', ()=> {
+      // Clear Latest Record data when modal closes
+      if (latestRecordApi) {
+        latestRecordApi.clear();
+      }
+      
+      const modal = document.getElementById('detailsModalRoot');
+      if (modal) {
+        modal.classList.add('hidden');
+      }
+    });
+
+    // Add click outside modal to close
+    document.getElementById('detailsModalRoot').addEventListener('click', function(e) {
+      if (e.target === this) {
+        // Clear Latest Record data when modal closes
+        if (latestRecordApi) {
+          latestRecordApi.clear();
+        }
+        
+        this.classList.add('hidden');
+      }
+    });
+
+    // Add ESC key to close modal
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape') {
+        const modal = document.getElementById('detailsModalRoot');
+        if (modal && !modal.classList.contains('hidden')) {
+          // Clear Latest Record data when modal closes
+          if (latestRecordApi) {
+            latestRecordApi.clear();
+          }
+          
+          modal.classList.add('hidden');
+        }
+      }
+    });
+
+    function setStatusPill(status){
+      status = status || '';
+      el.statusPill.textContent = status;
+      el.statusPill.className = 'badge ' + (status.toLowerCase()==='active' ? 'bg-emerald-600 text-white' : 'bg-slate-600 text-white');
+    }
+
+    function renderHeader(){
+      const s = student || {};
+      el.name.textContent = s.name || '';
+      el.kanji.textContent = s.kanji || '';
+      if (el.email) el.email.textContent = (s.email || s.mail || ''); if (el.phone) el.phone.textContent = (s.phone || s.phoneNumber || s.tel || ''); if (el.contact) el.contact.style.display = ((el.email && el.email.textContent) || (el.phone && el.phone.textContent)) ? '' : 'none'; setStatusPill(s.status || '');
+    }
+
+    // ----- Latest Record Component -----
+    let latestRecordApi = null;
+
+    function initLatestRecord() {
+      if (latestRecordApi) {
+        // Just load new data, don't clear
+        latestRecordApi.load({ latestByMonth: latestMap });
+      } else {
+        // Only create new component if it doesn't exist
+        latestRecordApi = createLatestRecord({
+          root: el.latestSection,
+          data: { latestByMonth: latestMap }
+        });
+      }
+    }
+
+    function updateLatestRecord() {
+      if (latestRecordApi) {
+        latestRecordApi.load({ latestByMonth: latestMap });
+      }
+    }
+
+    // Latest Record Component Factory
+    (function(){
+      const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+      function deriveLatestByMonth(source){
+        const src = source || {};
+        const now = new Date();
+        const m1 = MONTHS[now.getMonth()];
+        const m2 = MONTHS[(now.getMonth()+1)%12];
+        const vals = Object.values(src);
+        const fallback = { Payment: '未', lessons: [] };
+        const first  = src[m1] || vals[0] || fallback;
+        const second = src[m2] || vals[1] || vals[0] || fallback;
+        return { [m1]: first, [m2]: second };
+      }
+
+      function payBadges(isPaid){
+        const cls = isPaid ? 'bg-emerald-600 text-white' : 'bg-amber-500 text-white';
+        const jp  = isPaid ? '済' : '未';
+        const en  = isPaid ? 'Paid' : 'Unpaid';
+        return `<span class="badge ${cls} mr-1">${jp}</span><span class="badge ${cls}">${en}</span>`;
+      }
+
+      function lessonCard(l, idx, month){
+        const stylesMap = {
+          scheduled:   { accent:'bg-emerald-600', hoverRing:'hover:ring-emerald-500/60', dot:'bg-emerald-600', bg:'bg-emerald-50' },
+          cancelled:   { accent:'bg-slate-500',   hoverRing:'hover:ring-slate-500/60',   dot:'bg-slate-500',   bg:'bg-slate-50'   },
+          rescheduled: { accent:'bg-amber-500',   hoverRing:'hover:ring-amber-500/60',   dot:'bg-amber-500',   bg:'bg-amber-50'   },
+          unbooked:    { accent:'bg-orange-500',  hoverRing:'hover:ring-orange-500/60',  dot:'bg-orange-500',  bg:'bg-orange-50'  },
+          unscheduled: { accent:'bg-red-500',     hoverRing:'hover:ring-red-500/60',     dot:'bg-red-500',     bg:'bg-red-50'     }
+        };
+        const styles = stylesMap[l.status] || stylesMap.cancelled;
+        
+        // Format day and time in Japanese style
+        let day = l.day || '';
+        let time = l.time || '';
+        
+        // Convert day to Japanese format (e.g., "02" -> "2日")
+        if (day && day !== '--') {
+          // Remove leading zero and add 日
+          day = parseInt(day).toString() + '日';
+        }
+        
+        // Convert time to Japanese format (e.g., "15:00" -> "15：00")
+        if (time && time !== '--') {
+          // Replace colon with Japanese full-width colon
+          time = time.replace(':', '：');
+        }
+        
+        const title = (l.status || '').charAt(0).toUpperCase() + (l.status || '').slice(1);
+        const label = [day, time].filter(Boolean).join('・');
+        return `
+          <button type="button"
+            class="lr-card group relative inline-flex items-start gap-2 rounded-xl border border-gray-200 ${styles.bg} px-3 py-2 w-full text-left shadow-sm hover:shadow-md transition transform hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-inset ${styles.hoverRing}"
+            data-idx="${idx}" data-month="${month}" data-status="${l.status}" aria-label="Lesson ${label} (${title})" title="${title}">
+            <span class="absolute left-0 top-0 h-full w-1.5 rounded-l-xl ${styles.accent}"></span>
+            <span class="mt-0.5 flex-1">
+              <span class="block font-semibold tabular-nums">${label}</span>
+              <span class="mt-1 inline-flex items-center text-[11px] text-gray-600">
+                <span class="mr-1 h-2 w-2 rounded-full ${styles.dot}"></span>${title}
+              </span>
+            </span>
+          </button>`;
+      }
+
+      function mount(root, data){
+        const el = {
+          root: typeof root === 'string' ? document.querySelector(root) : root,
+          tabs: document.getElementById('lr_monthTabs'),
+          table: document.getElementById('lr_table'),
+          cards: document.getElementById('lr_cards'),
+        };
+
+        // Check if all required elements exist
+        if (!el.tabs || !el.table || !el.cards) {
+          return {
+            load: () => {},
+            destroy: () => {}
+          };
+        }
+
+        let latest = deriveLatestByMonth(data?.latestByMonth);
+        let currentMonth = Object.keys(latest)[0] || null;
+
+        function renderTabs(){
+          const months = Object.keys(latest);
+          if (!months.length){ 
+            if (el.tabs) el.tabs.innerHTML=''; 
+            if (el.table) el.table.innerHTML=''; 
+            if (el.cards) el.cards.innerHTML=''; 
+            return; 
+          }
+          el.tabs.innerHTML = months.map((m,i)=> `<button data-month="${m}" class="lr-month px-3 py-1.5 text-sm ${i===0?'bg-green-600 text-white':'bg-gray-50 text-gray-800'} hover:bg-green-600/90 hover:text-white focus:outline-none">${m}</button>`).join('');
+          el.tabs.querySelectorAll('.lr-month').forEach(btn => btn.addEventListener('click', () => {
+            el.tabs.querySelectorAll('.lr-month').forEach(b=>b.classList.remove('bg-green-600','text-white'));
+            el.tabs.querySelectorAll('.lr-month').forEach(b=>b.classList.add('bg-gray-50','text-gray-800'));
+            btn.classList.remove('bg-gray-50','text-gray-800');
+            btn.classList.add('bg-green-600','text-white');
+            currentMonth = btn.dataset.month;
+            renderLatest(currentMonth);
+          }));
+          renderLatest(months[0]);
+        }
+
+        function renderLatest(month){
+          const data = latest[month] || {};
+          const isPaid = (data.Payment==='済' || String(data.Payment||'').toLowerCase()==='paid');
+          if (el.table) {
+            el.table.innerHTML = `<tr><td class="py-1.5 pr-2 text-gray-600">Payment</td><td class="py-1.5 text-center">${payBadges(isPaid)}</td></tr>`;
+          }
+          const lessons = Array.isArray(data.lessons) ? data.lessons : [];
+          if (el.cards) {
+            el.cards.classList.toggle('dense', lessons.length > 6);
+            el.cards.innerHTML = lessons.map((l,i)=>lessonCard(l,i,month)).join('');
+            
+            // Add click event listeners to lesson cards
+            el.cards.querySelectorAll('.lr-card').forEach((card, index) => {
+              card.addEventListener('click', () => {
+                const lesson = lessons[index];
+                if (lesson) {
+                  openLessonDetailsModal({
+                    lesson: lesson,
+                    student: window.student, // Access the global student object
+                    onClose: () => {
+                      // Modal closed
+                    }
+                  });
+                }
+              });
+            });
+          }
+        }
+
+        // Initial render
+        renderTabs();
+
+        return {
+          load(newData){ latest = deriveLatestByMonth(newData?.latestByMonth); renderTabs(); },
+          clear(){ 
+            // Clear data without destroying DOM elements
+            latest = {};
+            if (el.tabs) el.tabs.innerHTML = '';
+            if (el.table) el.table.innerHTML = '';
+            if (el.cards) el.cards.innerHTML = '';
+          },
+          destroy(){ el.root.innerHTML = ''; }
+        };
+      }
+
+      // expose factory
+      window.createLatestRecord = function({ root, data }){ return mount(root || document.body, data || {}); };
+    })();
+
+    // ----- Notes (reversed newest first) -----
+    function renderNotes(filter=''){
+      const q = (filter||'').trim().toLowerCase();
+      const arr = Array.isArray(student.notes) ? student.notes.slice().reverse() : [];
+      const list = arr.filter(n => !q || (String(n.text||'')+' '+String(n.staff||'')+' '+String(n.date||'')).toLowerCase().includes(q));
+      el.notesBody.innerHTML = list.map((n, index) => 
+        `<tr class="odd:bg-gray-50 hover:bg-gray-100 cursor-pointer note-row" data-index="${index}">
+          <td class="px-3 py-2 whitespace-nowrap">${n.date||''}</td>
+          <td class="px-3 py-2">${n.text||''}</td>
+          <td class="px-3 py-2 whitespace-nowrap">${n.staff||''}</td>
+        </tr>`
+      ).join('') || `<tr><td colspan="3" class="px-3 py-6 text-center text-gray-500">No notes</td></tr>`;
+      
+      // Add event listeners for note row clicks
+      el.notesBody.querySelectorAll('.note-row').forEach(row => {
+        row.addEventListener('click', () => {
+          const index = parseInt(row.dataset.index);
+          const note = list[index];
+          
+          // Convert the note data structure to match what openNoteModal expects
+          const noteForModal = {
+            ID: note.id,
+            Date: note.date,
+            Note: note.text,
+            Staff: note.staff
+          };
+          
+          openNoteModal({
+            mode: 'edit',
+            note: noteForModal,
+            onSave: (updatedNote) => {
+              // Update the note in the original array
+              const originalIndex = student.notes.findIndex(n => 
+                n.Date === note.Date && n.Note === note.Note && n.Staff === note.Staff
+              );
+              if (originalIndex !== -1) {
+                student.notes[originalIndex] = updatedNote;
+                renderNotes();
+                
+                // Save to backend
+                if (window.google && google.script && google.script.run) {
+                  google.script.run
+                    .withSuccessHandler(function(result) {
+                      console.log('Note updated successfully:', result);
+                    })
+                                  .withFailureHandler(function(error) {
+                console.error('Failed to update note:', error);
+                openConfirmModal({
+                  title: 'Error',
+                  message: 'Failed to update note. Please try again.',
+                  onConfirm: () => {
+                    // Just close the modal
+                  },
+                  onCancel: () => {
+                    // Just close the modal
+                  }
+                });
+              })
+                    .updateNote(updatedNote);
+                }
+              }
+            },
+            onDelete: (noteToDelete) => {
+              // Remove the note from the array
+              const originalIndex = student.notes.findIndex(n => 
+                n.Date === noteToDelete.Date && n.Note === noteToDelete.Note && n.Staff === noteToDelete.Staff
+              );
+              if (originalIndex !== -1) {
+                student.notes.splice(originalIndex, 1);
+                renderNotes();
+                
+                // Delete from backend (if there's a delete function)
+                if (window.google && google.script && google.script.run) {
+                  // Note: You may need to implement a deleteNote function in the backend
+                  console.log('Note deleted from frontend:', noteToDelete);
+                }
+              }
+            }
+          });
+        });
+      });
+    }
+    el.noteSearch.addEventListener('input', e => renderNotes(e.target.value));
+
+    // -------- Normalisation helpers --------
+    function toArray(x){ 
+      if (Array.isArray(x)) return x; 
+      if (x && typeof x === 'object') return Object.values(x); 
+      return []; 
+    }
+    function normalisePayments(maybe){
+      const arr = toArray(maybe);
+      return arr.map(p => {
+        const date = p.date || p.Date || p['Date'] || '';
+        const lessons = p['Amount'] || (p.lessons ?? p.Lessons ?? p['Number of lessons'] ?? '');
+        const price = p['Total'] || (p.price ?? p.Price ?? p.amount);
+        const method = p.method || p.Method || '';
+        const staff  = p.staff  || p.Staff  || '';
+        const txn    = p['Transaction ID'] || p.transactionId || p.id || p['Txn'] || '';
+        const year = p.Year || (p.year ?? (date ? new Date(date).getFullYear() : ''));
+        const monthName = p.Month || p.month || '';
+        return { transactionId: txn, date, year, month: monthName, price, lessons, method, staff };
+      });
+    }
+    function normaliseNotes(maybe){
+      const arr = toArray(maybe);
+      return arr.map(n => ({ 
+        id: n.id || n.ID || '',
+        date: n.date || n.Date || '', 
+        staff: n.staff || n.Staff || '', 
+        text: n.text || n.Note || n.note || '' 
+      }));
+    }
+    function normaliseLatest(latest){
+      if (!latest || typeof latest !== 'object') return {};
+      const out = {};
+      if (Array.isArray(latest)) {
+        latest.forEach(v => {
+          const k = v.month || '';
+          const m = (k && /\d{4}-\d{2}/.test(k)) ? MONTHS[parseInt(k.slice(5,7),10)-1] : (k || '');
+          out[m] = { Payment: v.Payment || v.payment || (v.paid ? '済' : '未'), lessons: toArray(v.lessons) };
+        });
+      } else {
+        for (const [k, v0] of Object.entries(latest)){
+          const v = v0 || {};
+          const m = (k && /\d{4}-\d{2}/.test(k)) ? MONTHS[parseInt(k.slice(5,7),10)-1] : k;
+          out[m] = { Payment: (v.Payment!=null?v.Payment:(v.payment!=null?v.payment:(v.paid?'済':'未'))), lessons: toArray(v.lessons) };
+        }
+      }
+      return out;
+    }
+    function safeParse(objOrJson){
+      if (objOrJson == null) return {};
+      if (typeof objOrJson === 'string'){
+        try { return JSON.parse(objOrJson); } catch(_) { return {}; }
+      }
+      return objOrJson;
+    }
+    function deriveTwoMonths(latestMapIn){
+      const now = new Date();
+      const m1 = MONTHS[now.getMonth()];
+      const m2 = MONTHS[(now.getMonth()+1)%12];
+      const fallback = { Payment: '未', lessons: [] };
+      return { map: { [m1]: latestMapIn[m1] || fallback, [m2]: latestMapIn[m2] || fallback }, order: [m1, m2] };
+    }
+    function normaliseForModal(baseResp, latest){
+      baseResp = safeParse(baseResp); latest = safeParse(latest);
+      const s = baseResp.student || baseResp.info || baseResp.profile || {};
+      const payments = baseResp.payments || baseResp.payment || baseResp.paymentHistory || s.payments || [];
+      const notes    = baseResp.notes || baseResp.allNotes || s.notes || [];
+      const latestN  = normaliseLatest(baseResp.latestByMonth || latest);
+      const derived  = deriveTwoMonths(latestN);
+      return {
+        id:     s['ID'] || s['id'] || baseResp.id || baseResp.ID || '',
+        name:   s['Name'] || s['name'] || baseResp.name || '',
+        kanji:  s['漢字'] || s['Kanji'] || s['kanji'] || baseResp.kanji || '',
+        status: s['Status']|| s['status']|| baseResp.status || '',
+        email:  s['email'] || s['Email'] || s['E-mail'] || s['E_mail'] || s['Email Address'] || s['メール'] || s['Mail'] || s['mail'] || s['連絡先メール'] || s['連絡先メールアドレス'] || s['メールアドレス'] || baseResp.email || baseResp['Email'] || baseResp['E-mail'] || baseResp['Email Address'] || '',
+        phone:  s['phone'] || s['Phone'] || s['phone (secondary)'] || s['Mobile'] || s['mobile'] || s['携帯'] || s['電話'] || s['電話番号'] || s['TEL'] || s['Tel'] || s['連絡先電話'] || s['連絡先電話番号'] || baseResp.phone || baseResp['Phone'] || baseResp['Mobile'] || baseResp['TEL'] || '',
+        paymentType: s['Payment Type'] || s['Payment'] || s['paymentType'] || s['payment'] || baseResp.paymentType || '',
+        cancelSameDay: s['当日キャンセル'] || s['当日'] || s['cancelSameDay'] || s['sameDayCancel'] || baseResp.cancelSameDay || '',
+        child: s['子'] || s['child'] || baseResp.child || '',
+        group: s['Group'] || s['group'] || baseResp.group || '',
+        groupSize: s['人数'] || s['groupSize'] || s['group_size'] || baseResp.groupSize || '',
+        latestByMonth: derived.map,
+        _displayOrder: derived.order,
+        payments: normalisePayments(payments),
+        notes: normaliseNotes(notes)
+      };
+    }
+
+    function loadStudent(model){
+      student = Object(model) === model ? model : {};
+      latestMap = model.latestByMonth || {};
+      displayOrder = Array.isArray(model._displayOrder) ? model._displayOrder : Object.keys(latestMap);
+      
+      // Ensure we have the student ID stored
+      if (model && model.id) {
+        student.id = model.id;
+        student.ID = model.id;
+      } else if (model && model.student && model.student.ID) {
+        student.id = model.student.ID;
+        student.ID = model.student.ID;
+      }
+      
+
+      
+      renderHeader(); renderNotes();
+      renderPaymentsTable();
+      initLatestRecord(); // Initialize with data from the initial response
+    }
+    window.loadStudent = loadStudent;
+
+    function renderPaymentsTable(){
+      const list = Array.isArray(student.payments) ? student.payments : [];
+      
+      if (!list.length){ 
+        el.paymentsBody.innerHTML = `<tr><td colspan="8" class="px-3 py-6 text-center text-gray-500">No payments</td></tr>`; 
+        return; 
+      }
+      
+      // Sort payments by date (latest first)
+      const sortedList = list.sort((a, b) => {
+        const dateA = new Date(a.date || a.Date || a['Date Paid'] || '');
+        const dateB = new Date(b.date || b.Date || b['Date Paid'] || '');
+        return dateB - dateA; // Latest first
+      });
+      
+      const rows = sortedList.map((p, index) => {
+        // Map the actual Payment sheet fields
+        const d = p['Date Paid'] || p['Payment Date'] || p.date || p.Date || '';
+        const year = p.Year || (d ? new Date(d).getFullYear() : '');
+        const month = p.Month || p.month || '';
+        
+        // Get lessons count - this might be calculated or stored differently
+        const lessons = p.Lessons || p['Number of lessons'] || p.lessons || p.Amount || '';
+        
+        // Format price as currency with yen symbol, commas and no decimals
+        const rawPrice = p.Total || p.price || p.amount || 0;
+        let price = typeof rawPrice === 'number' || !isNaN(rawPrice) ? 
+          Number(rawPrice).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 }) : 
+          (rawPrice ? rawPrice : '0');
+        
+        // Ensure yen symbol is always present
+        if (price && !price.includes('¥')) {
+          price = '¥' + price;
+        }
+        
+        const method = p.Method || p.method || '';
+        const staff = p.Staff || p.staff || '';
+        const txn = p['Transaction ID'] || p.id || p.transactionId || '';
+        
+
+        
+        return `<tr class="odd:bg-gray-50 hover:bg-gray-100 cursor-pointer payment-row" data-index="${index}">
+          <td class="px-3 py-2 whitespace-nowrap">${txn}</td>
+          <td class="px-3 py-2 whitespace-nowrap">${d}</td>
+          <td class="px-3 py-2 whitespace-nowrap">${year}</td>
+          <td class="px-3 py-2 whitespace-nowrap">${month}</td>
+          <td class="px-3 py-2 whitespace-nowrap">${price}</td>
+          <td class="px-3 py-2 whitespace-nowrap text-center">${lessons}</td>
+          <td class="px-3 py-2 whitespace-nowrap">${method}</td>
+          <td class="px-3 py-2 whitespace-nowrap">${staff}</td>
+        </tr>`;
+      }).join('');
+      el.paymentsBody.innerHTML = rows;
+      
+      // Add event listeners for payment row clicks
+      el.paymentsBody.querySelectorAll('.payment-row').forEach(row => {
+        row.addEventListener('click', () => {
+          const index = parseInt(row.dataset.index);
+          const payment = sortedList[index];
+          
+          openPaymentModal({
+            mode: 'edit',
+            payment: payment,
+            onSave: (updatedPayment) => {
+              // Save to backend first
+              if (window.google && google.script && google.script.run) {
+                google.script.run
+                  .withSuccessHandler(function(result) {
+                    console.log('Payment updated successfully:', result);
+                    // Update the payment in the original array
+                    const originalIndex = student.payments.findIndex(p => 
+                      p['Transaction ID'] === payment['Transaction ID'] || 
+                      p.transactionId === payment.transactionId
+                    );
+                    if (originalIndex !== -1) {
+                      student.payments[originalIndex] = updatedPayment;
+                      renderPaymentsTable();
+                    }
+                    // Clear cache to ensure fresh data
+                    if (window._studentDetailsCache && student?.id) {
+                      delete window._studentDetailsCache[student.id];
+                    }
+                  })
+                  .withFailureHandler(function(error) {
+                    console.error('Failed to update payment:', error);
+                    openConfirmModal({
+                      title: 'Error',
+                      message: 'Failed to update payment. Please try again.',
+                      onConfirm: () => {
+                        // Just close the modal
+                      },
+                      onCancel: () => {
+                        // Just close the modal
+                      }
+                    });
+                  })
+                  .updatePayment(updatedPayment);
+              } else {
+                // Fallback: just update frontend if backend not available
+                const originalIndex = student.payments.findIndex(p => 
+                  p['Transaction ID'] === payment['Transaction ID'] || 
+                  p.transactionId === payment.transactionId
+                );
+                if (originalIndex !== -1) {
+                  student.payments[originalIndex] = updatedPayment;
+                  renderPaymentsTable();
+                }
+              }
+            },
+            onDelete: (paymentToDelete) => {
+              // Show custom confirmation modal
+              openConfirmModal({
+                title: 'Delete Payment',
+                message: 'Are you sure you want to delete this payment? This action cannot be undone.',
+                onConfirm: () => {
+                  // Get the transaction ID from various possible field names
+                  const transactionId = paymentToDelete['Transaction ID'] || 
+                                       paymentToDelete.transactionId || 
+                                       paymentToDelete.id || 
+                                       paymentToDelete['Txn'] || 
+                                       paymentToDelete.txn;
+                  
+                  console.log('Payment to delete:', paymentToDelete);
+                  console.log('Transaction ID found:', transactionId);
+                  
+                  if (!transactionId) {
+                    openConfirmModal({
+                      title: 'Error',
+                      message: 'Cannot delete payment: Transaction ID not found',
+                      onConfirm: () => {
+                        // Just close the modal
+                      },
+                      onCancel: () => {
+                        // Just close the modal
+                      }
+                    });
+                    return;
+                  }
+                  
+                  // Delete from backend first
+                  if (window.google && google.script && google.script.run) {
+                    google.script.run
+                      .withSuccessHandler(function(result) {
+                        console.log('Payment deleted successfully:', result);
+                        // Remove the payment from the array
+                        const originalIndex = student.payments.findIndex(p => 
+                          p['Transaction ID'] === transactionId || 
+                          p.transactionId === transactionId ||
+                          p.id === transactionId ||
+                          p['Txn'] === transactionId ||
+                          p.txn === transactionId
+                        );
+                        if (originalIndex !== -1) {
+                          student.payments.splice(originalIndex, 1);
+                          renderPaymentsTable();
+                        }
+                        // Clear cache to ensure fresh data
+                        if (window._studentDetailsCache && student?.id) {
+                          delete window._studentDetailsCache[student.id];
+                        }
+                      })
+                      .withFailureHandler(function(error) {
+                        console.error('Failed to delete payment:', error);
+                        openConfirmModal({
+                          title: 'Error',
+                          message: 'Failed to delete payment. Please try again.',
+                          onConfirm: () => {
+                            // Just close the modal
+                          },
+                          onCancel: () => {
+                            // Just close the modal
+                          }
+                        });
+                      })
+                      .deletePayment({ ...paymentToDelete, 'Transaction ID': transactionId });
+                  }
+                },
+                onCancel: () => {
+                  // Do nothing, just close the modal
+                }
+              });
+            }
+          });
+        });
+      });
+    }
+
+    // -------- Fetch & render --------
+    // Removed automatic getStudentDetails call to prevent server overload
+    // The modal will only load student details when a user clicks on a student row
+    /*
+    document.addEventListener('DOMContentLoaded', function(){
+      const id = '543';
+      if (!(window.google && google.script && google.script.run)) {
+        console.warn('Run as Apps Script web app to fetch server data.');
+        return;
+      }
+      google.script.run
+        .withSuccessHandler(function (baseResp) {google.script.run
+            .withSuccessHandler(function (latest) {
+              const model = normaliseForModal(baseResp, latest);
+              console.log('[v5] payloads:', {baseResp, latest, model});
+              loadStudent(model);
+            })
+            .withFailureHandler(function (err) { console.error('getLatestByMonth failed', err); loadStudent(normaliseForModal(baseResp, {})); })
+            .getLatestByMonth(id);
+        })
+        .withFailureHandler(function (err) { console.error('getStudentDetails failed', err); })
+        .getStudentDetails(id);
+    });
+    */
+  </script>
+
+</body>
+</html>

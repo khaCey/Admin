@@ -1,0 +1,50 @@
+<div class="flex justify-between items-center pt-3 pb-2 mb-3 border-b border-gray-200">
+  <h2 class="text-2xl font-bold text-gray-900">Student List</h2>
+</div>
+
+<!-- Search -->
+<div class="mb-4">
+  <label for="searchInput" class="sr-only">Search</label>
+  <input
+    id="searchInput"
+    type="search"
+    placeholder="Search by name, kana, email or phone"
+    class="w-full px-4 py-3 text-lg border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+    style="font-size:1.5rem; height:3.5rem;">
+</div>
+
+<!-- Table wrapper -->
+<div class="relative overflow-auto max-h-[70vh] w-full rounded-xl border border-black/5 bg-white shadow-sm">
+  <table class="min-w-full border-separate border-spacing-0">
+    <thead class="sticky top-0 bg-green-600 text-white shadow">
+      <tr>
+        <th class="sticky-col bg-inherit px-3 py-2 text-center font-semibold">ID</th>
+        <th class="px-3 py-2 text-left font-semibold">Name</th>
+        <th class="px-3 py-2 text-center font-semibold">漢字</th>
+        <th class="px-3 py-2 text-center font-semibold">子</th>
+        <th class="px-3 py-2 text-center font-semibold">email</th>
+        <th class="px-3 py-2 text-center font-semibold">phone</th>
+        <th class="px-3 py-2 text-center font-semibold">当日 Cancellation</th>
+        <th class="px-3 py-2 text-center font-semibold">Status</th>
+        <th class="px-3 py-2 text-center font-semibold">Payment</th>
+        <th class="px-3 py-2 text-center font-semibold">Group</th>
+        <th class="px-3 py-2 text-center font-semibold">人数</th>
+      </tr>
+    </thead>
+    <tbody id="studentTable">
+      <!-- Loading state - shown initially -->
+      <tr id="loadingRow">
+        <td colspan="100%" class="text-center py-8">
+          <div class="flex justify-center items-center">
+            <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-green-600"></div>
+            <span class="ml-2 text-gray-600">Loading students...</span>
+          </div>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<script>
+  if (typeof onLoad === 'function') onLoad();
+</script> 
