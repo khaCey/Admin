@@ -1,4 +1,217 @@
 <script>
+  // Cache Manager for localStorage functionality
+  const cacheManager = {
+    // Prefix for all cache keys to avoid conflicts
+    prefix: 'student_admin_',
+    
+    /**
+     * Get data from localStorage with timestamp validation
+     * @param {string} key - Cache key
+     * @returns {any|null} Cached data or null if not found/expired
+     */
+    get(key) {
+      try {
+        const fullKey = this.prefix + key;
+        const cached = localStorage.getItem(fullKey);
+        
+        if (!cached) {
+          return null;
+        }
+        
+        const parsed = JSON.parse(cached);
+        
+        // Check if data has timestamp and is still valid
+        if (parsed.timestamp && parsed.data) {
+          return parsed.data;
+        }
+        
+        // Legacy format without timestamp - return as is
+        return parsed;
+      } catch (error) {
+        console.warn('Error reading from localStorage:', error);
+        return null;
+      }
+    },
+    
+    /**
+     * Set data in localStorage with timestamp
+     * @param {string} key - Cache key
+     * @param {any} data - Data to cache
+     * @param {number} ttl - Time to live in milliseconds (optional)
+     */
+    set(key, data, ttl = null) {
+      try {
+        const fullKey = this.prefix + key;
+        const cacheEntry = {
+          data: data,
+          timestamp: Date.now(),
+          ttl: ttl
+        };
+        
+        localStorage.setItem(fullKey, JSON.stringify(cacheEntry));
+      } catch (error) {
+        console.warn('Error writing to localStorage:', error);
+        // If localStorage is full, try to clean up old entries
+        this.cleanupExpiredCache();
+        try {
+          localStorage.setItem(fullKey, JSON.stringify(cacheEntry));
+        } catch (retryError) {
+          console.error('Failed to write to localStorage after cleanup:', retryError);
+        }
+      }
+    },
+    
+    /**
+     * Check if cached data is still fresh
+     * @param {string} key - Cache key
+     * @param {number} ttl - Time to live in milliseconds
+     * @returns {boolean} True if cache is fresh, false otherwise
+     */
+    isCacheFresh(key, ttl) {
+      try {
+        const fullKey = this.prefix + key;
+        const cached = localStorage.getItem(fullKey);
+        
+        if (!cached) {
+          return false;
+        }
+        
+        const parsed = JSON.parse(cached);
+        
+        // If no timestamp, consider it expired
+        if (!parsed.timestamp) {
+          return false;
+        }
+        
+        const age = Date.now() - parsed.timestamp;
+        return age < ttl;
+      } catch (error) {
+        console.warn('Error checking cache freshness:', error);
+        return false;
+      }
+    },
+    
+    /**
+     * Remove specific cache entry
+     * @param {string} key - Cache key
+     */
+    remove(key) {
+      try {
+        const fullKey = this.prefix + key;
+        localStorage.removeItem(fullKey);
+      } catch (error) {
+        console.warn('Error removing from localStorage:', error);
+      }
+    },
+    
+    /**
+     * Clean up expired cache entries
+     */
+    cleanupExpiredCache() {
+      try {
+        const keysToRemove = [];
+        const now = Date.now();
+        
+        // Check all localStorage keys with our prefix
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          
+          if (key && key.startsWith(this.prefix)) {
+            try {
+              const cached = localStorage.getItem(key);
+              const parsed = JSON.parse(cached);
+              
+              // Remove if no timestamp or expired
+              if (!parsed.timestamp || (parsed.ttl && (now - parsed.timestamp) > parsed.ttl)) {
+                keysToRemove.push(key);
+              }
+            } catch (parseError) {
+              // Remove malformed entries
+              keysToRemove.push(key);
+            }
+          }
+        }
+        
+        // Remove expired entries
+        keysToRemove.forEach(key => {
+          localStorage.removeItem(key);
+        });
+        
+        if (keysToRemove.length > 0) {
+          console.log(`🧹 Cleaned up ${keysToRemove.length} expired cache entries`);
+        }
+      } catch (error) {
+        console.warn('Error during cache cleanup:', error);
+      }
+    },
+    
+    /**
+     * Clear all cache entries with our prefix
+     */
+    clearAll() {
+      try {
+        const keysToRemove = [];
+        
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && key.startsWith(this.prefix)) {
+            keysToRemove.push(key);
+          }
+        }
+        
+        keysToRemove.forEach(key => {
+          localStorage.removeItem(key);
+        });
+        
+        console.log(`🗑️ Cleared ${keysToRemove.length} cache entries`);
+      } catch (error) {
+        console.warn('Error clearing cache:', error);
+      }
+    },
+    
+    /**
+     * Get cache statistics
+     * @returns {Object} Cache statistics
+     */
+    getStats() {
+      try {
+        let totalEntries = 0;
+        let expiredEntries = 0;
+        let totalSize = 0;
+        const now = Date.now();
+        
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          
+          if (key && key.startsWith(this.prefix)) {
+            totalEntries++;
+            const cached = localStorage.getItem(key);
+            totalSize += cached ? cached.length : 0;
+            
+            try {
+              const parsed = JSON.parse(cached);
+              if (parsed.timestamp && parsed.ttl && (now - parsed.timestamp) > parsed.ttl) {
+                expiredEntries++;
+              }
+            } catch (parseError) {
+              expiredEntries++;
+            }
+          }
+        }
+        
+        return {
+          totalEntries,
+          expiredEntries,
+          activeEntries: totalEntries - expiredEntries,
+          totalSize: `${(totalSize / 1024).toFixed(2)} KB`
+        };
+      } catch (error) {
+        console.warn('Error getting cache stats:', error);
+        return { totalEntries: 0, expiredEntries: 0, activeEntries: 0, totalSize: '0 KB' };
+      }
+    }
+  };
+
   // State for the student list
   window._headers     = [];
   window._rows        = [];
@@ -13,6 +226,8 @@
     
 window.openStudentDetails = function(id){
   try {
+    console.log('🚀 Opening student details for ID:', id);
+    
     // Remove any existing loading message first
     removeLoadingMessage();
     
@@ -37,16 +252,21 @@ window.openStudentDetails = function(id){
     var idIdx = window._headers.indexOf('ID');
     var nameIdx = window._headers.indexOf('Name');
     var kanjiIdx = window._headers.indexOf('漢字');
-    var emailIdx = window._headers.indexOf('email');
-    var phoneIdx = window._headers.indexOf('phone');
+    var emailIdx = window._headers.indexOf('Email');
+    var phoneIdx = window._headers.indexOf('Phone');
     var statusIdx = window._headers.indexOf('Status');
     
+    
     // Find the student row
+    
     for (var i = 0; i < window._rows.length; i++) {
       if (String(window._rows[i][idIdx]) === String(id)) {
         studentRow = window._rows[i];
         break;
       }
+    }
+    
+    if (!studentRow) {
     }
     
     if (studentRow) {
@@ -57,12 +277,14 @@ window.openStudentDetails = function(id){
       var studentPhone = studentRow[phoneIdx] || '';
       var studentStatus = studentRow[statusIdx] || '';
       
+      
       // Update modal elements
       var nameEl = document.getElementById('studentName');
       var kanjiEl = document.getElementById('studentKanji');
       var emailEl = document.getElementById('studentEmail');
       var phoneEl = document.getElementById('studentPhone');
       var statusEl = document.getElementById('statusPill');
+      
       
       if (nameEl) nameEl.textContent = studentName;
       if (kanjiEl) kanjiEl.textContent = studentKanji;
@@ -80,14 +302,14 @@ window.openStudentDetails = function(id){
       }
       
       // Show loading state for data sections
-      var latestTable = document.getElementById('latestTable');
+      var latestTable = document.getElementById('lr_table');
       if (latestTable) {
         latestTable.innerHTML = '<tr><td class="py-1.5 pr-2 text-gray-600">Loading...</td><td class="py-1.5 text-center"><div class="animate-spin rounded-full h-4 w-4 border-b-2 border-green-600 mx-auto"></div></td></tr>';
       }
       
-      var paymentsWrap = document.getElementById('paymentsWrap');
-      if (paymentsWrap) {
-        paymentsWrap.innerHTML = '<div class="flex items-center justify-center py-4"><div class="animate-spin rounded-full h-4 w-4 border-b-2 border-green-600 mr-2"></div><span class="text-gray-600">Loading payments...</span></div>';
+      var paymentsBody = document.getElementById('paymentsBody');
+      if (paymentsBody) {
+        paymentsBody.innerHTML = '<tr><td colspan="8" class="px-3 py-6 text-center"><div class="flex items-center justify-center"><div class="animate-spin rounded-full h-4 w-4 border-b-2 border-green-600 mr-2"></div><span class="text-gray-600">Loading payments...</span></div></td></tr>';
       }
       
       var notesBody = document.getElementById('notesBody');
@@ -97,6 +319,105 @@ window.openStudentDetails = function(id){
       
       // Month tabs will be dynamically generated by renderTabs() function
       // after the student data is loaded
+      
+      // Check if we have cached data first
+      var cachedData = getStudentDetailsFromCache(id);
+      if (cachedData) {
+        console.log('✅ Using cached data for instant display');
+        
+        // Use cached data to populate the modal header (more reliable than table data)
+        var headerName = '', headerKanji = '', headerEmail = '', headerPhone = '', headerStatus = '';
+        
+        if (cachedData.student) {
+          var cachedStudent = cachedData.student;
+          headerName = cachedStudent.Name || cachedStudent.name || '';
+          headerKanji = cachedStudent['漢字'] || cachedStudent.kanji || '';
+          headerEmail = cachedStudent.email || cachedStudent.Email || '';
+          headerPhone = cachedStudent.phone || cachedStudent.Phone || '';
+          headerStatus = cachedStudent.Status || cachedStudent.status || '';
+          
+        } else {
+          // Fallback to table data if cached student data is missing
+          headerName = studentName;
+          headerKanji = studentKanji;
+          headerEmail = studentEmail;
+          headerPhone = studentPhone;
+          headerStatus = studentStatus;
+        }
+        
+        // Update modal elements with the determined data
+        var nameEl = document.getElementById('studentName');
+        var kanjiEl = document.getElementById('studentKanji');
+        var emailEl = document.getElementById('studentEmail');
+        var phoneEl = document.getElementById('studentPhone');
+        var statusEl = document.getElementById('statusPill');
+        
+        
+        if (nameEl) {
+          nameEl.textContent = headerName;
+        }
+        
+        if (kanjiEl) {
+          kanjiEl.textContent = headerKanji;
+        }
+        
+        if (emailEl) {
+          emailEl.textContent = headerEmail;
+        }
+        
+        if (phoneEl) {
+          phoneEl.textContent = headerPhone;
+        }
+        
+        if (statusEl) {
+          statusEl.textContent = headerStatus;
+          statusEl.className = 'badge ' + (headerStatus.toLowerCase() === 'active' ? 'bg-emerald-600 text-white' : 'bg-slate-600 text-white');
+        }
+        
+        // Show/hide contact info based on availability
+        var contactEl = document.getElementById('studentContact');
+        if (contactEl) {
+          contactEl.style.display = (headerEmail || headerPhone) ? '' : 'none';
+        }
+        
+        // Use cached data to populate the modal content
+        if (typeof loadStudent === 'function') {
+          // Normalize the cached data to match the expected structure
+          if (typeof normaliseForModal === 'function') {
+            var normalizedData = normaliseForModal(cachedData);
+            loadStudent(normalizedData);
+          } else {
+            loadStudent(cachedData);
+          }
+        }
+        
+        // Re-enable all buttons
+        if (editBtn) editBtn.disabled = false;
+        if (deleteBtn) deleteBtn.disabled = false;
+        if (addPaymentBtn) addPaymentBtn.disabled = false;
+        if (addNoteBtn) addNoteBtn.disabled = false;
+        
+        console.log('Student details modal populated from cache for:', cachedData.student ? (cachedData.student.Name || cachedData.student.name || 'Unknown') : 'Unknown');
+        return;
+      }
+      
+      // Check if bulk loading is still in progress
+      if (window._bulkLoadingInProgress) {
+        console.log('⏳ Bulk loading still in progress - this student will be cached soon');
+      }
+      
+      // Check if this is a Dormant student (not cached in bulk loading)
+      const currentStudentRow = window._rows.find(row => String(row[window._headers.indexOf('ID')]) === String(id));
+      if (currentStudentRow && currentStudentRow[statusIdx] !== 'Active') {
+        console.log('ℹ️ Dormant student - will load individually (not cached in bulk loading)');
+      }
+      
+      // If no cache, try to preload this specific student's data
+      console.log('🔄 No cached data for student', id, '- attempting to preload...');
+      preloadStudentData(id);
+      
+      // Fall back to server calls for immediate display
+      console.log('🔄 Fetching from server for immediate display...');
       
       // Now load the actual data using the original working flow
       if (window.google && google.script && google.script.run) {
@@ -137,7 +458,7 @@ window.openStudentDetails = function(id){
                     
                     // Re-enable edit/delete buttons after data is loaded
                     var editBtn = document.getElementById('editBtn');
-                    var deleteBtn = document.getElementById('deleteBtn');
+                    var deleteBtn = document.getElementById('editBtn');
                     if (editBtn) editBtn.disabled = false;
                     if (deleteBtn) deleteBtn.disabled = false;
                     
@@ -184,9 +505,19 @@ window.openStudentDetails = function(id){
   }
 
   /**
-   * onLoad: initialize app on page load with caching strategy
+   * onLoad: initialize app on page load with enhanced caching strategy
    */
   function onLoad() {
+    
+    // Clean up expired cache entries
+    cacheManager.cleanupExpiredCache();
+    
+    // Show initial loading state
+    showBulkLoadingState();
+    
+    // Set flag to track if bulk loading is in progress
+    window._bulkLoadingInProgress = true;
+    
     // First fetch the student list for immediate display
     google.script.run
       .withSuccessHandler(function(data) {
@@ -198,118 +529,16 @@ window.openStudentDetails = function(id){
         window._customOrder = getCustomOrder(window._headers);
         
         
-        // Immediate render (no comprehensive prewarm)
-        const loadingRow = document.getElementById('loadingRow');
-        if (loadingRow) { loadingRow.remove(); }
-        renderTable();
-        hookSearch();
-        const searchInput = document.getElementById('searchInput');
-        if (searchInput) { searchInput.focus(); searchInput.select(); }
-// Debug: Log the first few student IDs to see their format
-        console.log('📊 Headers:', window._headers);
-        console.log('📊 First 5 student IDs:', window._rows.slice(0, 5).map(row => row[window._headers.indexOf('ID')]));
+        // Check for 子 column
+        const childColIndex = window._headers.indexOf('子');
         
-                 // Debug: Check specifically for the 子 column
-         const childColIndex = window._headers.indexOf('子');
-         console.log('子 column index:', childColIndex);
-         if (childColIndex !== -1 && window._rows.length >= 14) {
-           console.log('Student 14 (index 13) 子 value:', window._rows[13][childColIndex], 'type:', typeof window._rows[13][childColIndex]);
-         } else if (childColIndex === -1) {
-           console.log('子 column not found in headers!');
-         }
-
-
+        // Now load ALL student data in bulk for instant caching
+        // The table will render AFTER bulk loading completes
+        loadAllStudentDataInBulk();
         
-        google.script.run
-          .withSuccessHandler(function(cacheData) {
-            // Check if cacheData is valid
-            if (!cacheData || typeof cacheData !== 'object') {
-              console.error('❌ Invalid cache data received:', cacheData);
-              cacheData = {}; // Use empty object as fallback
-            }
-            
-            window._studentDetailsCache = cacheData;
-            console.log('Cache keys:', Object.keys(cacheData));
-            
-            // NOW render the table and enable user interaction
-            console.log('🎉 All data loaded! Rendering table and enabling user interaction...');
-            
-            // Show completion message
-            const completionMessage = document.createElement('div');
-            completionMessage.className = 'text-center py-4 text-green-600';
-            completionMessage.innerHTML = `
-              <div class="flex items-center justify-center space-x-2 text-green-600">
-                <div class="w-4 h-4">✓</div>
-                <span>All data loaded successfully!</span>
-              </div>
-              <div class="text-sm text-gray-500 mt-2">
-                You can now click on students to view details
-              </div>
-            `;
-            document.querySelector('main').appendChild(completionMessage);
-            
-            // Remove the message after 2 seconds
-            setTimeout(() => {
-              if (completionMessage && completionMessage.parentNode) {
-                completionMessage.remove();
-              }
-            }, 2000);
-            
-            // Remove loading row and render actual data
-            const loadingRow = document.getElementById('loadingRow');
-            if (loadingRow) {
-              loadingRow.remove();
-            }
-            
-            renderTable();
-            hookSearch();
-
-            // Auto-focus search input for quick typing
-            const searchInput = document.getElementById('searchInput');
-            if (searchInput) {
-              searchInput.focus();
-              searchInput.select();
-            }
-            
-            // Debug cache status
-            debugCache();
-            
-            // Also fetch notifications
-            if (typeof fetchNotifications === 'function') {
-              fetchNotifications();
-            }
-          })
-          .withFailureHandler(function(error) {
-            
-            // Even if cache fails, we should still render the table
-            console.log('⚠️ Cache failed, but rendering table with basic data...');
-            
-            // Remove loading row and render actual data
-            const loadingRow = document.getElementById('loadingRow');
-            if (loadingRow) {
-              loadingRow.remove();
-            }
-            
-            renderTable();
-            hookSearch();
-
-            // Auto-focus search input for quick typing
-            const searchInput = document.getElementById('searchInput');
-            if (searchInput) {
-              searchInput.focus();
-              searchInput.select();
-            }
-            
-            // Still fetch notifications even if cache fails
-            if (typeof fetchNotifications === 'function') {
-              fetchNotifications();
-            }
-          })
-          ;
       })
       .withFailureHandler(function(e) {
         console.error('Error fetching students:', e);
-        // Show error in table instead of hiding loader
         const loadingRow = document.getElementById('loadingRow');
         if (loadingRow) {
           loadingRow.innerHTML = '<td colspan="100%" class="text-center py-8 text-red-600">Error loading students. Please refresh the page.</td>';
@@ -319,10 +548,39 @@ window.openStudentDetails = function(id){
 
     // Toggle sidebar collapse/expand
     document.getElementById('toggleSidebarBtn').onclick = function() {
-      // Removed showLoader and hideLoader for sidebar toggle
       var sb = document.getElementById('sidebar');
       document.body.classList.toggle('sidebar-collapsed');
     };
+  }
+
+  /**
+   * Show bulk loading state
+   */
+  function showBulkLoadingState() {
+    
+    // Find the students root container
+    const studentsRoot = document.getElementById('studentsRoot');
+    if (!studentsRoot) {
+      return;
+    }
+    
+    // Create loading message if it doesn't exist
+    let loadingMessage = document.getElementById('loadingMessage');
+    if (!loadingMessage) {
+      loadingMessage = document.createElement('div');
+      loadingMessage.id = 'loadingMessage';
+      loadingMessage.className = 'text-center py-8 text-gray-600';
+      loadingMessage.innerHTML = `
+        <div class="flex items-center justify-center space-x-2">
+          <div class="animate-spin rounded-full h-6 w-6 border-b-2 border-green-600"></div>
+          <span>Loading student data...</span>
+        </div>
+      `;
+      studentsRoot.appendChild(loadingMessage);
+    }
+    
+    // Show loading message
+    loadingMessage.style.display = 'block';
   }
 
   /**
@@ -341,45 +599,64 @@ window.openStudentDetails = function(id){
    * @returns {Object|null} Student details or null if not found
    */
   function getStudentDetailsFromCache(studentId) {
-  if (!studentId) {
-    console.log('❌ No student ID provided to getStudentDetailsFromCache');
-    return null;
-  }
-  
-  var cacheKey = String(studentId).trim();
-  
-  // Check if cache is initialized
-  if (!window._studentDetailsCache) {
-    console.log('❌ Cache not initialized for student:', cacheKey);
-    return null;
-  }
-  
-  // Check if we have the data in cache
-  if (window._studentDetailsCache[cacheKey]) {
-    console.log('✅ Using cached data for student:', cacheKey);
-    return window._studentDetailsCache[cacheKey];
-  }
-  
-  // Try alternative keys (in case of type mismatches)
-  const alternativeKeys = [
-    String(Number(studentId)), // Try numeric version
-    Number(studentId).toString(), // Try string version of number
-    studentId.toString(), // Try direct toString
-    String(studentId) // Try string conversion
-  ];
-  
-  for (const key of alternativeKeys) {
-    if (window._studentDetailsCache[key]) {
-      console.log('✅ Found cached data with alternative key:', key, 'for student:', cacheKey);
-      return window._studentDetailsCache[key];
+    if (!studentId) {
+      console.log('❌ No student ID provided to getStudentDetailsFromCache');
+      return null;
     }
+    
+    var cacheKey = String(studentId).trim();
+    
+    // First check memory cache (fastest)
+    if (window._studentDetailsCache && window._studentDetailsCache[cacheKey]) {
+      console.log('✅ Using memory cache for student:', cacheKey);
+      return window._studentDetailsCache[cacheKey];
+    }
+    
+    // Then check localStorage cache
+    const localStorageKey = `student_${cacheKey}`;
+    if (cacheManager.isCacheFresh(localStorageKey, 1800000)) { // 30 minutes
+      const cached = cacheManager.get(localStorageKey);
+      if (cached) {
+        console.log('✅ Using localStorage cache for student:', cacheKey);
+        // Also update memory cache for faster future access
+        if (window._studentDetailsCache) {
+          window._studentDetailsCache[cacheKey] = cached;
+        }
+        return cached;
+      }
+    }
+    
+    // Try alternative keys (in case of type mismatches)
+    const alternativeKeys = [
+      String(Number(studentId)), // Try numeric version
+      Number(studentId).toString(), // Try string version of number
+      studentId.toString(), // Try direct toString
+      String(studentId) // Try string conversion
+    ];
+    
+    for (const key of alternativeKeys) {
+      if (window._studentDetailsCache && window._studentDetailsCache[key]) {
+        console.log('✅ Found cached data with alternative key:', key, 'for student:', cacheKey);
+        return window._studentDetailsCache[key];
+      }
+      
+      const altLocalKey = `student_${key}`;
+      if (cacheManager.isCacheFresh(altLocalKey, 1800000)) {
+        const cached = cacheManager.get(altLocalKey);
+        if (cached) {
+          console.log('✅ Found localStorage cache with alternative key:', key, 'for student:', cacheKey);
+          // Update memory cache
+          if (window._studentDetailsCache) {
+            window._studentDetailsCache[cacheKey] = cached;
+          }
+          return cached;
+        }
+      }
+    }
+    
+    console.log('❌ No cached data found for student:', cacheKey);
+    return null;
   }
-  
-  // Fallback to server if not in cache
-  console.log('❌ Student not in cache, fetching from server:', cacheKey);
-  console.log('Available cache keys:', Object.keys(window._studentDetailsCache));
-  return null;
-}
 
   /**
    * Update cache when new data is added (called from other scripts)
@@ -404,8 +681,14 @@ window.openStudentDetails = function(id){
     google.script.run
       .withSuccessHandler(function(studentData) {
         if (studentData && studentData.student) {
+          // Update memory cache
           window._studentDetailsCache[studentId] = studentData;
-          console.log('✅ Cache updated for student:', studentId);
+          
+          // Update localStorage cache with 30-minute TTL
+          const localStorageKey = `student_${studentId}`;
+          cacheManager.set(localStorageKey, studentData, 1800000); // 30 minutes
+          
+          console.log('✅ Cache updated for student:', studentId, '(memory + localStorage)');
         } else {
           console.log('⚠️ No student data returned for cache update:', studentId);
         }
@@ -417,11 +700,275 @@ window.openStudentDetails = function(id){
   }
 
   /**
+   * Load all student data in bulk for caching
+   */
+  function loadAllStudentDataInBulk() {
+    
+    // Get all student IDs from the current table data
+    const studentIds = [];
+    const idIdx = window._headers.indexOf('ID');
+    
+    if (idIdx === -1) {
+      console.error('❌ ID column not found in headers');
+      return;
+    }
+    
+    // Extract student IDs from table rows, but only count Active students
+    const statusIdx = window._headers.indexOf('Status');
+    let activeStudentIds = [];
+    
+    window._rows.forEach(row => {
+      if (row[idIdx]) {
+        const studentId = String(row[idIdx]).trim();
+        const status = row[statusIdx];
+        
+        if (status === 'Active') {
+          activeStudentIds.push(studentId);
+        }
+        studentIds.push(studentId); // Keep all for display
+      }
+    });
+    
+    
+    if (studentIds.length === 0) {
+      return;
+    }
+    
+    // Update loading message to show progress
+    const loadingMessage = document.getElementById('loadingMessage');
+    if (loadingMessage) {
+      loadingMessage.innerHTML = `
+        <div class="flex flex-col items-center justify-center space-y-3">
+          <div class="flex items-center space-x-2">
+            <div class="animate-spin rounded-full h-6 w-6 border-b-2 border-green-600"></div>
+            <span class="text-lg font-medium">Loading all student data...</span>
+          </div>
+          <div class="text-sm text-gray-600">
+            Caching ${activeStudentIds.length} Active students with payments and notes for instant access
+          </div>
+          <div class="text-xs text-gray-500">
+            This may take a moment - please wait until loading completes
+          </div>
+        </div>
+      `;
+    }
+    
+    // Track loading progress
+    let loadingStartTime = Date.now();
+    let progressUpdateInterval;
+    
+    // Start progress updates
+    progressUpdateInterval = setInterval(() => {
+      if (loadingMessage) {
+        const elapsed = Math.round((Date.now() - loadingStartTime) / 1000);
+        loadingMessage.innerHTML = `
+          <div class="flex flex-col items-center justify-center space-y-3">
+            <div class="flex items-center space-x-2">
+              <div class="animate-spin rounded-full h-6 w-6 border-b-2 border-green-600"></div>
+              <span class="text-lg font-medium">Loading all student data...</span>
+            </div>
+            <div class="text-sm text-gray-600">
+              Caching ${activeStudentIds.length} Active students with payments and notes for instant access
+            </div>
+            <div class="text-xs text-gray-500">
+              Loading... ${elapsed}s elapsed - please wait until loading completes
+            </div>
+          </div>
+        `;
+      }
+    }, 1000);
+    
+    // Use the batched version to avoid timeouts
+    google.script.run
+      .withSuccessHandler(function(allStudentData) {
+        // Clear progress updates
+        if (progressUpdateInterval) {
+          clearInterval(progressUpdateInterval);
+        }
+        
+        // Clear bulk loading flag
+        window._bulkLoadingInProgress = false;
+        
+        
+        if (!allStudentData || Object.keys(allStudentData).length === 0) {
+          return;
+        }
+        
+        // Store in both memory cache and localStorage
+        let cachedCount = 0;
+        Object.keys(allStudentData).forEach(studentId => {
+          const data = allStudentData[studentId];
+          
+          if (data && data.student) {
+            // Store in memory cache
+            if (window._studentDetailsCache) {
+              window._studentDetailsCache[studentId] = data;
+            }
+            
+            // Store in localStorage with 30-minute TTL
+            const localStorageKey = `student_${studentId}`;
+            cacheManager.set(localStorageKey, data, 1800000); // 30 minutes
+            cachedCount++;
+          }
+        });
+        
+        console.log(`💾 Successfully cached data for ${cachedCount} students in memory and localStorage`);
+        
+        // Show cache statistics
+        const stats = cacheManager.getStats();
+        console.log('📈 Cache Stats:', stats);
+        
+        // Remove loading message immediately
+        removeLoadingMessage();
+        
+        // NOW render the table since all data is cached
+        console.log('🎯 Rendering table with fully cached data...');
+        renderTable();
+        hookSearch();
+        
+        // Auto-focus search input
+        const searchInput = document.getElementById('searchInput');
+        if (searchInput) { 
+          searchInput.focus(); 
+          searchInput.select(); 
+        }
+        
+        // Update loading message to show completion and hide after a moment
+        if (loadingMessage) {
+          const totalTime = Math.round((Date.now() - loadingStartTime) / 1000);
+          loadingMessage.innerHTML = `
+            <div class="flex flex-col items-center justify-center space-y-3">
+              <div class="flex items-center space-x-2 text-green-600">
+                <div class="w-6 h-6 rounded-full bg-green-600 flex items-center justify-center">
+                  <span class="text-white text-xs">✓</span>
+                </div>
+                <span class="text-lg font-medium">All student data loaded and cached!</span>
+              </div>
+              <div class="text-sm text-gray-600">
+                ${cachedCount} students cached with payments and notes (${totalTime}s)
+              </div>
+              <div class="text-xs text-green-600 font-medium">
+                Ready to use - no more loading delays today!
+              </div>
+            </div>
+          `;
+          
+          // Loading message already removed when table rendered
+        }
+      })
+      .withFailureHandler(function(error) {
+        // Clear progress updates
+        if (progressUpdateInterval) {
+          clearInterval(progressUpdateInterval);
+        }
+        
+        // Clear bulk loading flag
+        window._bulkLoadingInProgress = false;
+        
+        console.error('❌ Bulk data load failed:', error);
+        console.log('🔄 Falling back to individual student loading...');
+        
+        // Remove loading message immediately
+        removeLoadingMessage();
+        
+        // Render table even if bulk loading failed
+        console.log('🎯 Rendering table (bulk loading failed, will load individually)...');
+        renderTable();
+        hookSearch();
+        
+        // Auto-focus search input
+        const searchInput = document.getElementById('searchInput');
+        if (searchInput) { 
+          searchInput.focus(); 
+          searchInput.select(); 
+        }
+        
+        // Update loading message to show error
+        if (loadingMessage) {
+          loadingMessage.innerHTML = `
+            <div class="flex items-center justify-center space-x-2 text-yellow-600">
+              <div class="w-6 h-6 rounded-full bg-yellow-600 flex items-center justify-center">
+                <span class="text-white text-xs">!</span>
+              </div>
+              <span>Bulk load failed - students will load individually when accessed</span>
+            </div>
+          `;
+          
+          // Loading message already removed when table rendered
+        }
+      })
+      .getAllStudentDataForCacheBatched(20); // Use batched version with 20 students per batch
+  }
+
+  /**
+   * Preload individual student data when bulk loading fails or is incomplete
+   * @param {string|number} studentId - Student ID to preload
+   */
+  function preloadStudentData(studentId) {
+    // Check if we're already preloading this student
+    if (window._preloadingStudents && window._preloadingStudents[studentId]) {
+      console.log('⏳ Already preloading student:', studentId);
+      return;
+    }
+    
+    // Mark as preloading
+    if (!window._preloadingStudents) {
+      window._preloadingStudents = {};
+    }
+    window._preloadingStudents[studentId] = true;
+    
+    console.log('🔄 Preloading data for student:', studentId);
+    
+    google.script.run
+      .withSuccessHandler(function(studentData) {
+        // Remove preloading flag
+        if (window._preloadingStudents) {
+          delete window._preloadingStudents[studentId];
+        }
+        
+        if (studentData && studentData.student) {
+          // Store in memory cache
+          if (window._studentDetailsCache) {
+            window._studentDetailsCache[studentId] = studentData;
+          }
+          
+          // Store in localStorage with 30-minute TTL
+          const localStorageKey = `student_${studentId}`;
+          cacheManager.set(localStorageKey, studentData, 1800000); // 30 minutes
+          
+          console.log('✅ Preloaded and cached data for student:', studentId);
+          
+          // If this student's modal is currently open, update it with cached data
+          const currentModal = document.getElementById('detailsModalRoot');
+          if (currentModal && !currentModal.classList.contains('hidden')) {
+            // Check if this is the same student
+            const modalStudentId = document.querySelector('[data-student-id]');
+            if (modalStudentId && modalStudentId.getAttribute('data-student-id') === String(studentId)) {
+              console.log('🔄 Updating currently open modal with preloaded data');
+              if (typeof loadStudent === 'function') {
+                loadStudent(studentData);
+              }
+            }
+          }
+        } else {
+          console.warn('⚠️ No data returned for preload of student:', studentId);
+        }
+      })
+      .withFailureHandler(function(error) {
+        // Remove preloading flag on error
+        if (window._preloadingStudents) {
+          delete window._preloadingStudents[studentId];
+        }
+        console.error('❌ Failed to preload data for student:', studentId, error);
+      })
+      .getStudentDetailsOptimized(studentId);
+  }
+
+  /**
    * Debug function to check cache status
    * @param {string|number} studentId - Optional student ID to check
    */
   function debugCache(studentId = null) {
-    console.log('🔍 Cache Debug Info:');
     console.log('Cache initialized:', !!window._studentDetailsCache);
     console.log('Cache type:', typeof window._studentDetailsCache);
     
@@ -449,6 +996,10 @@ window.openStudentDetails = function(id){
         }
       }
     }
+    
+    // Show localStorage cache stats
+    const stats = cacheManager.getStats();
+    console.log('📈 localStorage Cache Stats:', stats);
   }
 
   /**
@@ -507,6 +1058,7 @@ window.openStudentDetails = function(id){
     window._displayRows.forEach(function(row) {
       var tr = document.createElement('tr');
       tr.style.cursor = 'pointer';
+      tr.setAttribute('data-student-id', row[idIdx]);
       tr.onclick = function() { 
         console.log('🖱️ Row clicked, ID index:', idIdx, 'Row ID value:', row[idIdx], 'Type:', typeof row[idIdx]);
         openStudentDetails(row[idIdx]); 
@@ -643,5 +1195,136 @@ window.openStudentDetails = function(id){
       if (window._sortAsc) return v1 > v2 ? 1 : -1;
       return v1 < v2 ? 1 : -1;
     });
+  }
+
+  // Global utility functions for cache management
+  window.clearAllCache = function() {
+    console.log('🗑️ Clearing all cache...');
+    
+    // Clear memory cache
+    if (window._studentDetailsCache) {
+      window._studentDetailsCache = {};
+    }
+    
+    // Clear localStorage cache
+    cacheManager.clearAll();
+    
+    console.log('✅ All cache cleared');
+  };
+
+  window.getCacheStats = function() {
+    const memoryStats = {
+      totalEntries: window._studentDetailsCache ? Object.keys(window._studentDetailsCache).length : 0,
+      keys: window._studentDetailsCache ? Object.keys(window._studentDetailsCache) : []
+    };
+    
+    const localStorageStats = cacheManager.getStats();
+    
+    console.log('📊 Memory Cache Stats:', memoryStats);
+    console.log('📊 localStorage Cache Stats:', localStorageStats);
+    
+    return {
+      memory: memoryStats,
+      localStorage: localStorageStats
+    };
+  };
+
+  window.cleanupCache = function() {
+    console.log('🧹 Cleaning up expired cache entries...');
+    cacheManager.cleanupExpiredCache();
+    console.log('✅ Cache cleanup completed');
+  };
+
+  window.testCache = function(studentId = null) {
+    if (!studentId) {
+      // Test with first available student ID
+      const idIdx = window._headers.indexOf('ID');
+      if (idIdx !== -1 && window._rows.length > 0) {
+        studentId = window._rows[0][idIdx];
+      }
+    }
+    
+    if (!studentId) {
+      console.log('❌ No student ID available for testing');
+      return;
+    }
+    
+    console.log('🧪 Testing cache for student:', studentId);
+    
+    // Test memory cache
+    const memoryResult = getStudentDetailsFromCache(studentId);
+    console.log('Memory cache result:', memoryResult ? '✅ Found' : '❌ Not found');
+    
+    // Test localStorage directly
+    const localStorageKey = `student_${studentId}`;
+    const localStorageResult = cacheManager.get(localStorageKey);
+    console.log('localStorage result:', localStorageResult ? '✅ Found' : '❌ Not found');
+    
+    // Test cache freshness
+    const isFresh = cacheManager.isCacheFresh(localStorageKey, 1800000);
+    console.log('Cache freshness:', isFresh ? '✅ Fresh' : '❌ Expired');
+    
+    return {
+      memory: memoryResult,
+      localStorage: localStorageResult,
+      isFresh: isFresh
+    };
+  };
+
+  // Make cacheManager globally accessible for debugging
+  window.cacheManager = cacheManager;
+  
+  // Global function to manually trigger bulk loading
+  window.triggerBulkLoad = function() {
+    console.log('🔄 Manually triggering bulk data load...');
+    loadAllStudentDataInBulk();
+  };
+  
+  // Global function to clear cache for a specific student
+  window.clearStudentCache = function(studentId) {
+    console.log('🗑️ Clearing cache for student ID: ' + studentId);
+    if (window._studentDetailsCache && window._studentDetailsCache[studentId]) {
+      delete window._studentDetailsCache[studentId];
+      console.log('✅ Cleared memory cache for student ' + studentId);
+    }
+    if (window.cacheManager) {
+      window.cacheManager.remove('student_' + studentId);
+      console.log('✅ Cleared localStorage cache for student ' + studentId);
+    }
+  };
+  
+  // Global function to preload specific student
+  window.preloadStudent = function(studentId) {
+    if (!studentId) {
+      console.log('❌ Please provide a student ID');
+      return;
+    }
+    preloadStudentData(studentId);
+  };
+  
+  // Global function to check bulk loading status
+  window.checkBulkLoadingStatus = function() {
+    console.log('🔍 Bulk Loading Status:');
+    console.log('Bulk loading in progress:', window._bulkLoadingInProgress);
+    console.log('Memory cache entries:', window._studentDetailsCache ? Object.keys(window._studentDetailsCache).length : 0);
+    console.log('localStorage cache entries:', cacheManager.getStats().activeEntries);
+    
+    if (window._bulkLoadingInProgress) {
+      console.log('⏳ Bulk loading is still in progress - please wait');
+    } else {
+      console.log('✅ Bulk loading completed or not started');
+    }
+    
+    return {
+      inProgress: window._bulkLoadingInProgress,
+      memoryCacheCount: window._studentDetailsCache ? Object.keys(window._studentDetailsCache).length : 0,
+      localStorageCacheCount: cacheManager.getStats().activeEntries
+    };
+  };
+  
+  // Clear localStorage on page load for testing
+  localStorage.clear();
+  if (window._studentDetailsCache) {
+    window._studentDetailsCache = {};
   }
 </script>
