@@ -1736,8 +1736,8 @@
         newRow.appendChild(cell);
       });
       
-      // Insert at the end (newest last)
-      tableBody.appendChild(newRow);
+      // Insert at the beginning (newest first)
+      tableBody.insertBefore(newRow, tableBody.firstChild);
       
       // Also add to the data arrays
       if (window._rows && window._displayRows && window._headers) {
@@ -1745,8 +1745,8 @@
         if (idIndex !== -1) {
           // Create a row array matching the headers
           const rowData = window._headers.map(header => studentData[header] || '');
-          window._rows.push(rowData); // Add to end
-          window._displayRows.push(rowData); // Add to end
+          window._rows.unshift(rowData); // Add to beginning
+          window._displayRows.unshift(rowData); // Add to beginning
           console.log(`✅ Added new student ${studentData.ID} to data arrays`);
         }
       }
