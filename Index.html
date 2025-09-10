@@ -1140,7 +1140,7 @@
             Phone: (combinePhone(studentEls) || undefined),
             Email: studentEls.email.value.trim() || undefined,
             'phone (secondary)': '',
-            Status: 'Active',
+            Status: 'DEMO',
             '子': studentEls.child.checked ? '子' : undefined,
             Payment: 'NEO',
             Group: studentEls.group.value || 'Individual',
@@ -1153,7 +1153,7 @@
         const internal = {
           name: studentEls.name.value.trim(),
           kanji: studentEls.kanji.value.trim(),
-          status: 'Active',
+          status: 'DEMO',
           latestByMonth: {},
           payments: [],
           notes: []
@@ -1325,34 +1325,597 @@
     attachGroupHandlers(studentEls);
     attachGroupHandlers(editStudentEls);
 
+    // Offline Queue System for handling failed operations
+    const OfflineQueue = {
+      queue: [],
+      isOnline: navigator.onLine,
+      
+      init() {
+        // Listen for online/offline events
+        window.addEventListener('online', () => {
+          this.isOnline = true;
+          this.processQueue();
+          this.updateConnectionStatus('online');
+        });
+        
+        window.addEventListener('offline', () => {
+          this.isOnline = false;
+          this.updateConnectionStatus('offline');
+        });
+        
+        // Load existing queue from localStorage
+        this.loadQueue();
+        
+        // Process queue on page load if online
+        if (this.isOnline) {
+          this.processQueue();
+        }
+      },
+      
+      addOperation(operation) {
+        const queueItem = {
+          id: Date.now() + Math.random(),
+          timestamp: new Date().toISOString(),
+          operation: operation,
+          retryCount: 0,
+          maxRetries: 3
+        };
+        
+        this.queue.push(queueItem);
+        this.saveQueue();
+        this.updateQueueStatus();
+        
+        console.log('📝 Added operation to offline queue:', queueItem);
+      },
+      
+      async processQueue() {
+        if (!this.isOnline || this.queue.length === 0) return;
+        
+        console.log('🔄 Processing offline queue...', this.queue.length, 'operations');
+        
+        const operationsToProcess = [...this.queue];
+        this.queue = [];
+        
+        for (const item of operationsToProcess) {
+          try {
+            await this.executeOperation(item);
+            console.log('✅ Successfully processed queued operation:', item.id);
+          } catch (error) {
+            console.error('❌ Failed to process queued operation:', item.id, error);
+            
+            // Retry if under max retries
+            if (item.retryCount < item.maxRetries) {
+              item.retryCount++;
+              this.queue.push(item);
+              console.log(`🔄 Retrying operation ${item.id} (attempt ${item.retryCount})`);
+            } else {
+              console.error('💀 Operation failed permanently:', item.id);
+              this.showFailedOperation(item);
+            }
+          }
+        }
+        
+        this.saveQueue();
+        this.updateQueueStatus();
+      },
+      
+      async executeOperation(item) {
+        const { operation } = item;
+        
+        if (!window.google || !google.script || !google.script.run) {
+          throw new Error('Google Apps Script not available');
+        }
+        
+        return new Promise((resolve, reject) => {
+          const scriptCall = google.script.run[operation.method](...operation.params);
+          
+          scriptCall
+            .withSuccessHandler(resolve)
+            .withFailureHandler(reject);
+        });
+      },
+      
+      saveQueue() {
+        try {
+          localStorage.setItem('offlineQueue', JSON.stringify(this.queue));
+        } catch (error) {
+          console.error('Failed to save offline queue:', error);
+        }
+      },
+      
+      loadQueue() {
+        try {
+          const saved = localStorage.getItem('offlineQueue');
+          if (saved) {
+            this.queue = JSON.parse(saved);
+            console.log('📥 Loaded offline queue:', this.queue.length, 'operations');
+          }
+        } catch (error) {
+          console.error('Failed to load offline queue:', error);
+          this.queue = [];
+        }
+      },
+      
+      updateConnectionStatus(status) {
+        const statusEl = document.getElementById('connectionStatus');
+        if (statusEl) {
+          statusEl.className = `px-2 py-1 rounded text-xs ${
+            status === 'online' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+          }`;
+          statusEl.textContent = status === 'online' ? '🟢 Online' : '🔴 Offline';
+        }
+      },
+      
+      updateQueueStatus() {
+        const queueEl = document.getElementById('queueStatus');
+        if (queueEl && this.queue.length > 0) {
+          queueEl.className = 'px-2 py-1 rounded text-xs bg-yellow-100 text-yellow-800';
+          queueEl.textContent = `⏳ ${this.queue.length} pending`;
+          queueEl.style.display = 'inline-block';
+        } else if (queueEl) {
+          queueEl.style.display = 'none';
+        }
+      },
+      
+      showFailedOperation(item) {
+        openConfirmModal({
+          title: 'Sync Failed',
+          message: `Failed to sync ${item.operation.type} operation after ${item.maxRetries} attempts. The data is saved locally but not on the server. Would you like to retry manually?`,
+          onConfirm: () => {
+            item.retryCount = 0;
+            this.queue.push(item);
+            this.saveQueue();
+            this.updateQueueStatus();
+            this.processQueue();
+          },
+          onCancel: () => {
+            // Remove from queue permanently
+            console.log('🗑️ Permanently removed failed operation:', item.id);
+          }
+        });
+      }
+    };
+    
+    // Initialize offline queue system
+    OfflineQueue.init();
+
+    // Enhanced cache management for dynamic updates
+    function updateStudentCache(studentId, type, data, revert = false) {
+      if (!studentId) return;
+      
+      const cacheKey = String(studentId);
+      
+      // Update memory cache
+      if (window._studentDetailsCache && window._studentDetailsCache[cacheKey]) {
+        const cachedData = window._studentDetailsCache[cacheKey];
+        
+        if (revert) {
+          // Revert changes - remove the last item or specific item
+          if (type === 'payment' && cachedData.payments) {
+            if (data === null) {
+              // Special case: remove all payments (for deletion)
+              cachedData.payments = [];
+            } else {
+              // Remove the last item
+              cachedData.payments.pop();
+            }
+          } else if (type === 'note' && cachedData.notes) {
+            if (data === null) {
+              // Special case: remove all notes (for deletion)
+              cachedData.notes = [];
+            } else {
+              // Remove the last item
+              cachedData.notes.pop();
+            }
+          }
+        } else {
+          // Add new data
+          if (type === 'payment') {
+            if (!cachedData.payments) cachedData.payments = [];
+            if (data) {
+              cachedData.payments.push(data);
+            }
+          } else if (type === 'note') {
+            if (!cachedData.notes) cachedData.notes = [];
+            if (data) {
+              cachedData.notes.push(data);
+            }
+          } else if (type === 'student') {
+            // Update student data
+            Object.assign(cachedData.student, data);
+          }
+        }
+        
+        // Update localStorage cache
+        const localStorageKey = `student_${cacheKey}`;
+        if (typeof cacheManager !== 'undefined') {
+          cacheManager.set(localStorageKey, cachedData, 1800000); // 30 minutes
+        }
+        
+        console.log(`✅ Cache updated for student ${studentId}, type: ${type}, revert: ${revert}`);
+      }
+    }
+
+    function removePaymentFromCache(studentId, paymentToRemove) {
+      if (!studentId || !paymentToRemove) return;
+      
+      const cacheKey = String(studentId);
+      
+      // Update memory cache
+      if (window._studentDetailsCache && window._studentDetailsCache[cacheKey]) {
+        const cachedData = window._studentDetailsCache[cacheKey];
+        
+        if (cachedData.payments) {
+          // Find and remove the specific payment
+          const transactionId = paymentToRemove['Transaction ID'] || 
+                               paymentToRemove.transactionId || 
+                               paymentToRemove.id || 
+                               paymentToRemove['Txn'] || 
+                               paymentToRemove.txn;
+          
+          if (transactionId) {
+            cachedData.payments = cachedData.payments.filter(p => {
+              const pId = p['Transaction ID'] || p.transactionId || p.id || p['Txn'] || p.txn;
+              return pId !== transactionId;
+            });
+          }
+        }
+        
+        // Update localStorage cache
+        const localStorageKey = `student_${cacheKey}`;
+        if (typeof cacheManager !== 'undefined') {
+          cacheManager.set(localStorageKey, cachedData, 1800000); // 30 minutes
+        }
+        
+        console.log(`✅ Removed payment from cache for student ${studentId}`);
+      }
+    }
+
+    function removeNoteFromCache(studentId, noteToRemove) {
+      if (!studentId || !noteToRemove) return;
+      
+      const cacheKey = String(studentId);
+      
+      // Update memory cache
+      if (window._studentDetailsCache && window._studentDetailsCache[cacheKey]) {
+        const cachedData = window._studentDetailsCache[cacheKey];
+        
+        if (cachedData.notes) {
+          // Find and remove the specific note by matching Date, Note, and Staff
+          cachedData.notes = cachedData.notes.filter(n => 
+            !(n.Date === noteToRemove.Date && 
+              n.Note === noteToRemove.Note && 
+              n.Staff === noteToRemove.Staff)
+          );
+        }
+        
+        // Update localStorage cache
+        const localStorageKey = `student_${cacheKey}`;
+        if (typeof cacheManager !== 'undefined') {
+          cacheManager.set(localStorageKey, cachedData, 1800000); // 30 minutes
+        }
+        
+        console.log(`✅ Removed note from cache for student ${studentId}`);
+      }
+    }
+
+    function updateStudentTableRow(studentId, studentData) {
+      // Find the table row for this student
+      const tableRows = document.querySelectorAll('#studentTable tr');
+      const idIndex = window._headers ? window._headers.indexOf('ID') : -1;
+      
+      if (idIndex === -1) return;
+      
+      for (let i = 1; i < tableRows.length; i++) { // Skip header row
+        const cells = tableRows[i].querySelectorAll('td');
+        if (cells[idIndex] && cells[idIndex].textContent.trim() === String(studentId)) {
+          // Update the row with new data
+          const nameIndex = window._headers.indexOf('Name');
+          const kanjiIndex = window._headers.indexOf('漢字');
+          const statusIndex = window._headers.indexOf('Status');
+          const emailIndex = window._headers.indexOf('Email');
+          const phoneIndex = window._headers.indexOf('Phone');
+          
+          if (nameIndex !== -1 && cells[nameIndex]) {
+            cells[nameIndex].textContent = studentData.Name || '';
+          }
+          if (kanjiIndex !== -1 && cells[kanjiIndex]) {
+            cells[kanjiIndex].textContent = studentData['漢字'] || '';
+          }
+          if (statusIndex !== -1 && cells[statusIndex]) {
+            const status = studentData.Status || '';
+            let statusClass = '';
+            switch(status) {
+              case 'Active': statusClass = 'badge badge-status-active'; break;
+              case 'Dormant': statusClass = 'badge badge-status-dormant'; break;
+              case 'DEMO': statusClass = 'badge badge-status-demo'; break;
+              default: statusClass = 'badge badge-status-dormant';
+            }
+            cells[statusIndex].innerHTML = '<span class="' + statusClass + '">' + status + '</span>';
+            cells[statusIndex].style.textAlign = 'center';
+          }
+          if (emailIndex !== -1 && cells[emailIndex]) {
+            cells[emailIndex].textContent = studentData.Email || '';
+          }
+          if (phoneIndex !== -1 && cells[phoneIndex]) {
+            cells[phoneIndex].textContent = studentData.Phone || '';
+          }
+          
+          console.log(`✅ Updated table row for student ${studentId}`);
+          break;
+        }
+      }
+    }
+
+    function addStudentToTable(studentData) {
+      // Add new student to the table
+      const tableBody = document.querySelector('#studentTable');
+      if (!tableBody || !window._headers) return;
+      
+      // Remove loading row if it exists
+      const loadingRow = document.getElementById('loadingRow');
+      if (loadingRow) {
+        loadingRow.remove();
+      }
+      
+      const newRow = document.createElement('tr');
+      newRow.className = 'hover:bg-gray-50 cursor-pointer';
+      
+      // Handle temporary IDs
+      if (studentData.ID && studentData.ID.startsWith('temp_')) {
+        newRow.setAttribute('data-temp-id', studentData.ID);
+        newRow.style.opacity = '0.7'; // Visual indicator for temporary row
+      } else {
+        newRow.addEventListener('click', () => openStudentDetails(studentData.ID));
+        newRow.setAttribute('data-student-id', studentData.ID);
+      }
+      
+      // Use the same order as the existing table
+      const order = window._customOrder || window._headers;
+      order.forEach(header => {
+        const cell = document.createElement('td');
+        cell.className = 'px-4 py-3 text-sm text-gray-900';
+        
+        const cellValue = studentData[header] || '';
+        
+        // Handle different column types with proper badge styling
+        switch(header) {
+          case '当日キャンセル':
+            const cancelBadgeClass = cellValue === '済' ? 'badge badge-cancel-yes' : 'badge badge-cancel-no';
+            cell.innerHTML = '<span class="' + cancelBadgeClass + '">' + cellValue + '</span>';
+            cell.style.textAlign = 'center';
+            cell.className = 'text-center';
+            break;
+            
+          case 'Status':
+            let statusClass = '';
+            switch(cellValue) {
+              case 'Active': statusClass = 'badge badge-status-active'; break;
+              case 'Dormant': statusClass = 'badge badge-status-dormant'; break;
+              case 'DEMO': statusClass = 'badge badge-status-demo'; break;
+              default: statusClass = 'badge badge-status-dormant';
+            }
+            cell.innerHTML = '<span class="' + statusClass + '">' + cellValue + '</span>';
+            cell.style.textAlign = 'center';
+            break;
+            
+          case 'Payment':
+            const paymentClass = cellValue === 'NEO' ? 'badge badge-pay-neo' : 'badge badge-pay-old';
+            cell.innerHTML = '<span class="' + paymentClass + '">' + cellValue + '</span>';
+            cell.style.textAlign = 'center';
+            break;
+            
+          case 'Group':
+            const groupClass = cellValue === 'Individual' ? 'badge badge-group-individual' : 'badge badge-group-group';
+            cell.innerHTML = '<span class="' + groupClass + '">' + cellValue + '</span>';
+            cell.style.textAlign = 'center';
+            break;
+            
+          case '当日 Cancellation':
+            const cancelBadgeClass2 = cellValue === '済' ? 'badge badge-cancel-yes' : 'badge badge-cancel-no';
+            cell.innerHTML = '<span class="' + cancelBadgeClass2 + '">' + cellValue + '</span>';
+            cell.style.textAlign = 'center';
+            break;
+            
+          case '当日':
+            const cancelBadgeClass3 = cellValue === '済' ? 'badge badge-cancel-yes' : 'badge badge-cancel-no';
+            cell.innerHTML = '<span class="' + cancelBadgeClass3 + '">' + cellValue + '</span>';
+            cell.style.textAlign = 'center';
+            break;
+            
+          case '人数':
+            cell.style.textAlign = 'center';
+            cell.textContent = cellValue;
+            break;
+            
+          default:
+            cell.textContent = cellValue;
+            break;
+        }
+        
+        newRow.appendChild(cell);
+      });
+      
+      // Insert at the end (newest last)
+      tableBody.appendChild(newRow);
+      
+      // Also add to the data arrays
+      if (window._rows && window._displayRows && window._headers) {
+        const idIndex = window._headers.indexOf('ID');
+        if (idIndex !== -1) {
+          // Create a row array matching the headers
+          const rowData = window._headers.map(header => studentData[header] || '');
+          window._rows.push(rowData); // Add to end
+          window._displayRows.push(rowData); // Add to end
+          console.log(`✅ Added new student ${studentData.ID} to data arrays`);
+        }
+      }
+      
+      console.log(`✅ Added new student ${studentData.ID} to table`);
+    }
+
+    function updateLatestRecordWithPayment(payment) {
+      if (!payment || !payment.Month || !payment.Amount) return;
+      
+      // Get current month and next month
+      const now = new Date();
+      const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      const currentMonth = MONTHS[now.getMonth()];
+      const nextMonth = MONTHS[(now.getMonth() + 1) % 12];
+      
+      // Determine which month this payment is for
+      let targetMonth = currentMonth;
+      if (payment.Month) {
+        const monthStr = payment.Month.toLowerCase();
+        if (monthStr.includes('jan')) targetMonth = 'Jan';
+        else if (monthStr.includes('feb')) targetMonth = 'Feb';
+        else if (monthStr.includes('mar')) targetMonth = 'Mar';
+        else if (monthStr.includes('apr')) targetMonth = 'Apr';
+        else if (monthStr.includes('may')) targetMonth = 'May';
+        else if (monthStr.includes('jun')) targetMonth = 'Jun';
+        else if (monthStr.includes('jul')) targetMonth = 'Jul';
+        else if (monthStr.includes('aug')) targetMonth = 'Aug';
+        else if (monthStr.includes('sep')) targetMonth = 'Sep';
+        else if (monthStr.includes('oct')) targetMonth = 'Oct';
+        else if (monthStr.includes('nov')) targetMonth = 'Nov';
+        else if (monthStr.includes('dec')) targetMonth = 'Dec';
+      }
+      
+      // Update the latestMap with payment status and unscheduled lessons
+      if (!latestMap[targetMonth]) {
+        latestMap[targetMonth] = { Payment: '済', lessons: [] };
+      } else {
+        latestMap[targetMonth].Payment = '済';
+      }
+      
+      // Add unscheduled lessons based on payment amount
+      const lessonCount = parseInt(payment.Amount) || 0;
+      const existingLessons = latestMap[targetMonth].lessons || [];
+      const scheduledLessons = existingLessons.filter(lesson => lesson.status !== 'unscheduled').length;
+      const unscheduledCount = Math.max(0, lessonCount - scheduledLessons);
+      
+      // Remove existing unscheduled lessons
+      latestMap[targetMonth].lessons = existingLessons.filter(lesson => lesson.status !== 'unscheduled');
+      
+      // Add new unscheduled lessons
+      for (let i = 0; i < unscheduledCount; i++) {
+        latestMap[targetMonth].lessons.push({
+          day: '--',
+          time: '--',
+          status: 'unscheduled'
+        });
+      }
+      
+      // Update the Latest Record display
+      updateLatestRecord();
+      
+      console.log(`✅ Updated Latest Record for ${targetMonth}: Payment=済, ${unscheduledCount} unscheduled lessons`);
+    }
+
+    function revertLatestRecordWithPayment(payment) {
+      if (!payment || !payment.Month) return;
+      
+      console.log('🔄 Reverting Latest Record for payment:', payment);
+      
+      // Get current month and next month
+      const now = new Date();
+      const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      const currentMonth = MONTHS[now.getMonth()];
+      const nextMonth = MONTHS[(now.getMonth() + 1) % 12];
+      
+      // Determine which month this payment was for
+      let targetMonth = currentMonth;
+      if (payment.Month) {
+        const monthStr = payment.Month.toLowerCase();
+        console.log('🔍 Payment month string:', monthStr);
+        if (monthStr.includes('jan')) targetMonth = 'Jan';
+        else if (monthStr.includes('feb')) targetMonth = 'Feb';
+        else if (monthStr.includes('mar')) targetMonth = 'Mar';
+        else if (monthStr.includes('apr')) targetMonth = 'Apr';
+        else if (monthStr.includes('may')) targetMonth = 'May';
+        else if (monthStr.includes('jun')) targetMonth = 'Jun';
+        else if (monthStr.includes('jul')) targetMonth = 'Jul';
+        else if (monthStr.includes('aug')) targetMonth = 'Aug';
+        else if (monthStr.includes('sep')) targetMonth = 'Sep';
+        else if (monthStr.includes('oct')) targetMonth = 'Oct';
+        else if (monthStr.includes('nov')) targetMonth = 'Nov';
+        else if (monthStr.includes('dec')) targetMonth = 'Dec';
+      }
+      
+      console.log('🎯 Target month for reversion:', targetMonth);
+      
+      // Revert payment status to unpaid
+      console.log('🔍 Current latestMap:', latestMap);
+      console.log('🔍 latestMap[targetMonth] before:', latestMap[targetMonth]);
+      
+      if (latestMap[targetMonth]) {
+        latestMap[targetMonth].Payment = '未';
+        console.log('🔍 latestMap[targetMonth] after:', latestMap[targetMonth]);
+        
+        // Remove unscheduled lessons that were added by this payment
+        const lessonCount = parseInt(payment.Amount) || 0;
+        const existingLessons = latestMap[targetMonth].lessons || [];
+        const scheduledLessons = existingLessons.filter(lesson => lesson.status !== 'unscheduled').length;
+        const unscheduledToRemove = Math.max(0, lessonCount - scheduledLessons);
+        
+        // Remove the unscheduled lessons
+        let removedCount = 0;
+        latestMap[targetMonth].lessons = existingLessons.filter(lesson => {
+          if (lesson.status === 'unscheduled' && removedCount < unscheduledToRemove) {
+            removedCount++;
+            return false;
+          }
+          return true;
+        });
+      }
+      
+      // Update the Latest Record display
+      updateLatestRecord();
+      
+      console.log(`✅ Reverted Latest Record for ${targetMonth}: Payment=未`);
+    }
+
     // Wire up modal buttons
     document.getElementById('addPaymentBtn').addEventListener('click', () => {
       openPaymentModal({
         mode: 'add',
         onSave: (payment) => {
-          // Add payment to student data and refresh
+          // Optimistic update: Add payment to UI immediately
           if (!student.payments) student.payments = [];
           student.payments.push(payment);
-          
           renderPaymentsTable();
+          
+          // Update cache immediately
+          updateStudentCache(student.id, 'payment', payment);
+          
+          // Update Latest Record with new payment status and unscheduled lessons
+          updateLatestRecordWithPayment(payment);
           
           // Save to backend
           if (window.google && google.script && google.script.run) {
             google.script.run
               .withSuccessHandler(function(result) {
                 console.log('Payment added successfully:', result);
+                // Update cache with server response
+                updateStudentCache(student.id, 'payment', result);
               })
               .withFailureHandler(function(error) {
                 console.error('Failed to add payment:', error);
-                openConfirmModal({
-                  title: 'Error',
-                  message: 'Failed to add payment. Please try again.',
-                  onConfirm: () => {
-                    // Just close the modal
-                  },
-                  onCancel: () => {
-                    // Just close the modal
-                  }
+                
+                // Add to offline queue for retry
+                OfflineQueue.addOperation({
+                  type: 'payment',
+                  method: 'insertPayment',
+                  params: [payment],
+                  studentId: student.id,
+                  data: payment
+                });
+                
+                // Show offline message instead of error
+                openNotificationModal({
+                  type: 'warning',
+                  title: 'Payment Saved Locally',
+                  message: 'Payment saved locally and will sync when connection is restored.'
                 });
               })
               .insertPayment(payment);
@@ -1365,28 +1928,39 @@
       openNoteModal({
         mode: 'add',
         onSave: (note) => {
-          // Add note to student data and refresh
+          // Optimistic update: Add note to UI immediately
           if (!student.notes) student.notes = [];
           student.notes.push(note);
           renderNotes();
+          
+          // Update cache immediately
+          updateStudentCache(student.id, 'note', note);
           
           // Save to backend
           if (window.google && google.script && google.script.run) {
             google.script.run
               .withSuccessHandler(function(result) {
                 console.log('Note added successfully:', result);
+                // Update cache with server response
+                updateStudentCache(student.id, 'note', result);
               })
               .withFailureHandler(function(error) {
                 console.error('Failed to add note:', error);
-                openConfirmModal({
-                  title: 'Error',
-                  message: 'Failed to add note. Please try again.',
-                  onConfirm: () => {
-                    // Just close the modal
-                  },
-                  onCancel: () => {
-                    // Just close the modal
-                  }
+                
+                // Add to offline queue for retry
+                OfflineQueue.addOperation({
+                  type: 'note',
+                  method: 'insertNote',
+                  params: [note],
+                  studentId: student.id,
+                  data: note
+                });
+                
+                // Show offline message instead of error
+                openNotificationModal({
+                  type: 'warning',
+                  title: 'Note Saved Locally',
+                  message: 'Note saved locally and will sync when connection is restored.'
                 });
               })
               .addNote(note);
@@ -1408,14 +1982,20 @@
       openEditStudentModal({
         student: currentStudent,
         onSave: ({ backend, internal }) => {
-          // Update student data
+          // Optimistic update: Update UI immediately
+          const oldStudent = { ...student };
           student = { ...student, ...internal };
           renderHeader();
           
+          // Update table row immediately
+          const studentId = currentStudentId || student?.id || student?.ID || '';
+          updateStudentTableRow(studentId, backend.student);
+          
+          // Update cache immediately
+          updateStudentCache(studentId, 'student', backend.student);
+          
           // Save to backend
           if (window.google && google.script && google.script.run) {
-            // Use the stored student ID
-            const studentId = currentStudentId || student?.id || student?.ID || '';
             console.log('Attempting to update student with ID:', studentId);
             console.log('Backend data being sent:', backend.student);
             if (studentId) {
@@ -1423,30 +2003,39 @@
                 .withSuccessHandler(function(result) {
                   console.log('Student updated successfully:', result);
                   
-                  // Update the table row with new data
-                  updateStudentTableRow(studentId, backend.student);
-                  
-                  // Optionally refresh the student list
-                  if (typeof window.refreshStudentList === 'function') {
-                    window.refreshStudentList();
-                  }
+                  // Update cache with server response
+                  updateStudentCache(studentId, 'student', result);
                 })
-                              .withFailureHandler(function(error) {
-                console.error('Failed to update student:', error);
-                openConfirmModal({
-                  title: 'Error',
-                  message: 'Failed to update student. Please try again.',
-                  onConfirm: () => {
-                    // Just close the modal
-                  },
-                  onCancel: () => {
-                    // Just close the modal
-                  }
-                });
-              })
+                .withFailureHandler(function(error) {
+                  console.error('Failed to update student:', error);
+                  
+                  // Revert optimistic update
+                  student = oldStudent;
+                  renderHeader();
+                  updateStudentTableRow(studentId, oldStudent);
+                  updateStudentCache(studentId, 'student', oldStudent, true); // Revert
+                  
+                  openConfirmModal({
+                    title: 'Error',
+                    message: 'Failed to update student. Please try again.',
+                    onConfirm: () => {
+                      // Just close the modal
+                    },
+                    onCancel: () => {
+                      // Just close the modal
+                    }
+                  });
+                })
                 .updateStudent({ ...backend.student, ID: studentId });
             } else {
               console.error('No student ID found for update');
+              
+              // Revert optimistic update
+              student = oldStudent;
+              renderHeader();
+              updateStudentTableRow(studentId, oldStudent);
+              updateStudentCache(studentId, 'student', oldStudent, true); // Revert
+              
               openConfirmModal({
                 title: 'Error',
                 message: 'Cannot update student: No ID found',
@@ -1463,13 +2052,112 @@
           }
         },
         onDelete: (studentToDelete) => {
-          // Handle student deletion
-          console.log('Student deleted:', studentToDelete);
-          // Close the details modal
-          const modal = document.getElementById('detailsModalRoot');
-          if (modal) {
-            modal.classList.add('hidden');
-          }
+          console.log('🗑️ Delete button clicked, showing confirmation modal');
+          // Show custom confirmation modal
+          openConfirmModal({
+            title: 'Delete Student',
+            message: 'Are you sure you want to delete this student? This will permanently remove all student data, payments, and notes. This action cannot be undone.',
+            onConfirm: () => {
+              console.log('✅ User confirmed deletion, proceeding with delete');
+              const studentId = studentToDelete?.id || studentToDelete?.ID || currentStudentId;
+              
+              if (!studentId) {
+                openConfirmModal({
+                  title: 'Error',
+                  message: 'Cannot delete student: Student ID not found',
+                  onConfirm: () => {
+                    // Just close the modal
+                  },
+                  onCancel: () => {
+                    // Just close the modal
+                  }
+                });
+                return;
+              }
+              
+              // Close the details modal
+              const modal = document.getElementById('detailsModalRoot');
+              if (modal) {
+                modal.classList.add('hidden');
+              }
+              
+              // Delete from backend first
+              if (window.google && google.script && google.script.run) {
+                google.script.run
+                  .withSuccessHandler(function(result) {
+                    console.log('Student deleted successfully:', result);
+                    
+                    // Show success message first
+                    openNotificationModal({
+                      type: 'success',
+                      title: 'Success',
+                      message: 'Student deleted successfully',
+                      onClose: () => {
+                        // Remove from table after success message is closed
+                        const tableRow = document.querySelector(`tr[data-student-id="${studentId}"]`);
+                        if (tableRow) {
+                          tableRow.remove();
+                        }
+                        
+                        // Also remove from the data arrays
+                        if (window._rows && window._displayRows) {
+                          const idIndex = window._headers ? window._headers.indexOf('ID') : -1;
+                          if (idIndex !== -1) {
+                            window._rows = window._rows.filter(row => String(row[idIndex]) !== String(studentId));
+                            window._displayRows = window._displayRows.filter(row => String(row[idIndex]) !== String(studentId));
+                            console.log(`✅ Removed student ${studentId} from data arrays`);
+                          }
+                        }
+                        
+                        // Remove from cache
+                        if (window._studentDetailsCache && window._studentDetailsCache[studentId]) {
+                          delete window._studentDetailsCache[studentId];
+                        }
+                        
+                        // Remove from localStorage cache
+                        const localStorageKey = `student_${studentId}`;
+                        if (typeof cacheManager !== 'undefined') {
+                          cacheManager.remove(localStorageKey);
+                        }
+                        
+                        // Also remove from localStorage directly as backup
+                        try {
+                          localStorage.removeItem(localStorageKey);
+                          console.log(`✅ Removed student ${studentId} from localStorage`);
+                        } catch (e) {
+                          console.warn('Failed to remove from localStorage:', e);
+                        }
+                      }
+                    });
+                  })
+                  .withFailureHandler(function(error) {
+                    console.error('Failed to delete student:', error);
+                    
+                    // Revert optimistic update - reload the page to restore data
+                    location.reload();
+                    
+                    openNotificationModal({
+                      type: 'error',
+                      title: 'Error',
+                      message: 'Failed to delete student. Please try again.',
+                      details: error.message || error.toString()
+                    });
+                  })
+                  .deleteStudent(studentId);
+              } else {
+                // Fallback: just update frontend if backend not available
+                console.log('Student deleted (backend not available):', studentToDelete);
+                openNotificationModal({
+                  type: 'success',
+                  title: 'Success',
+                  message: 'Student deleted successfully'
+                });
+              }
+            },
+            onCancel: () => {
+              // Do nothing, just close the modal
+            }
+          });
         }
       });
     });
@@ -1479,6 +2167,10 @@
       openStudentModal({
         mode: 'add',
         onSave: ({ backend, internal }) => {
+          // Optimistic update: Add student to table immediately
+          const tempStudentData = { ...backend.student, ID: 'temp_' + Date.now() };
+          addStudentToTable(tempStudentData);
+          
           // Save to backend
           console.log('New student created:', backend);
           
@@ -1487,12 +2179,50 @@
               .withSuccessHandler(function(newStudentId) {
                 console.log('Student added successfully with ID:', newStudentId);
                 
-                // Refresh the students list to show the new student
-                if (typeof window.refreshStudentList === 'function') {
-                  window.refreshStudentList();
-                } else {
-                  // Fallback: reload the page to refresh the list
-                  location.reload();
+                // Update the temporary row with real ID
+                const tempRow = document.querySelector(`tr[data-temp-id="${tempStudentData.ID}"]`);
+                if (tempRow) {
+                  const idCell = tempRow.querySelector('td:first-child');
+                  if (idCell) {
+                    idCell.textContent = newStudentId;
+                    tempRow.removeAttribute('data-temp-id');
+                    tempRow.setAttribute('data-student-id', newStudentId);
+                    // Remove temporary styling and add click handler
+                    tempRow.style.opacity = '';
+                    tempRow.addEventListener('click', () => openStudentDetails(newStudentId));
+                  }
+                }
+                
+                // Update the data arrays with the real ID
+                if (window._rows && window._displayRows && window._headers) {
+                  const idIndex = window._headers.indexOf('ID');
+                  if (idIndex !== -1) {
+                    // Find and update the temporary row in data arrays
+                    const tempRowIndex = window._rows.findIndex(row => row[idIndex] === tempStudentData.ID);
+                    if (tempRowIndex !== -1) {
+                      window._rows[tempRowIndex][idIndex] = newStudentId;
+                      window._displayRows[tempRowIndex][idIndex] = newStudentId;
+                      console.log(`✅ Updated student ID in data arrays from ${tempStudentData.ID} to ${newStudentId}`);
+                    }
+                  }
+                }
+                
+                // Add to cache
+                const studentData = {
+                  student: { ...backend.student, ID: newStudentId },
+                  payments: [],
+                  notes: [],
+                  latestByMonth: {}
+                };
+                
+                if (window._studentDetailsCache) {
+                  window._studentDetailsCache[newStudentId] = studentData;
+                }
+                
+                // Update localStorage cache
+                const localStorageKey = `student_${newStudentId}`;
+                if (typeof cacheManager !== 'undefined') {
+                  cacheManager.set(localStorageKey, studentData, 1800000); // 30 minutes
                 }
                 
                 // Show success message
@@ -1505,6 +2235,13 @@
               })
               .withFailureHandler(function(error) {
                 console.error('Failed to add student:', error);
+                
+                // Revert optimistic update - remove the temporary row
+                const tempRow = document.querySelector(`tr[data-temp-id="${tempStudentData.ID}"]`);
+                if (tempRow) {
+                  tempRow.remove();
+                }
+                
                 openNotificationModal({
                   type: 'error',
                   title: 'Failed to Add Student',
@@ -1515,6 +2252,13 @@
               .addStudent(backend.student);
           } else {
             console.error('Google Apps Script not available');
+            
+            // Revert optimistic update
+            const tempRow = document.querySelector(`tr[data-temp-id="${tempStudentData.ID}"]`);
+            if (tempRow) {
+              tempRow.remove();
+            }
+            
             openNotificationModal({
               type: 'error',
               title: 'System Error',
@@ -1526,7 +2270,110 @@
       });
     };
     
-    el.deleteBtn.addEventListener('click', () => confirm('Delete this student?'));
+    el.deleteBtn.addEventListener('click', () => {
+      console.log('🗑️ Delete button clicked from student details view');
+      const studentId = student?.id || student?.ID || '';
+      
+      if (!studentId) {
+        console.log('❌ No student ID found');
+        openNotificationModal({
+          type: 'error',
+          title: 'Error',
+          message: 'Cannot delete student: Student ID not found'
+        });
+        return;
+      }
+      
+      console.log('📋 Showing confirmation modal for student ID:', studentId);
+      openConfirmModal({
+        title: 'Delete Student',
+        message: 'Are you sure you want to delete this student? This will permanently remove all student data, payments, and notes. This action cannot be undone.',
+        onConfirm: () => {
+          console.log('✅ User confirmed deletion, proceeding with delete for student ID:', studentId);
+          // Close the student details modal first
+          const modal = document.getElementById('detailsModalRoot');
+          if (modal) {
+            modal.classList.add('hidden');
+          }
+          
+          // Delete from backend first
+          if (window.google && google.script && google.script.run) {
+            google.script.run
+              .withSuccessHandler(function(result) {
+                console.log('Student deleted successfully:', result);
+                
+                // Show success message first
+                openNotificationModal({
+                  type: 'success',
+                  title: 'Success',
+                  message: 'Student deleted successfully',
+                  onClose: () => {
+                    // Remove from table after success message is closed
+                    const tableRow = document.querySelector(`tr[data-student-id="${studentId}"]`);
+                    if (tableRow) {
+                      tableRow.remove();
+                    }
+                    
+                    // Also remove from the data arrays
+                    if (window._rows && window._displayRows) {
+                      const idIndex = window._headers ? window._headers.indexOf('ID') : -1;
+                      if (idIndex !== -1) {
+                        window._rows = window._rows.filter(row => String(row[idIndex]) !== String(studentId));
+                        window._displayRows = window._displayRows.filter(row => String(row[idIndex]) !== String(studentId));
+                        console.log(`✅ Removed student ${studentId} from data arrays`);
+                      }
+                    }
+                    
+                    // Remove from cache
+                    if (window._studentDetailsCache && window._studentDetailsCache[studentId]) {
+                      delete window._studentDetailsCache[studentId];
+                    }
+                    
+                    // Remove from localStorage cache
+                    const localStorageKey = `student_${studentId}`;
+                    if (typeof cacheManager !== 'undefined') {
+                      cacheManager.remove(localStorageKey);
+                    }
+                    
+                    // Also remove from localStorage directly as backup
+                    try {
+                      localStorage.removeItem(localStorageKey);
+                      console.log(`✅ Removed student ${studentId} from localStorage`);
+                    } catch (e) {
+                      console.warn('Failed to remove from localStorage:', e);
+                    }
+                  }
+                });
+              })
+              .withFailureHandler(function(error) {
+                console.error('Failed to delete student:', error);
+                
+                // Revert optimistic update - reload the page to restore data
+                location.reload();
+                
+                openNotificationModal({
+                  type: 'error',
+                  title: 'Error',
+                  message: 'Failed to delete student. Please try again.',
+                  details: error.message || error.toString()
+                });
+              })
+              .deleteStudent(studentId);
+          } else {
+            // Fallback: just update frontend if backend not available
+            console.log('Student deleted (backend not available):', student);
+            openNotificationModal({
+              type: 'success',
+              title: 'Success',
+              message: 'Student deleted successfully'
+            });
+          }
+        },
+        onCancel: () => {
+          // Just close the modal
+        }
+      });
+    });
     
     // Function to update student table row with new data
     function updateStudentTableRow(studentId, studentData) {
@@ -1568,34 +2415,70 @@
           switch (header) {
             case 'Name':
               value = studentData.Name || '';
+              cell.textContent = value;
               break;
             case '漢字':
               value = studentData['漢字'] || '';
+              cell.textContent = value;
               break;
             case 'Email':
               value = studentData.Email || '';
+              cell.textContent = value;
               break;
             case 'Phone':
               value = studentData.Phone || '';
+              cell.textContent = value;
               break;
             case 'Status':
               value = studentData.Status || '';
+              let statusClass = '';
+              switch(value) {
+                case 'Active': statusClass = 'badge badge-status-active'; break;
+                case 'Dormant': statusClass = 'badge badge-status-dormant'; break;
+                case 'DEMO': statusClass = 'badge badge-status-demo'; break;
+                default: statusClass = 'badge badge-status-dormant';
+              }
+              cell.innerHTML = '<span class="' + statusClass + '">' + value + '</span>';
+              cell.style.textAlign = 'center';
               break;
-            case 'Payment Type':
-              value = studentData['Payment Type'] || '';
+            case 'Payment':
+              value = studentData.Payment || '';
+              const paymentClass = value === 'NEO' ? 'badge badge-pay-neo' : 'badge badge-pay-old';
+              cell.innerHTML = '<span class="' + paymentClass + '">' + value + '</span>';
+              cell.style.textAlign = 'center';
               break;
-            case '当日キャンセル':
-              value = studentData['当日キャンセル'] || '';
+            case 'Group':
+              value = studentData.Group || '';
+              const groupClass = value === 'Individual' ? 'badge badge-group-individual' : 'badge badge-group-group';
+              cell.innerHTML = '<span class="' + groupClass + '">' + value + '</span>';
+              cell.style.textAlign = 'center';
+              break;
+            case '当日 Cancellation':
+              value = studentData['当日 Cancellation'] || '';
+              const cancelBadgeClass = value === '済' ? 'badge badge-cancel-yes' : 'badge badge-cancel-no';
+              cell.innerHTML = '<span class="' + cancelBadgeClass + '">' + value + '</span>';
+              cell.style.textAlign = 'center';
+              break;
+            case '当日':
+              value = studentData['当日'] || '';
+              const cancelBadgeClass2 = value === '済' ? 'badge badge-cancel-yes' : 'badge badge-cancel-no';
+              cell.innerHTML = '<span class="' + cancelBadgeClass2 + '">' + value + '</span>';
+              cell.style.textAlign = 'center';
+              break;
+            case '人数':
+              value = studentData['人数'] || '';
+              cell.textContent = value;
+              cell.style.textAlign = 'center';
               break;
             case '子':
               value = studentData['子'] || '';
+              cell.textContent = value;
+              cell.style.textAlign = 'center';
               break;
             default:
               // Keep existing value for other columns
-              return;
+              break;
           }
-          
-          cell.textContent = value;
         }
       });
     }
@@ -1606,10 +2489,10 @@
     }
     
     el.closeBtn.addEventListener('click', ()=> {
-      // Clear Latest Record data when modal closes
-      if (latestRecordApi) {
-        latestRecordApi.clear();
-      }
+      // Don't clear Latest Record data - it should persist in cache
+      // if (latestRecordApi) {
+      //   latestRecordApi.clear();
+      // }
       
       const modal = document.getElementById('detailsModalRoot');
       if (modal) {
@@ -1620,10 +2503,10 @@
     // Add click outside modal to close
     document.getElementById('detailsModalRoot').addEventListener('click', function(e) {
       if (e.target === this) {
-        // Clear Latest Record data when modal closes
-        if (latestRecordApi) {
-          latestRecordApi.clear();
-        }
+        // Don't clear Latest Record data - it should persist in cache
+        // if (latestRecordApi) {
+        //   latestRecordApi.clear();
+        // }
         
         this.classList.add('hidden');
       }
@@ -1634,10 +2517,10 @@
       if (e.key === 'Escape') {
         const modal = document.getElementById('detailsModalRoot');
         if (modal && !modal.classList.contains('hidden')) {
-          // Clear Latest Record data when modal closes
-          if (latestRecordApi) {
-            latestRecordApi.clear();
-          }
+          // Don't clear Latest Record data - it should persist in cache
+          // if (latestRecordApi) {
+          //   latestRecordApi.clear();
+          // }
           
           modal.classList.add('hidden');
         }
@@ -1677,6 +2560,25 @@
       if (latestRecordApi) {
         latestRecordApi.load({ latestByMonth: latestMap });
       }
+      
+      // Also update the cache with the latest changes
+      if (student && student.id) {
+        // Update the student's latestByMonth in memory cache
+        if (window._studentDetailsCache && window._studentDetailsCache[student.id]) {
+          window._studentDetailsCache[student.id].latestByMonth = { ...latestMap };
+        }
+        
+        // Update localStorage cache
+        const cacheKey = `student_${student.id}`;
+        if (typeof cacheManager !== 'undefined') {
+          const cachedData = cacheManager.get(cacheKey);
+          if (cachedData) {
+            cachedData.latestByMonth = { ...latestMap };
+            cacheManager.set(cacheKey, cachedData, 1800000); // 30 minutes
+            console.log('💾 Updated Latest Record in cache for student:', student.id);
+          }
+        }
+      }
     }
 
     // Latest Record Component Factory
@@ -1685,14 +2587,18 @@
 
       function deriveLatestByMonth(source){
         const src = source || {};
+        const fallback = { Payment: '未', lessons: [] };
+        
+        // If source has data, preserve ALL months from source
+        if (Object.keys(src).length > 0) {
+          return { ...src };
+        }
+        
+        // Fallback to current and next month if no source data
         const now = new Date();
         const m1 = MONTHS[now.getMonth()];
         const m2 = MONTHS[(now.getMonth()+1)%12];
-        const vals = Object.values(src);
-        const fallback = { Payment: '未', lessons: [] };
-        const first  = src[m1] || vals[0] || fallback;
-        const second = src[m2] || vals[1] || vals[0] || fallback;
-        return { [m1]: first, [m2]: second };
+        return { [m1]: fallback, [m2]: fallback };
       }
 
       function payBadges(isPaid){
@@ -1863,52 +2769,107 @@
             mode: 'edit',
             note: noteForModal,
             onSave: (updatedNote) => {
-              // Update the note in the original array
+              // Optimistic update: Update UI immediately
               const originalIndex = student.notes.findIndex(n => 
                 n.Date === note.Date && n.Note === note.Note && n.Staff === note.Staff
               );
               if (originalIndex !== -1) {
+                const oldNote = student.notes[originalIndex];
                 student.notes[originalIndex] = updatedNote;
                 renderNotes();
+                
+                // Update cache immediately
+                updateStudentCache(student.id, 'note', updatedNote);
                 
                 // Save to backend
                 if (window.google && google.script && google.script.run) {
                   google.script.run
                     .withSuccessHandler(function(result) {
                       console.log('Note updated successfully:', result);
+                      // Cache already updated, no additional action needed
                     })
-                                  .withFailureHandler(function(error) {
-                console.error('Failed to update note:', error);
-                openConfirmModal({
-                  title: 'Error',
-                  message: 'Failed to update note. Please try again.',
-                  onConfirm: () => {
-                    // Just close the modal
-                  },
-                  onCancel: () => {
-                    // Just close the modal
-                  }
-                });
-              })
+                    .withFailureHandler(function(error) {
+                      console.error('Failed to update note:', error);
+                      
+                      // Revert optimistic update
+                      student.notes[originalIndex] = oldNote;
+                      renderNotes();
+                      updateStudentCache(student.id, 'note', oldNote, true); // Revert
+                      
+                      openConfirmModal({
+                        title: 'Error',
+                        message: 'Failed to update note. Please try again.',
+                        onConfirm: () => {
+                          // Just close the modal
+                        },
+                        onCancel: () => {
+                          // Just close the modal
+                        }
+                      });
+                    })
                     .updateNote(updatedNote);
+                } else {
+                  // Fallback: just update frontend if backend not available
+                  console.log('Note updated (backend not available):', updatedNote);
                 }
               }
             },
             onDelete: (noteToDelete) => {
-              // Remove the note from the array
-              const originalIndex = student.notes.findIndex(n => 
-                n.Date === noteToDelete.Date && n.Note === noteToDelete.Note && n.Staff === noteToDelete.Staff
-              );
-              if (originalIndex !== -1) {
-                student.notes.splice(originalIndex, 1);
-                renderNotes();
-                
-                // Delete from backend (if there's a delete function)
-                if (window.google && google.script && google.script.run) {
-                  // Note: You may need to implement a deleteNote function in the backend
-                  console.log('Note deleted from frontend:', noteToDelete);
+              // Show custom confirmation modal
+              openConfirmModal({
+                title: 'Delete Note',
+                message: 'Are you sure you want to delete this note? This action cannot be undone.',
+                onConfirm: () => {
+                  // Optimistic update: Remove note from UI immediately
+                  const originalIndex = student.notes.findIndex(n => 
+                    n.Date === noteToDelete.Date && n.Note === noteToDelete.Note && n.Staff === noteToDelete.Staff
+                  );
+                  
+                  if (originalIndex !== -1) {
+                    const deletedNote = student.notes[originalIndex];
+                    student.notes.splice(originalIndex, 1);
+                    renderNotes();
+                    
+                    // Update cache immediately - remove the specific note
+                    removeNoteFromCache(student.id, deletedNote);
+                    
+                    // Delete from backend
+                    if (window.google && google.script && google.script.run) {
+                      google.script.run
+                        .withSuccessHandler(function(result) {
+                          console.log('Note deleted successfully:', result);
+                          // Cache already updated, no additional action needed
+                        })
+                        .withFailureHandler(function(error) {
+                          console.error('Failed to delete note:', error);
+                          
+                          // Revert optimistic update
+                          student.notes.splice(originalIndex, 0, deletedNote);
+                          renderNotes();
+                          updateStudentCache(student.id, 'note', deletedNote); // Restore to cache
+                          
+                          openConfirmModal({
+                            title: 'Error',
+                            message: 'Failed to delete note. Please try again.',
+                            onConfirm: () => {
+                              // Just close the modal
+                            },
+                            onCancel: () => {
+                              // Just close the modal
+                            }
+                          });
+                        })
+                        .deleteNote(noteToDelete);
+                    } else {
+                      // Fallback: just update frontend if backend not available
+                      console.log('Note deleted (backend not available):', noteToDelete);
+                    }
+                  }
+                },
+                onCancel: () => {
+                  // Do nothing, just close the modal
                 }
-              }
+              });
             }
           });
         });
@@ -1952,13 +2913,13 @@
         latest.forEach(v => {
           const k = v.month || '';
           const m = (k && /\d{4}-\d{2}/.test(k)) ? MONTHS[parseInt(k.slice(5,7),10)-1] : (k || '');
-          out[m] = { Payment: v.Payment || v.payment || (v.paid ? '済' : '未'), lessons: toArray(v.lessons) };
+          out[m] = { Payment: v.Payment || v.payment || (v.paid ? '済' : '未'), lessons: toArray(v.Lessons || v.lessons) };
         });
       } else {
         for (const [k, v0] of Object.entries(latest)){
           const v = v0 || {};
           const m = (k && /\d{4}-\d{2}/.test(k)) ? MONTHS[parseInt(k.slice(5,7),10)-1] : k;
-          out[m] = { Payment: (v.Payment!=null?v.Payment:(v.payment!=null?v.payment:(v.paid?'済':'未'))), lessons: toArray(v.lessons) };
+          out[m] = { Payment: (v.Payment!=null?v.Payment:(v.payment!=null?v.payment:(v.paid?'済':'未'))), lessons: toArray(v.Lessons || v.lessons) };
         }
       }
       return out;
@@ -1975,14 +2936,27 @@
       const m1 = MONTHS[now.getMonth()];
       const m2 = MONTHS[(now.getMonth()+1)%12];
       const fallback = { Payment: '未', lessons: [] };
-      return { map: { [m1]: latestMapIn[m1] || fallback, [m2]: latestMapIn[m2] || fallback }, order: [m1, m2] };
+      
+      // Try to find data with full month-year format first, then fallback to short format
+      const currentYear = now.getFullYear();
+      const nextYear = (now.getMonth() === 11) ? currentYear + 1 : currentYear;
+      const m1Full = `${m1} ${currentYear}`;
+      const m2Full = `${m2} ${nextYear}`;
+      
+      return { 
+        map: { 
+          [m1]: latestMapIn[m1Full] || latestMapIn[m1] || fallback, 
+          [m2]: latestMapIn[m2Full] || latestMapIn[m2] || fallback 
+        }, 
+        order: [m1, m2] 
+      };
     }
     function normaliseForModal(baseResp, latest){
       baseResp = safeParse(baseResp); latest = safeParse(latest);
       const s = baseResp.student || baseResp.info || baseResp.profile || {};
       const payments = baseResp.payments || baseResp.payment || baseResp.paymentHistory || s.payments || [];
       const notes    = baseResp.notes || baseResp.allNotes || s.notes || [];
-      const latestN  = normaliseLatest(baseResp.latestByMonth || latest);
+      const latestN  = normaliseLatest(baseResp.LatestByMonth || baseResp.latestByMonth || latest);
       const derived  = deriveTwoMonths(latestN);
       return {
         id:     s['ID'] || s['id'] || baseResp.id || baseResp.ID || '',
@@ -2007,6 +2981,12 @@
       student = Object(model) === model ? model : {};
       latestMap = model.latestByMonth || {};
       displayOrder = Array.isArray(model._displayOrder) ? model._displayOrder : Object.keys(latestMap);
+      
+      console.log('🔍 Debug - loadStudent called with model:', {
+        hasNotes: !!model.notes,
+        notesLength: model.notes ? model.notes.length : 0,
+        studentNotes: student.notes ? student.notes.length : 0
+      });
       
       // Ensure we have the student ID stored
       if (model && model.id) {
@@ -2089,48 +3069,58 @@
             mode: 'edit',
             payment: payment,
             onSave: (updatedPayment) => {
-              // Save to backend first
-              if (window.google && google.script && google.script.run) {
-                google.script.run
-                  .withSuccessHandler(function(result) {
-                    console.log('Payment updated successfully:', result);
-                    // Update the payment in the original array
-                    const originalIndex = student.payments.findIndex(p => 
-                      p['Transaction ID'] === payment['Transaction ID'] || 
-                      p.transactionId === payment.transactionId
-                    );
-                    if (originalIndex !== -1) {
-                      student.payments[originalIndex] = updatedPayment;
+              // Optimistic update: Update UI immediately
+              const originalIndex = student.payments.findIndex(p => 
+                p['Transaction ID'] === payment['Transaction ID'] || 
+                p.transactionId === payment.transactionId
+              );
+              
+              if (originalIndex !== -1) {
+                const oldPayment = student.payments[originalIndex];
+                student.payments[originalIndex] = updatedPayment;
+                renderPaymentsTable();
+                
+                // Update cache immediately
+                updateStudentCache(student.id, 'payment', updatedPayment);
+                
+                // Update Latest Record with updated payment status and unscheduled lessons
+                updateLatestRecordWithPayment(updatedPayment);
+                
+                // Save to backend
+                if (window.google && google.script && google.script.run) {
+                  google.script.run
+                    .withSuccessHandler(function(result) {
+                      console.log('Payment updated successfully:', result);
+                      // Update cache with server response
+                      updateStudentCache(student.id, 'payment', result);
+                    })
+                    .withFailureHandler(function(error) {
+                      console.error('Failed to update payment:', error);
+                      
+                      // Revert optimistic update
+                      student.payments[originalIndex] = oldPayment;
                       renderPaymentsTable();
-                    }
-                    // Clear cache to ensure fresh data
-                    if (window._studentDetailsCache && student?.id) {
-                      delete window._studentDetailsCache[student.id];
-                    }
-                  })
-                  .withFailureHandler(function(error) {
-                    console.error('Failed to update payment:', error);
-                    openConfirmModal({
-                      title: 'Error',
-                      message: 'Failed to update payment. Please try again.',
-                      onConfirm: () => {
-                        // Just close the modal
-                      },
-                      onCancel: () => {
-                        // Just close the modal
-                      }
-                    });
-                  })
-                  .updatePayment(updatedPayment);
-              } else {
-                // Fallback: just update frontend if backend not available
-                const originalIndex = student.payments.findIndex(p => 
-                  p['Transaction ID'] === payment['Transaction ID'] || 
-                  p.transactionId === payment.transactionId
-                );
-                if (originalIndex !== -1) {
-                  student.payments[originalIndex] = updatedPayment;
-                  renderPaymentsTable();
+                      updateStudentCache(student.id, 'payment', oldPayment, true); // Revert
+                      
+                      // Revert Latest Record changes
+                      revertLatestRecordWithPayment(updatedPayment);
+                      updateLatestRecordWithPayment(oldPayment);
+                      
+                      openConfirmModal({
+                        title: 'Error',
+                        message: 'Failed to update payment. Please try again.',
+                        onConfirm: () => {
+                          // Just close the modal
+                        },
+                        onCancel: () => {
+                          // Just close the modal
+                        }
+                      });
+                    })
+                    .updatePayment(updatedPayment);
+                } else {
+                  // Fallback: just update frontend if backend not available
+                  console.log('Payment updated (backend not available):', updatedPayment);
                 }
               }
             },
@@ -2164,42 +3154,58 @@
                     return;
                   }
                   
-                  // Delete from backend first
-                  if (window.google && google.script && google.script.run) {
-                    google.script.run
-                      .withSuccessHandler(function(result) {
-                        console.log('Payment deleted successfully:', result);
-                        // Remove the payment from the array
-                        const originalIndex = student.payments.findIndex(p => 
-                          p['Transaction ID'] === transactionId || 
-                          p.transactionId === transactionId ||
-                          p.id === transactionId ||
-                          p['Txn'] === transactionId ||
-                          p.txn === transactionId
-                        );
-                        if (originalIndex !== -1) {
-                          student.payments.splice(originalIndex, 1);
+                  // Optimistic update: Remove payment from UI immediately
+                  const originalIndex = student.payments.findIndex(p => 
+                    p['Transaction ID'] === transactionId || 
+                    p.transactionId === transactionId ||
+                    p.id === transactionId ||
+                    p['Txn'] === transactionId ||
+                    p.txn === transactionId
+                  );
+                  
+                  if (originalIndex !== -1) {
+                    const deletedPayment = student.payments[originalIndex];
+                    student.payments.splice(originalIndex, 1);
+                    renderPaymentsTable();
+                    
+                    // Update cache immediately - remove the specific payment
+                    removePaymentFromCache(student.id, deletedPayment);
+                    
+                    // Update Latest Record - revert payment status and remove unscheduled lessons
+                    revertLatestRecordWithPayment(deletedPayment);
+                    
+                    // Delete from backend
+                    if (window.google && google.script && google.script.run) {
+                      google.script.run
+                        .withSuccessHandler(function(result) {
+                          console.log('Payment deleted successfully:', result);
+                          // Cache already updated, no additional action needed
+                        })
+                        .withFailureHandler(function(error) {
+                          console.error('Failed to delete payment:', error);
+                          
+                          // Revert optimistic update
+                          student.payments.splice(originalIndex, 0, deletedPayment);
                           renderPaymentsTable();
-                        }
-                        // Clear cache to ensure fresh data
-                        if (window._studentDetailsCache && student?.id) {
-                          delete window._studentDetailsCache[student.id];
-                        }
-                      })
-                      .withFailureHandler(function(error) {
-                        console.error('Failed to delete payment:', error);
-                        openConfirmModal({
-                          title: 'Error',
-                          message: 'Failed to delete payment. Please try again.',
-                          onConfirm: () => {
-                            // Just close the modal
-                          },
-                          onCancel: () => {
-                            // Just close the modal
-                          }
-                        });
-                      })
-                      .deletePayment({ ...paymentToDelete, 'Transaction ID': transactionId });
+                          updateStudentCache(student.id, 'payment', deletedPayment); // Restore to cache
+                          updateLatestRecordWithPayment(deletedPayment); // Restore Latest Record
+                          
+                          openConfirmModal({
+                            title: 'Error',
+                            message: 'Failed to delete payment. Please try again.',
+                            onConfirm: () => {
+                              // Just close the modal
+                            },
+                            onCancel: () => {
+                              // Just close the modal
+                            }
+                          });
+                        })
+                        .deletePayment({ ...paymentToDelete, 'Transaction ID': transactionId });
+                    } else {
+                      // Fallback: just update frontend if backend not available
+                      console.log('Payment deleted (backend not available):', paymentToDelete);
+                    }
                   }
                 },
                 onCancel: () => {
@@ -2236,6 +3242,39 @@
         .getStudentDetails(id);
     });
     */
+
+    // Cache status update function
+    function updateCacheStatus() {
+      const indicator = document.getElementById('cacheIndicator');
+      const text = document.getElementById('cacheText');
+      
+      if (!indicator || !text) return;
+      
+      // Check if cacheManager is available
+      if (typeof window.cacheManager !== 'undefined') {
+        const stats = window.cacheManager.getStats();
+        
+        if (stats.activeEntries > 0) {
+          indicator.className = 'w-2 h-2 rounded-full bg-green-400';
+          text.textContent = `${stats.activeEntries} cached`;
+          text.title = `Cache: ${stats.activeEntries} active entries, ${stats.totalSize}`;
+        } else {
+          indicator.className = 'w-2 h-2 rounded-full bg-yellow-400';
+          text.textContent = 'No cache';
+          text.title = 'No cached data available';
+        }
+      } else {
+        indicator.className = 'w-2 h-2 rounded-full bg-gray-400';
+        text.textContent = 'Cache';
+        text.title = 'Cache system not initialized';
+      }
+    }
+
+    // Update cache status every 30 seconds
+    setInterval(updateCacheStatus, 30000);
+    
+    // Initial cache status update
+    setTimeout(updateCacheStatus, 2000);
   </script>
 
 </body>
