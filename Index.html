@@ -28,6 +28,14 @@
           <i data-lucide="user-plus" class="w-4 h-4"></i>
           <span>Add Student</span>
         </button>
+        <button id="newFeatureBtn" class="px-4 py-2 border border-white text-white rounded-lg hover:bg-white hover:text-green-600 transition-colors flex items-center space-x-2">
+          <i data-lucide="alert-circle" class="w-4 h-4"></i>
+          <span>未納</span>
+        </button>
+        <button id="unscheduledBtn" class="px-4 py-2 border border-white text-white rounded-lg hover:bg-white hover:text-green-600 transition-colors flex items-center space-x-2">
+          <i data-lucide="calendar-x" class="w-4 h-4"></i>
+          <span>未定</span>
+        </button>
         <div class="relative notification-wrapper">
           <button id="notifBtn" type="button" class="px-4 py-2 border border-white text-white rounded-lg hover:bg-white hover:text-green-600 transition-colors flex items-center space-x-2" onclick="toggleNotifications()">
             <i data-lucide="bell" class="w-4 h-4"></i>
@@ -89,6 +97,273 @@
       // icons + initial view
       if (window.lucide && lucide.createIcons) lucide.createIcons();
       showStudents();
+      
+      // New Feature Modal functionality
+      const newFeatureBtn = document.getElementById('newFeatureBtn');
+      const newFeatureModal = document.getElementById('newFeatureModal');
+      const newFeatureClose = document.getElementById('newFeatureClose');
+      const newFeatureCancel = document.getElementById('newFeatureCancel');
+      const newFeatureOK = document.getElementById('newFeatureOK');
+      
+      // Open modal
+      if (newFeatureBtn) {
+        newFeatureBtn.addEventListener('click', function() {
+          newFeatureModal.classList.remove('hidden');
+          // Re-initialize icons after showing modal
+          if (window.lucide && lucide.createIcons) lucide.createIcons();
+          // Load unpaid students data
+          loadUnpaidStudents();
+        });
+      }
+      
+      // Refresh button functionality
+      const refreshUnpaidBtn = document.getElementById('refreshUnpaidBtn');
+      if (refreshUnpaidBtn) {
+        refreshUnpaidBtn.addEventListener('click', function() {
+          loadUnpaidStudents();
+        });
+      }
+      
+      // Unscheduled button functionality
+      const unscheduledBtn = document.getElementById('unscheduledBtn');
+      if (unscheduledBtn) {
+        unscheduledBtn.addEventListener('click', function() {
+          newFeatureModal.classList.remove('hidden');
+          // Re-initialize icons after showing modal
+          if (window.lucide && lucide.createIcons) lucide.createIcons();
+          // Load unscheduled students data
+          loadUnscheduledStudents();
+        });
+      }
+      
+      // Book Lesson button functionality
+      const bookLessonBtn = document.getElementById('bookLessonBtn');
+      if (bookLessonBtn) {
+        bookLessonBtn.addEventListener('click', function() {
+          // Get current student data from the global student object
+          console.log('Book lesson button clicked. Current student:', window.student);
+          console.log('Student ID check:', window.student?.ID || window.student?.id);
+          
+          if (window.student && (window.student.ID || window.student.id)) {
+            openBookLessonModal({ 
+              student: window.student,
+              onClose: () => {
+                console.log('Book lesson modal closed');
+              }
+            });
+          } else {
+            alert('Please select a student first to book a lesson.');
+          }
+        });
+      }
+      
+      // Function to load unpaid students from Unpaid sheet
+      function loadUnpaidStudents() {
+        const tableBody = document.getElementById('unpaidStudentsTableBody');
+        const countElement = document.getElementById('unpaidCount');
+        const countContainer = document.getElementById('unpaidStudentsCount');
+        const modalTitle = document.getElementById('modalTitle');
+        const modalHeaderText = document.getElementById('modalHeaderText');
+        
+        // Update modal title
+        if (modalTitle) modalTitle.textContent = 'Unpaid Students';
+        if (modalHeaderText) modalHeaderText.textContent = 'Students with Outstanding Payments';
+        
+        // Show loading state
+        tableBody.innerHTML = `
+          <tr>
+            <td class="px-3 py-2 text-center text-gray-500">
+              <div class="flex justify-center items-center">
+                <div class="animate-spin rounded-full h-6 w-6 border-b-2 border-green-600"></div>
+                <span class="ml-2 text-gray-600">Loading unpaid students...</span>
+              </div>
+            </td>
+          </tr>
+        `;
+        if (window.lucide && lucide.createIcons) lucide.createIcons();
+        
+        // Fetch data from LessonsMonth sheet
+        google.script.run
+          .withSuccessHandler(function(data) {
+            if (data && data.length > 0) {
+              // Clear loading state
+              tableBody.innerHTML = '';
+              
+              // Populate table with student names
+              data.forEach(function(student) {
+                const row = document.createElement('tr');
+                row.className = 'hover:bg-gray-50 cursor-pointer';
+                row.setAttribute('data-student-id', student.id);
+                
+                row.innerHTML = `
+                  <td class="px-3 py-2 text-left text-sm text-gray-900">
+                    ${student.name || 'Unknown'}
+                  </td>
+                `;
+                
+                // Add click handler to open student details
+                row.addEventListener('click', function() {
+                  const studentId = this.getAttribute('data-student-id');
+                  if (studentId && typeof openStudentDetails === 'function') {
+                    openStudentDetails(studentId);
+                    closeNewFeatureModal();
+                  }
+                });
+                
+                tableBody.appendChild(row);
+              });
+              
+              // Update count
+              if (countElement) countElement.textContent = data.length;
+              if (countContainer) countContainer.classList.remove('hidden');
+            } else {
+              // No unpaid students found
+              tableBody.innerHTML = `
+                <tr>
+                  <td class="px-3 py-2 text-center text-gray-500">
+                    <div class="flex justify-center items-center">
+                      <i data-lucide="check-circle" class="w-4 h-4 text-green-500"></i>
+                      <span class="ml-2">All students are up to date with payments!</span>
+                    </div>
+                  </td>
+                </tr>
+              `;
+              if (countElement) countElement.textContent = '0';
+              if (countContainer) countContainer.classList.remove('hidden');
+            }
+            
+            // Re-initialize icons
+            if (window.lucide && lucide.createIcons) lucide.createIcons();
+          })
+          .withFailureHandler(function(error) {
+            console.error('Error loading unpaid students:', error);
+            tableBody.innerHTML = `
+              <tr>
+                <td class="px-3 py-2 text-center text-red-500">
+                  <div class="flex justify-center items-center">
+                    <i data-lucide="alert-circle" class="w-4 h-4"></i>
+                    <span class="ml-2">Error loading data. Please try again.</span>
+                  </div>
+                </td>
+              </tr>
+            `;
+            if (window.lucide && lucide.createIcons) lucide.createIcons();
+          })
+          .getUnpaidStudents();
+      }
+      
+      // Function to load unscheduled students from LessonsMonth sheet
+      function loadUnscheduledStudents() {
+        const tableBody = document.getElementById('unpaidStudentsTableBody');
+        const countElement = document.getElementById('unpaidCount');
+        const countContainer = document.getElementById('unpaidStudentsCount');
+        const modalTitle = document.getElementById('modalTitle');
+        const modalHeaderText = document.getElementById('modalHeaderText');
+        
+        // Update modal title
+        if (modalTitle) modalTitle.textContent = 'Unscheduled Students';
+        if (modalHeaderText) modalHeaderText.textContent = 'Students with no Appointments this month';
+        
+        // Show loading state
+        tableBody.innerHTML = `
+          <tr>
+            <td class="px-3 py-2 text-center text-gray-500">
+              <div class="flex justify-center items-center">
+                <div class="animate-spin rounded-full h-6 w-6 border-b-2 border-green-600"></div>
+                <span class="ml-2 text-gray-600">Loading unscheduled students...</span>
+              </div>
+            </td>
+          </tr>
+        `;
+        if (window.lucide && lucide.createIcons) lucide.createIcons();
+        
+        // Fetch data from LessonsMonth sheet
+        google.script.run
+          .withSuccessHandler(function(data) {
+            if (data && data.length > 0) {
+              // Clear loading state
+              tableBody.innerHTML = '';
+              
+              // Populate table with student names
+              data.forEach(function(student) {
+                const row = document.createElement('tr');
+                row.className = 'hover:bg-gray-50 cursor-pointer';
+                row.setAttribute('data-student-id', student.id);
+                
+                row.innerHTML = `
+                  <td class="px-3 py-2 text-left text-sm text-gray-900">
+                    ${student.name || 'Unknown'}
+                  </td>
+                `;
+                
+                // Add click handler to open student details
+                row.addEventListener('click', function() {
+                  const studentId = this.getAttribute('data-student-id');
+                  if (studentId && typeof openStudentDetails === 'function') {
+                    openStudentDetails(studentId);
+                    closeNewFeatureModal();
+                  }
+                });
+                
+                tableBody.appendChild(row);
+              });
+              
+              // Update count
+              if (countElement) countElement.textContent = data.length;
+              if (countContainer) countContainer.classList.remove('hidden');
+            } else {
+              // No unscheduled students found
+              tableBody.innerHTML = `
+                <tr>
+                  <td class="px-3 py-2 text-center text-gray-500">
+                    <div class="flex justify-center items-center">
+                      <i data-lucide="check-circle" class="w-4 h-4 text-green-500"></i>
+                      <span class="ml-2">All students have scheduled lessons!</span>
+                    </div>
+                  </td>
+                </tr>
+              `;
+              if (countElement) countElement.textContent = '0';
+              if (countContainer) countContainer.classList.remove('hidden');
+            }
+            
+            // Re-initialize icons
+            if (window.lucide && lucide.createIcons) lucide.createIcons();
+          })
+          .withFailureHandler(function(error) {
+            console.error('Error loading unscheduled students:', error);
+            tableBody.innerHTML = `
+              <tr>
+                <td class="px-3 py-2 text-center text-red-500">
+                  <div class="flex justify-center items-center">
+                    <i data-lucide="alert-circle" class="w-4 h-4"></i>
+                    <span class="ml-2">Error loading data. Please try again.</span>
+                  </div>
+                </td>
+              </tr>
+            `;
+            if (window.lucide && lucide.createIcons) lucide.createIcons();
+          })
+          .getUnscheduledStudents();
+      }
+      
+      // Close modal functions
+      function closeNewFeatureModal() {
+        newFeatureModal.classList.add('hidden');
+      }
+      
+      if (newFeatureClose) newFeatureClose.addEventListener('click', closeNewFeatureModal);
+      if (newFeatureCancel) newFeatureCancel.addEventListener('click', closeNewFeatureModal);
+      if (newFeatureOK) newFeatureOK.addEventListener('click', closeNewFeatureModal);
+      
+      // Close modal when clicking backdrop
+      if (newFeatureModal) {
+        newFeatureModal.addEventListener('click', function(e) {
+          if (e.target === newFeatureModal) {
+            closeNewFeatureModal();
+          }
+        });
+      }
     });
   </script>
 
@@ -121,7 +396,15 @@
           <section id="latestSection" class="rounded-xl border border-gray-200 bg-white shadow-card w-[576px] h-[300px] grid grid-rows-[auto,1fr]">
             <header class="flex items-center justify-between px-4 py-3 border-b border-gray-200">
               <h3 class="font-semibold">Latest Record</h3>
-              <div id="lr_monthTabs" class="inline-flex rounded-lg overflow-hidden border border-gray-200"></div>
+              <div class="flex items-center gap-2">
+                <button id="bookLessonBtn" class="inline-flex items-center gap-2 rounded-lg bg-blue-600 text-white px-3 py-1.5 text-sm font-semibold hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+                  </svg>
+                  Book a Lesson
+                </button>
+                <div id="lr_monthTabs" class="inline-flex rounded-lg overflow-hidden border border-gray-200"></div>
+              </div>
             </header>
             <div class="px-4 py-3 space-y-3">
               <table class="w-full text-sm">
@@ -286,14 +569,6 @@
               <label class="block text-gray-600 mb-1">Time</label>
               <div id="lessonTime" class="font-medium"></div>
             </div>
-            <div>
-              <label class="block text-gray-600 mb-1">Duration</label>
-              <div id="lessonDuration" class="font-medium">60 minutes</div>
-            </div>
-            <div>
-              <label class="block text-gray-600 mb-1">Type</label>
-              <div id="lessonType" class="font-medium">Individual</div>
-            </div>
           </div>
           <div>
             <label class="block text-gray-600 mb-1">Notes</label>
@@ -302,8 +577,145 @@
             </div>
           </div>
         </div>
-        <footer class="flex items-center justify-end px-4 py-3 border-t border-gray-200">
+        <footer class="flex items-center justify-between px-4 py-3 border-t border-gray-200">
+          <div class="flex gap-2">
+            <button type="button" id="lessonCancelBtn" class="rounded-md border border-red-300 bg-red-50 px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-100 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2">
+              Cancel
+            </button>
+            <button type="button" id="lessonRescheduleBtn" class="rounded-md border border-blue-300 bg-blue-50 px-3 py-1.5 text-sm font-medium text-blue-700 hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
+              Reschedule
+            </button>
+            <button type="button" id="lessonRemoveBtn" class="rounded-md border border-gray-300 bg-gray-50 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2">
+              Remove
+            </button>
+          </div>
           <button type="button" id="lessonDetailsCancel" class="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50">Close</button>
+        </footer>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Book Lesson Modal ===== -->
+  <div id="bookLessonModal" class="fixed inset-0 z-[9999] hidden">
+    <div class="absolute inset-0 bg-black/50"></div>
+    <div class="absolute inset-0 flex items-center justify-center p-4 sm:p-8 overflow-auto">
+      <div class="w-full max-w-6xl rounded-2xl bg-white modal-card ring-1 ring-black/5">
+        <header class="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+          <div>
+            <h3 id="bookLessonTitle" class="text-xl font-semibold text-gray-900">Book a New Lesson</h3>
+            <p id="bookLessonStudentInfo" class="text-sm text-gray-600 mt-1">Loading student information...</p>
+          </div>
+          <button type="button" id="bookLessonClose" class="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium hover:bg-gray-50">Close</button>
+        </header>
+        
+        <div class="p-6">
+          <!-- Week Navigation -->
+          <div class="flex items-center justify-between mb-6">
+            <button type="button" id="prevWeekBtn" class="flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+              </svg>
+              Previous Week
+            </button>
+            <h4 id="currentWeekDisplay" class="text-lg font-semibold text-gray-900">Week of [Date]</h4>
+            <button type="button" id="nextWeekBtn" class="flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
+              Next Week
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+              </svg>
+            </button>
+          </div>
+
+          <!-- Calendar Grid -->
+          <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
+            <!-- Calendar Header - Sticky -->
+            <div class="sticky top-0 z-10 grid grid-cols-8 bg-green-600 text-white">
+              <div class="px-4 py-3 text-sm font-semibold text-center">Time</div>
+              <div class="px-4 py-3 text-sm font-semibold text-center" data-day="0">
+                <div>MON</div>
+                <div id="date-0" class="text-xs font-normal mt-1">--</div>
+              </div>
+              <div class="px-4 py-3 text-sm font-semibold text-center" data-day="1">
+                <div>TUE</div>
+                <div id="date-1" class="text-xs font-normal mt-1">--</div>
+              </div>
+              <div class="px-4 py-3 text-sm font-semibold text-center" data-day="2">
+                <div>WED</div>
+                <div id="date-2" class="text-xs font-normal mt-1">--</div>
+              </div>
+              <div class="px-4 py-3 text-sm font-semibold text-center" data-day="3">
+                <div>THU</div>
+                <div id="date-3" class="text-xs font-normal mt-1">--</div>
+              </div>
+              <div class="px-4 py-3 text-sm font-semibold text-center" data-day="4">
+                <div>FRI</div>
+                <div id="date-4" class="text-xs font-normal mt-1">--</div>
+              </div>
+              <div class="px-4 py-4 text-sm font-semibold text-center" data-day="5">
+                <div>SAT</div>
+                <div id="date-5" class="text-xs font-normal mt-1">--</div>
+              </div>
+              <div class="px-4 py-3 text-sm font-semibold text-center" data-day="6">
+                <div>SUN</div>
+                <div id="date-6" class="text-xs font-normal mt-1">--</div>
+              </div>
+            </div>
+            
+            <!-- Calendar Body - Scrollable -->
+            <div class="overflow-y-auto" style="max-height: 70vh; min-height: 400px; margin: 0; padding: 0;">
+              <div id="calendarGrid" class="grid grid-cols-8" style="grid-auto-rows: 60px; min-height: 660px; margin: 0; padding: 0;">
+                <!-- Time slots will be generated by JavaScript -->
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <footer class="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-200">
+          <button type="button" id="bookLessonCancel" class="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Close</button>
+        </footer>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Time Slot Selection Modal ===== -->
+  <div id="timeSlotModal" class="fixed inset-0 z-[9999] hidden">
+    <div class="absolute inset-0 bg-black/50"></div>
+    <div class="absolute inset-0 flex items-center justify-center p-4 sm:p-8 overflow-auto">
+      <div class="w-full max-w-md rounded-2xl bg-white modal-card ring-1 ring-black/5">
+        <header class="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+          <div>
+            <h3 id="timeSlotTitle" class="text-lg font-semibold text-gray-900">Select Time Slot</h3>
+            <p id="timeSlotInfo" class="text-sm text-gray-600 mt-1">Choose your preferred time</p>
+          </div>
+          <button type="button" id="timeSlotClose" class="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium hover:bg-gray-50">Close</button>
+        </header>
+        
+        <div class="p-6">
+          <div class="mb-4">
+            <label class="block text-sm font-medium text-gray-700 mb-2">Selected Time</label>
+            <div id="selectedTimeDisplay" class="p-3 bg-gray-50 rounded-lg text-lg font-medium text-gray-900">
+              <!-- Selected time will be displayed here -->
+            </div>
+          </div>
+          
+          <div class="mb-4">
+            <label class="block text-sm font-medium text-gray-700 mb-2">Lesson Type</label>
+            <select id="slotType" class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm">
+              <option value="Online">Online</option>
+              <option value="Cafe">Cafe</option>
+            </select>
+          </div>
+          
+          <div class="mb-4">
+            <label class="block text-sm font-medium text-gray-700 mb-2">Notes (Optional)</label>
+            <textarea id="slotNotes" rows="3" class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm" placeholder="Any additional notes for this lesson..."></textarea>
+          </div>
+        </div>
+
+        <footer class="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-200">
+          <button type="button" id="timeSlotCancel" class="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
+          <button type="button" id="timeSlotConfirm" class="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">Confirm Booking</button>
         </footer>
       </div>
     </div>
@@ -382,6 +794,67 @@
         </div>
         <footer class="flex items-center justify-end gap-2 px-4 py-3 bg-gray-50 border-t border-gray-200">
           <button type="button" id="notificationOK" class="rounded-md bg-green-600 text-white px-4 py-1.5 text-sm font-semibold hover:bg-green-700">OK</button>
+        </footer>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Unpaid Students Modal ===== -->
+  <div id="newFeatureModal" class="fixed inset-0 z-[9999] hidden">
+    <div class="absolute inset-0 bg-black/50"></div>
+    <div class="absolute inset-0 flex items-center justify-center p-4 sm:p-8 overflow-auto">
+      <div class="w-full max-w-4xl rounded-2xl bg-white modal-card ring-1 ring-black/5">
+        <header class="flex items-center justify-between px-4 py-3 bg-green-600 text-white">
+          <h3 id="modalTitle" class="text-lg font-semibold">Unpaid Students</h3>
+          <button type="button" id="newFeatureClose" class="rounded-md border border-white/30 bg-white/10 px-2.5 py-1 text-xs font-medium hover:bg-white/20">Close</button>
+        </header>
+        <div class="p-6">
+          <div class="flex items-center justify-between mb-4">
+            <div class="flex items-center space-x-3">
+              <div class="flex-shrink-0">
+                <div class="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center">
+                  <i data-lucide="alert-circle" class="w-5 h-5 text-red-600"></i>
+                </div>
+              </div>
+              <div>
+                <h4 id="modalHeaderText" class="text-lg font-medium text-gray-900">Students with Outstanding Payments</h4>
+                <p class="text-sm text-gray-500">Click on a student to view their details</p>
+              </div>
+            </div>
+            <button id="refreshUnpaidBtn" class="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium hover:bg-gray-50">
+              <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+              Refresh
+            </button>
+          </div>
+          
+          <!-- Table wrapper matching student list style -->
+          <div class="relative overflow-auto max-h-[50vh] w-full rounded-xl border border-black/5 bg-white shadow-sm">
+            <table class="min-w-full border-separate border-spacing-0">
+              <thead class="sticky top-0 bg-green-600 text-white shadow">
+                <tr>
+                  <th class="px-3 py-2 text-left font-semibold">Student Name</th>
+                </tr>
+              </thead>
+              <tbody id="unpaidStudentsTableBody">
+                <tr>
+                  <td class="px-3 py-2 text-center text-gray-500">
+                    <div class="flex justify-center items-center">
+                      <div class="animate-spin rounded-full h-6 w-6 border-b-2 border-green-600"></div>
+                      <span class="ml-2 text-gray-600">Loading unpaid students...</span>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          
+          <div id="unpaidStudentsCount" class="mt-4 text-sm text-gray-600 hidden">
+            <span class="font-medium">Total unpaid students: </span>
+            <span id="unpaidCount" class="font-semibold text-red-600">0</span>
+          </div>
+        </div>
+        <footer class="flex items-center justify-end gap-2 px-4 py-3 bg-gray-50 border-t border-gray-200">
+          <button type="button" id="newFeatureCancel" class="rounded-md border border-gray-300 bg-white px-4 py-1.5 text-sm font-semibold text-gray-700 hover:bg-gray-50">Close</button>
         </footer>
       </div>
     </div>
@@ -574,6 +1047,8 @@
   <script>
     const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
     let student = {}; let latestMap = {}; let displayOrder = [];
+    // Make student globally accessible
+    window.student = student;
 
     // ---------- Utilities ----------
     const $$ = (sel, root=document) => Array.from(root.querySelectorAll(sel));
@@ -890,8 +1365,24 @@
       root: $('#lessonDetailsModal'), title: $('#lessonDetailsTitle'),
       close: $('#lessonDetailsClose'), cancel: $('#lessonDetailsCancel'),
       statusDot: $('#lessonStatusDot'), statusText: $('#lessonStatusText'),
-      date: $('#lessonDate'), time: $('#lessonTime'), duration: $('#lessonDuration'),
-      type: $('#lessonType'), notes: $('#lessonNotes')
+      date: $('#lessonDate'), time: $('#lessonTime'), notes: $('#lessonNotes'),
+      cancelBtn: $('#lessonCancelBtn'), rescheduleBtn: $('#lessonRescheduleBtn'), removeBtn: $('#lessonRemoveBtn')
+    };
+
+    // ---------- Book Lesson Modal API ----------
+    const bookLessonEls = {
+      root: $('#bookLessonModal'), title: $('#bookLessonTitle'),
+      close: $('#bookLessonClose'), cancel: $('#bookLessonCancel'),
+      studentInfo: $('#bookLessonStudentInfo'), calendarGrid: $('#calendarGrid'),
+      currentWeekDisplay: $('#currentWeekDisplay'), prevWeekBtn: $('#prevWeekBtn'), nextWeekBtn: $('#nextWeekBtn')
+    };
+
+    // ---------- Time Slot Modal API ----------
+    const timeSlotEls = {
+      root: $('#timeSlotModal'), title: $('#timeSlotTitle'), info: $('#timeSlotInfo'),
+      close: $('#timeSlotClose'), cancel: $('#timeSlotCancel'), confirm: $('#timeSlotConfirm'),
+      selectedTimeDisplay: $('#selectedTimeDisplay'), 
+      type: $('#slotType'), notes: $('#slotNotes')
     };
 
     function openLessonDetailsModal({ lesson=null, student=null, onClose=()=>{} }={}){
@@ -929,10 +1420,6 @@
 
       lessonDetailsEls.date.textContent = day || 'Not specified';
       lessonDetailsEls.time.textContent = time || 'Not specified';
-      
-      // Set lesson type based on student data
-      const lessonType = student?.group || 'Individual';
-      lessonDetailsEls.type.textContent = lessonType;
 
       // Set notes (placeholder for now)
       lessonDetailsEls.notes.textContent = 'No additional notes available.';
@@ -942,12 +1429,927 @@
       function cleanup(){
         lessonDetailsEls.close.removeEventListener('click', doClose);
         lessonDetailsEls.cancel.removeEventListener('click', doClose);
+        lessonDetailsEls.cancelBtn.removeEventListener('click', handleCancelLesson);
+        lessonDetailsEls.rescheduleBtn.removeEventListener('click', handleRescheduleLesson);
+        lessonDetailsEls.removeBtn.removeEventListener('click', handleRemoveLesson);
         hide(lessonDetailsEls.root);
       }
 
+      // Handle lesson actions
+      function handleCancelLesson() {
+        console.log('Cancel lesson clicked', lesson);
+        
+        const reason = prompt('Please enter the reason for cancellation:');
+        if (!reason) return;
+        
+        // For now, we'll use a placeholder event ID since lesson cards don't have event IDs yet
+        // TODO: Add event ID to lesson data structure
+        const eventId = 'placeholder_event_id_' + Date.now();
+        const studentId = student?.id || student?.ID || 'unknown';
+        
+        google.script.run
+          .withSuccessHandler(function(result) {
+            if (result.success) {
+              alert('Lesson cancelled successfully!');
+              doClose();
+              // Refresh the latest record to show updated status
+              if (typeof updateLatestRecord === 'function') {
+                updateLatestRecord();
+              }
+            } else {
+              alert('Error cancelling lesson: ' + result.error);
+            }
+          })
+          .withFailureHandler(function(error) {
+            console.error('Error cancelling lesson:', error);
+            alert('Error cancelling lesson. Please try again.');
+          })
+          .cancelLesson(eventId, reason, studentId);
+      }
+
+      function handleRescheduleLesson() {
+        console.log('Reschedule lesson clicked', lesson);
+        
+        const newDateTime = prompt('Please enter the new date and time (YYYY-MM-DD HH:MM):');
+        if (!newDateTime) return;
+        
+        const reason = prompt('Please enter the reason for rescheduling:');
+        if (!reason) return;
+        
+        // For now, we'll use a placeholder event ID since lesson cards don't have event IDs yet
+        // TODO: Add event ID to lesson data structure
+        const eventId = 'placeholder_event_id_' + Date.now();
+        const studentId = student?.id || student?.ID || 'unknown';
+        
+        google.script.run
+          .withSuccessHandler(function(result) {
+            if (result.success) {
+              alert('Lesson rescheduled successfully!');
+              doClose();
+              // Refresh the latest record to show updated status
+              if (typeof updateLatestRecord === 'function') {
+                updateLatestRecord();
+              }
+            } else {
+              alert('Error rescheduling lesson: ' + result.error);
+            }
+          })
+          .withFailureHandler(function(error) {
+            console.error('Error rescheduling lesson:', error);
+            alert('Error rescheduling lesson. Please try again.');
+          })
+          .rescheduleLesson(eventId, newDateTime, reason, studentId);
+      }
+
+      function handleRemoveLesson() {
+        console.log('Remove lesson clicked', lesson);
+        
+        if (!confirm('Are you sure you want to remove this lesson? This action cannot be undone.')) {
+          return;
+        }
+        
+        const reason = prompt('Please enter the reason for removal:');
+        if (!reason) return;
+        
+        // For now, we'll use a placeholder event ID since lesson cards don't have event IDs yet
+        // TODO: Add event ID to lesson data structure
+        const eventId = 'placeholder_event_id_' + Date.now();
+        const studentId = student?.id || student?.ID || 'unknown';
+        
+        google.script.run
+          .withSuccessHandler(function(result) {
+            if (result.success) {
+              alert('Lesson removed successfully!');
+              doClose();
+              // Refresh the latest record to show updated status
+              if (typeof updateLatestRecord === 'function') {
+                updateLatestRecord();
+              }
+            } else {
+              alert('Error removing lesson: ' + result.error);
+            }
+          })
+          .withFailureHandler(function(error) {
+            console.error('Error removing lesson:', error);
+            alert('Error removing lesson. Please try again.');
+          })
+          .removeLesson(eventId, reason, studentId);
+      }
+
+      // Add event listeners
       lessonDetailsEls.close.addEventListener('click', doClose);
       lessonDetailsEls.cancel.addEventListener('click', doClose);
+      lessonDetailsEls.cancelBtn.addEventListener('click', handleCancelLesson);
+      lessonDetailsEls.rescheduleBtn.addEventListener('click', handleRescheduleLesson);
+      lessonDetailsEls.removeBtn.addEventListener('click', handleRemoveLesson);
+      
       show(lessonDetailsEls.root);
+    }
+
+    function openTimeSlotModal({ date=null, time=null, student=null, onClose=()=>{}, onConfirm=()=>{} }={}){
+      if (!date || !time || !student) {
+        console.error('Missing required data for time slot modal');
+        return;
+      }
+
+      // Format the selected time for display
+      const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+      const dayName = dayNames[date.getDay()];
+      const dateStr = date.toLocaleDateString();
+      const timeStr = `${dayName}, ${dateStr} at ${time}`;
+      
+      // Update modal content
+      timeSlotEls.selectedTimeDisplay.textContent = timeStr;
+      timeSlotEls.type.value = 'Cafe'; // Default to Cafe
+      timeSlotEls.notes.value = '';
+
+      // Add event listeners
+      const doClose = () => { onClose(); cleanup(); };
+      const doConfirm = () => {
+        const lessonData = {
+          date: date.toISOString().split('T')[0],
+          time: time,
+          duration: 50, // Fixed duration of 50 minutes
+          type: timeSlotEls.type.value,
+          notes: timeSlotEls.notes.value,
+          studentId: student.ID || student.id,
+          studentName: student.Name || student.name || 'Unknown Student'
+        };
+        onConfirm(lessonData);
+        cleanup();
+      };
+
+      function cleanup(){
+        timeSlotEls.close.removeEventListener('click', doClose);
+        timeSlotEls.cancel.removeEventListener('click', doClose);
+        timeSlotEls.confirm.removeEventListener('click', doConfirm);
+        hide(timeSlotEls.root);
+      }
+
+      timeSlotEls.close.addEventListener('click', doClose);
+      timeSlotEls.cancel.addEventListener('click', doClose);
+      timeSlotEls.confirm.addEventListener('click', doConfirm);
+      
+      show(timeSlotEls.root);
+    }
+
+    function handleTimeSlotBooking(lessonData) {
+      console.log('Booking lesson with data:', lessonData);
+      
+      // Create datetime string for backend
+      const dateTime = new Date(lessonData.date + 'T' + lessonData.time);
+      
+      // Book the lesson
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result.success) {
+            alert('Lesson booked successfully!');
+            // Close the booking modal and refresh data
+            if (typeof updateLatestRecord === 'function') {
+              updateLatestRecord();
+            }
+            // Close the booking modal
+            const doClose = () => { 
+              bookLessonEls.close.removeEventListener('click', doClose);
+              bookLessonEls.cancel.removeEventListener('click', doClose);
+              hide(bookLessonEls.root);
+            };
+            doClose();
+          } else {
+            alert('Error booking lesson: ' + result.error);
+          }
+        })
+        .withFailureHandler(function(error) {
+          console.error('Error booking lesson:', error);
+          alert('Error booking lesson. Please try again.');
+        })
+        .bookLesson(lessonData.studentId, dateTime.toISOString(), lessonData.duration, lessonData.type, lessonData.notes);
+    }
+
+    function openBookLessonModal({ student=null, onClose=()=>{} }={}){
+      if (!student) {
+        console.error('No student data provided for booking lesson');
+        return;
+      }
+
+      // Set student information
+      const studentName = student.Name || student.name || 'Unknown Student';
+      const studentKanji = student['漢字'] || student.kanji || '';
+      const studentGroup = student.Group || student.group || 'Individual';
+      
+      bookLessonEls.studentInfo.textContent = `${studentName} ${studentKanji ? '(' + studentKanji + ')' : ''} - ${studentGroup}`;
+      
+      // Initialize calendar (no need for default values since we're using the time slot modal)
+
+      // Initialize calendar - start from Monday of current week
+      let currentWeek = new Date();
+      // Adjust to start from Monday (day 1)
+      const dayOfWeek = currentWeek.getDay();
+      // getDay() returns: 0=Sunday, 1=Monday, 2=Tuesday, etc.
+      // To get to Monday: if Sunday(0), go back 6 days; otherwise go back (dayOfWeek - 1) days
+      const daysToMonday = dayOfWeek === 0 ? -6 : -(dayOfWeek - 1);
+      currentWeek.setDate(currentWeek.getDate() + daysToMonday);
+      let selectedSlot = null;
+
+      function generateCalendarWithLessons(weekStart, lessonsByDay) {
+        console.log('Generating calendar with lessons:', lessonsByDay);
+        
+        // Clear existing grid
+        bookLessonEls.calendarGrid.innerHTML = '';
+
+        // Define opening hours for each day of the week - 10:00-20:00 for all days
+        const openingHours = {
+          0: { start: 10, end: 20 }, // Sunday: 10-20
+          1: { start: 10, end: 20 }, // Monday: 10-20
+          2: { start: 10, end: 20 }, // Tuesday: 10-20
+          3: { start: 10, end: 20 }, // Wednesday: 10-20
+          4: { start: 10, end: 20 }, // Thursday: 10-20
+          5: { start: 10, end: 20 }, // Friday: 10-20
+          6: { start: 10, end: 20 }  // Saturday: 10-20
+        };
+        
+        // Generate time slots based on opening hours for each day
+        const allTimeSlots = new Set();
+        
+        // Check each day of the week to get the full range of opening hours
+        for (let day = 0; day < 7; day++) {
+          const dayDate = new Date(weekStart);
+          dayDate.setDate(weekStart.getDate() + day);
+          const dayOfWeek = dayDate.getDay();
+          const hours = openingHours[dayOfWeek];
+          
+          // Add time slots for this day's opening hours
+          for (let hour = hours.start; hour <= hours.end; hour++) {
+            allTimeSlots.add(`${hour.toString().padStart(2, '0')}:00`);
+          }
+        }
+        
+        // Convert to sorted array
+        const timeSlots = Array.from(allTimeSlots).sort();
+        console.log('Generated time slots based on opening hours:', timeSlots);
+        console.log('Total time slots generated:', timeSlots.length);
+        console.log('Time slots should include 20:00 (not 21:00):', timeSlots.includes('20:00'), timeSlots.includes('21:00'));
+        console.log('All time slots:', timeSlots);
+        console.log('Opening hours used:', openingHours);
+        console.log('Expected total height:', timeSlots.length * 60, 'px (', timeSlots.length, 'slots × 60px each)');
+        console.log('Container max-height: 70vh, Content height:', timeSlots.length * 60, 'px');
+        console.log('Viewport height:', window.innerHeight);
+        console.log('70vh =', window.innerHeight * 0.7, 'px');
+        console.log('Should scroll:', timeSlots.length * 60 > (window.innerHeight * 0.7));
+        
+        // Check actual dimensions after content is rendered
+        setTimeout(() => {
+          const container = document.querySelector('.overflow-y-auto');
+          const grid = document.getElementById('calendarGrid');
+          if (container && grid) {
+            console.log('=== ACTUAL DIMENSIONS ===');
+            console.log('Container offset height:', container.offsetHeight);
+            console.log('Container scroll height:', container.scrollHeight);
+            console.log('Grid offset height:', grid.offsetHeight);
+            console.log('Container max-height (computed):', getComputedStyle(container).maxHeight);
+            console.log('Has scrollbar:', container.scrollHeight > container.offsetHeight);
+            console.log('Scrollbar visible:', container.scrollHeight > container.clientHeight);
+          }
+        }, 1000);
+        
+        // Generate calendar grid with lessons
+        console.log('=== GENERATING TIME SLOTS ===');
+        timeSlots.forEach((slotTime, index) => {
+          const hour = parseInt(slotTime.split(':')[0]);
+          const minute = parseInt(slotTime.split(':')[1]) || 0;
+          console.log(`Generating slot ${index + 1}/${timeSlots.length}: ${slotTime} (hour: ${hour})`);
+          
+          // Use 60px height for time slots
+          const cellHeight = 60;
+          
+          // Time column
+          const timeCell = document.createElement('div');
+          timeCell.className = 'px-2 text-sm text-gray-600 border-r border-gray-200 bg-gray-50 flex items-center relative';
+          timeCell.style.height = `${cellHeight}px`;
+          timeCell.textContent = slotTime;
+          
+          // Add horizontal line through the entire calendar width
+          const horizontalLine = document.createElement('div');
+          horizontalLine.className = 'absolute top-0 left-0 h-px bg-gray-300';
+          horizontalLine.style.width = 'calc(100% * 8)'; // Span all 8 columns
+          horizontalLine.style.zIndex = '10';
+          timeCell.appendChild(horizontalLine);
+          
+          bookLessonEls.calendarGrid.appendChild(timeCell);
+
+          // Day columns (Monday to Sunday)
+          for (let day = 0; day < 7; day++) {
+            const dayDate = new Date(weekStart);
+            dayDate.setDate(weekStart.getDate() + day);
+            const dayOfWeek = dayDate.getDay();
+            const hours = openingHours[dayOfWeek];
+            
+            const slotCell = document.createElement('div');
+            slotCell.className = 'px-1 text-sm border-r border-gray-200 transition-colors flex flex-col justify-start relative';
+            slotCell.style.height = `${cellHeight}px`;
+            slotCell.dataset.day = day;
+            slotCell.dataset.hour = hour;
+            slotCell.dataset.date = dayDate.toISOString().split('T')[0];
+            slotCell.dataset.time = slotTime;
+            
+            // Check if this time slot is within opening hours for this day
+            if (hour < hours.start || hour > hours.end) {
+              // Outside opening hours - unavailable
+              slotCell.className += ' bg-gray-100 text-gray-400 cursor-not-allowed';
+              slotCell.textContent = '';
+              slotCell.title = `Closed (${hours.start}:00-${hours.end}:00)`;
+            } else {
+              // Check for existing lessons at this time
+              const dayKey = dayDate.toISOString().split('T')[0];
+              const dayLessons = lessonsByDay[dayKey] && lessonsByDay[dayKey][slotTime];
+              
+              if (dayLessons && dayLessons.length > 0) {
+                // Filter to only show scheduled lessons
+                const scheduledLessons = dayLessons.filter(lesson => lesson.status === 'scheduled');
+                
+                if (scheduledLessons.length > 0) {
+                  // Show existing lessons as cards
+                  const lessonsContainer = document.createElement('div');
+                  lessonsContainer.className = 'flex h-full p-1 relative';
+                  
+                  scheduledLessons.forEach((lesson, index) => {
+                  const lessonCard = document.createElement('div');
+                  lessonCard.className = 'bg-green-600 border border-green-700 rounded-md text-xs p-2 absolute top-1 w-4/5 shadow-sm hover:shadow-lg transition-all duration-200 cursor-pointer text-white';
+                  lessonCard.style.height = '50px';
+                  lessonCard.style.zIndex = 10 + index;
+                  
+                  // Calculate position: first card at left, last card at right, others distributed
+                  const totalCards = dayLessons.length;
+                  const containerWidth = 100; // percentage
+                  const cardWidth = 80; // percentage
+                  const availableSpace = containerWidth - cardWidth;
+                  
+                  if (totalCards === 1) {
+                    lessonCard.style.left = '1px';
+                  } else {
+                    const spacing = availableSpace / (totalCards - 1);
+                    const leftPosition = 1 + (spacing * index);
+                    lessonCard.style.left = `${leftPosition}%`;
+                  }
+                  
+                  const title = document.createElement('div');
+                  title.className = 'font-semibold text-white truncate mb-1';
+                  title.textContent = lesson.studentName || lesson.title || 'Lesson';
+                  lessonCard.appendChild(title);
+                  
+                  if (lesson.status) {
+                    const status = document.createElement('div');
+                    status.className = 'text-white text-xs truncate mb-1';
+                    status.textContent = lesson.status;
+                    lessonCard.appendChild(status);
+                  }
+
+                  // Add hover effect to bring card to front
+                  lessonCard.addEventListener('mouseenter', () => {
+                    lessonCard.style.zIndex = 100;
+                  });
+                  
+                  lessonCard.addEventListener('mouseleave', () => {
+                    lessonCard.style.zIndex = 10 + index;
+                  });
+
+                  // Add click handler to view lesson details
+                  lessonCard.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    openLessonDetailsModal({
+                      lesson: lesson,
+                      student: { name: lesson.studentName || lesson.title },
+                      onClose: () => {
+                        console.log('Lesson details modal closed');
+                      }
+                    });
+                  });
+                  
+                  lessonsContainer.appendChild(lessonCard);
+                });
+                
+                slotCell.appendChild(lessonsContainer);
+                slotCell.title = `Click to book at ${slotTime} (${scheduledLessons.length} lesson${scheduledLessons.length > 1 ? 's' : ''})`;
+                }
+              } else {
+                // Available slot
+                slotCell.className += ' bg-green-50 text-green-700 hover:bg-green-200 cursor-pointer';
+                slotCell.textContent = '';
+                slotCell.title = `${slotTime} - Available`;
+                
+                // Add click handler for booking
+                slotCell.addEventListener('click', () => selectTimeSlot(slotCell, dayDate, slotTime));
+              }
+            }
+            
+            bookLessonEls.calendarGrid.appendChild(slotCell);
+          }
+        });
+      }
+
+      function generateCalendarWithLessonCards(weekStart, lessonsByDay) {
+        console.log('=== GENERATING CALENDAR WITH LESSON CARDS ===');
+        console.log('Week start:', weekStart);
+        console.log('Lessons by day received:', lessonsByDay);
+
+        const openingHours = {
+          0: { start: 10, end: 20 }, // Sunday: 10-20
+          1: { start: 10, end: 20 }, // Monday: 10-20
+          2: { start: 10, end: 20 }, // Tuesday: 10-20
+          3: { start: 10, end: 20 }, // Wednesday: 10-20
+          4: { start: 10, end: 20 }, // Thursday: 10-20
+          5: { start: 10, end: 20 }, // Friday: 10-20
+          6: { start: 10, end: 20 }  // Saturday: 10-20
+        };
+
+        // lessonsByDay is already organized by date and time from getLessonsForWeek
+        const lessonsByDateTime = lessonsByDay;
+
+        const allTimeSlots = new Set();
+        for (let day = 0; day < 7; day++) {
+          const dayDate = new Date(weekStart);
+          dayDate.setDate(weekStart.getDate() + day);
+          const dayOfWeek = dayDate.getDay();
+          const hours = openingHours[dayOfWeek];
+
+          for (let hour = hours.start; hour <= hours.end; hour++) {
+            allTimeSlots.add(`${hour.toString().padStart(2, '0')}:00`);
+          }
+        }
+
+        const timeSlots = Array.from(allTimeSlots).sort();
+        console.log('Time slots:', timeSlots);
+
+        timeSlots.forEach(slotTime => {
+          const hour = parseInt(slotTime.split(':')[0]);
+          const minute = parseInt(slotTime.split(':')[1]) || 0;
+
+          const cellHeight = 60;
+
+          const timeCell = document.createElement('div');
+          timeCell.className = 'px-2 text-sm text-gray-600 border-r border-gray-200 bg-gray-50 flex items-center relative';
+          timeCell.style.height = `${cellHeight}px`;
+          timeCell.textContent = slotTime;
+
+          const horizontalLine = document.createElement('div');
+          horizontalLine.className = 'absolute top-0 left-0 h-px bg-gray-300';
+          horizontalLine.style.width = 'calc(100% * 8)';
+          horizontalLine.style.zIndex = '10';
+          timeCell.appendChild(horizontalLine);
+
+          bookLessonEls.calendarGrid.appendChild(timeCell);
+
+          for (let day = 0; day < 7; day++) {
+            const dayDate = new Date(weekStart);
+            dayDate.setDate(weekStart.getDate() + day);
+            const dayOfWeek = dayDate.getDay();
+            const hours = openingHours[dayOfWeek];
+            const dayKey = dayDate.toISOString().split('T')[0];
+
+            const slotCell = document.createElement('div');
+            slotCell.className = 'px-1 text-sm border-r border-gray-200 transition-colors flex flex-col justify-start relative';
+            slotCell.style.height = `${cellHeight}px`;
+            slotCell.dataset.day = day;
+            slotCell.dataset.hour = hour;
+            slotCell.dataset.date = dayKey;
+            slotCell.dataset.time = slotTime;
+
+            if (hour < hours.start || hour > hours.end) {
+              slotCell.className += ' bg-gray-100 text-gray-400 cursor-not-allowed';
+              slotCell.textContent = '';
+              slotCell.title = `Closed (${hours.start}:00-${hours.end}:00)`;
+            } else {
+              // Check if there are lessons at this time
+              const dayLessons = lessonsByDateTime[dayKey] && lessonsByDateTime[dayKey][slotTime];
+              
+              if (dayLessons && dayLessons.length > 0) {
+                console.log(`Found ${dayLessons.length} lessons for ${dayKey} at ${slotTime}:`, dayLessons);
+                
+                // Filter to only show scheduled lessons
+                const scheduledLessons = dayLessons.filter(lesson => lesson.status === 'scheduled');
+                
+                if (scheduledLessons.length > 0) {
+                  // Display lesson cards
+                  const lessonsContainer = document.createElement('div');
+                  lessonsContainer.className = 'flex h-full p-1 relative';
+
+                  scheduledLessons.forEach((lesson, index) => {
+                  const lessonCard = document.createElement('div');
+                  lessonCard.className = 'bg-green-600 border border-green-700 rounded-md text-xs p-2 absolute top-1 w-4/5 shadow-sm hover:shadow-lg transition-all duration-200 cursor-pointer text-white';
+                  lessonCard.style.height = '50px';
+                  lessonCard.style.zIndex = 10 + index;
+                  
+                  // Calculate position: first card at left, last card at right, others distributed
+                  const totalCards = dayLessons.length;
+                  const containerWidth = 100; // percentage
+                  const cardWidth = 80; // percentage
+                  const availableSpace = containerWidth - cardWidth;
+                  
+                  if (totalCards === 1) {
+                    lessonCard.style.left = '1px';
+                  } else {
+                    const spacing = availableSpace / (totalCards - 1);
+                    const leftPosition = 1 + (spacing * index);
+                    lessonCard.style.left = `${leftPosition}%`;
+                  }
+
+                  const title = document.createElement('div');
+                  title.className = 'font-semibold text-white truncate mb-1';
+                  title.textContent = lesson.title || lesson.studentName || 'Lesson';
+                  lessonCard.appendChild(title);
+
+                  const time = document.createElement('div');
+                  time.className = 'text-white text-xs truncate mb-1';
+                  // Handle both Date objects and ISO string formats, use direct timezone
+                  const startTime = lesson.startTime instanceof Date ? lesson.startTime : new Date(lesson.startTime);
+                  const endTime = lesson.endTime instanceof Date ? lesson.endTime : new Date(lesson.endTime);
+                  
+                  const startHours = String(startTime.getHours()).padStart(2, '0');
+                  const startMinutes = String(startTime.getMinutes()).padStart(2, '0');
+                  const endHours = String(endTime.getHours()).padStart(2, '0');
+                  const endMinutes = String(endTime.getMinutes()).padStart(2, '0');
+                  
+                  time.textContent = `${startHours}:${startMinutes} - ${endHours}:${endMinutes}`;
+                  lessonCard.appendChild(time);
+
+                  if (lesson.location || lesson.type) {
+                    const location = document.createElement('div');
+                    location.className = 'text-blue-600 text-xs truncate';
+                    location.textContent = lesson.location || lesson.type || '';
+                    lessonCard.appendChild(location);
+                  }
+
+                  // Add hover effect to bring card to front
+                  lessonCard.addEventListener('mouseenter', () => {
+                    lessonCard.style.zIndex = 100;
+                  });
+                  
+                  lessonCard.addEventListener('mouseleave', () => {
+                    lessonCard.style.zIndex = 10 + index;
+                  });
+
+                  // Add click handler to view lesson details
+                  lessonCard.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    openLessonDetailsModal({
+                      lesson: lesson,
+                      student: { name: lesson.title || lesson.studentName },
+                      onClose: () => {
+                        console.log('Lesson details modal closed');
+                      }
+                    });
+                  });
+
+                  lessonsContainer.appendChild(lessonCard);
+                });
+
+                slotCell.appendChild(lessonsContainer);
+                slotCell.className += ' bg-blue-50';
+                slotCell.title = `Lessons at ${slotTime} (${scheduledLessons.length} lesson${scheduledLessons.length > 1 ? 's' : ''})`;
+                }
+              } else {
+                // Available slot
+                slotCell.className += ' bg-green-50 text-green-700 hover:bg-green-200 cursor-pointer';
+                slotCell.textContent = '';
+                slotCell.title = `${slotTime} - Available`;
+
+                slotCell.addEventListener('click', () => selectTimeSlot(slotCell, dayDate, slotTime));
+              }
+            }
+
+            bookLessonEls.calendarGrid.appendChild(slotCell);
+          }
+        });
+      }
+
+      function generateFallbackCalendar(weekStart) {
+        // Fallback calendar when backend data is not available
+        console.log('Generating fallback calendar');
+        
+        // Clear the calendar grid first
+        bookLessonEls.calendarGrid.innerHTML = '';
+        
+        // Define opening hours for each day of the week - 10:00-20:00 for all days
+        const openingHours = {
+          0: { start: 10, end: 20 }, // Sunday: 10-20
+          1: { start: 10, end: 20 }, // Monday: 10-20
+          2: { start: 10, end: 20 }, // Tuesday: 10-20
+          3: { start: 10, end: 20 }, // Wednesday: 10-20
+          4: { start: 10, end: 20 }, // Thursday: 10-20
+          5: { start: 10, end: 20 }, // Friday: 10-20
+          6: { start: 10, end: 20 }  // Saturday: 10-20
+        };
+        
+        // Generate time slots based on opening hours for each day
+        const allTimeSlots = new Set();
+        
+        // Check each day of the week to get the full range of opening hours
+        for (let day = 0; day < 7; day++) {
+          const dayDate = new Date(weekStart);
+          dayDate.setDate(weekStart.getDate() + day);
+          const dayOfWeek = dayDate.getDay();
+          const hours = openingHours[dayOfWeek];
+          
+          // Add time slots for this day's opening hours
+          for (let hour = hours.start; hour <= hours.end; hour++) {
+            allTimeSlots.add(`${hour.toString().padStart(2, '0')}:00`);
+          }
+        }
+        
+        // Convert to sorted array
+        const timeSlots = Array.from(allTimeSlots).sort();
+        console.log('Fallback time slots:', timeSlots);
+        
+        // Generate grid rows
+        timeSlots.forEach(slotTime => {
+          const hour = parseInt(slotTime.split(':')[0]);
+          const minute = parseInt(slotTime.split(':')[1]) || 0;
+          
+          // Use 60px height for time slots
+          const cellHeight = 60;
+          
+          // Time column
+          const timeCell = document.createElement('div');
+          timeCell.className = 'px-2 text-sm text-gray-600 border-r border-gray-200 bg-gray-50 flex items-center relative';
+          timeCell.style.height = `${cellHeight}px`;
+          timeCell.textContent = slotTime;
+          
+          // Add horizontal line through the entire calendar width
+          const horizontalLine = document.createElement('div');
+          horizontalLine.className = 'absolute top-0 left-0 h-px bg-gray-300';
+          horizontalLine.style.width = 'calc(100% * 8)'; // Span all 8 columns
+          horizontalLine.style.zIndex = '10';
+          timeCell.appendChild(horizontalLine);
+          
+          bookLessonEls.calendarGrid.appendChild(timeCell);
+
+          // Day columns (Monday to Sunday)
+          for (let day = 0; day < 7; day++) {
+            const dayDate = new Date(weekStart);
+            dayDate.setDate(weekStart.getDate() + day);
+            
+            const slotCell = document.createElement('div');
+            slotCell.className = 'px-1 text-sm border-r border-gray-200 transition-colors flex flex-col justify-start relative bg-gray-50 p-0 cursor-pointer hover:bg-gray-100';
+            slotCell.style.height = `${cellHeight}px`;
+            slotCell.dataset.day = day;
+            slotCell.dataset.hour = hour;
+            slotCell.dataset.date = dayDate.toISOString().split('T')[0];
+            slotCell.dataset.time = slotTime;
+            
+            // All slots are available in fallback mode
+            slotCell.title = `${slotTime} - Available`;
+            
+            // Add click handler for booking
+            slotCell.addEventListener('click', () => selectTimeSlot(slotCell, dayDate, slotTime));
+            
+            bookLessonEls.calendarGrid.appendChild(slotCell);
+          }
+        });
+        
+        console.log('Fallback calendar generated with', timeSlots.length, 'time slots');
+      }
+
+      function createSimpleBookingCalendar(weekStart) {
+        console.log('Creating simple booking calendar for week:', weekStart);
+        
+        // Clear the calendar grid
+        bookLessonEls.calendarGrid.innerHTML = '';
+        
+        // Create a simple calendar with time slots 10:00-20:00
+        const timeSlots = ['10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00'];
+        
+        // Generate calendar rows
+        timeSlots.forEach(slotTime => {
+          const hour = parseInt(slotTime.split(':')[0]);
+          
+          // Time column
+          const timeCell = document.createElement('div');
+          timeCell.className = 'px-2 text-sm text-gray-600 border-r border-gray-200 bg-gray-50 flex items-center relative';
+          timeCell.style.height = '60px';
+          timeCell.textContent = slotTime;
+          
+          // Add horizontal line through the entire calendar width
+          const horizontalLine = document.createElement('div');
+          horizontalLine.className = 'absolute top-0 left-0 h-px bg-gray-300';
+          horizontalLine.style.width = 'calc(100% * 8)'; // Span all 8 columns
+          horizontalLine.style.zIndex = '10';
+          timeCell.appendChild(horizontalLine);
+          
+          bookLessonEls.calendarGrid.appendChild(timeCell);
+
+          // Day columns (Monday to Sunday)
+          for (let day = 0; day < 7; day++) {
+            const dayDate = new Date(weekStart);
+            dayDate.setDate(weekStart.getDate() + day);
+            
+            const slotCell = document.createElement('div');
+            slotCell.className = 'px-1 text-sm border-r border-gray-200 transition-colors flex flex-col justify-start relative bg-gray-50 p-0 cursor-pointer hover:bg-gray-100';
+            slotCell.style.height = '60px';
+            slotCell.dataset.day = day;
+            slotCell.dataset.hour = hour;
+            slotCell.dataset.date = dayDate.toISOString().split('T')[0];
+            slotCell.dataset.time = slotTime;
+            slotCell.title = `${slotTime} - Click to book lesson`;
+            
+            // Add click handler for booking
+            slotCell.addEventListener('click', () => {
+              console.log('Time slot clicked:', slotTime, 'on', dayDate.toISOString().split('T')[0]);
+              alert(`Booking lesson for ${slotTime} on ${dayDate.toISOString().split('T')[0]}`);
+            });
+            
+            bookLessonEls.calendarGrid.appendChild(slotCell);
+          }
+        });
+        
+        console.log('Simple booking calendar created with', timeSlots.length, 'time slots');
+      }
+
+      function generateCalendarGrid(weekStart) {
+        // Prevent multiple simultaneous calendar generations
+        if (window.calendarGenerating) {
+          console.log('⚠️ Calendar already being generated, skipping...');
+          return;
+        }
+        window.calendarGenerating = true;
+        
+        // Clear existing grid
+        bookLessonEls.calendarGrid.innerHTML = '';
+
+        // Fetch lessons for the week and log to console
+        console.log('=== Fetching lessons for week:', weekStart, '===');
+        
+        // Log the exact date being sent to backend
+        console.log('📅 Frontend weekStart:', weekStart);
+        console.log('📅 Frontend weekStart.toISOString():', weekStart.toISOString());
+        console.log('📅 Frontend weekStart local string:', weekStart.toLocaleString());
+        
+        // Calculate the date range that should be fetched
+        const endDate = new Date(weekStart);
+        endDate.setDate(weekStart.getDate() + 7);
+        console.log('📅 Frontend date range:', weekStart.toISOString(), 'to', endDate.toISOString());
+        
+        // Try to fetch lessons from Google Sheets using debug function
+        console.log('🔍 Calling getExistingLessonsFromSheet...');
+        console.log('🔍 About to call getExistingLessonsFromSheet...');
+        
+        // Show loading spinner
+        bookLessonEls.calendarGrid.innerHTML = `
+          <div class="col-span-8 flex flex-col items-center justify-center min-h-[400px] w-full bg-gray-50 rounded-lg p-8">
+            <div class="relative">
+              <div class="animate-spin rounded-full h-12 w-12 border-4 border-gray-200"></div>
+              <div class="animate-spin rounded-full h-12 w-12 border-4 border-blue-600 border-t-transparent absolute top-0 left-0"></div>
+            </div>
+            <div class="mt-4 text-center">
+              <p class="text-lg font-medium text-gray-900">Loading Lessons</p>
+              <p class="text-sm text-gray-500 mt-1">Fetching schedule data...</p>
+            </div>
+          </div>
+        `;
+        
+        try {
+          google.script.run
+            .withSuccessHandler(function(result) {
+              console.log('✅ Raw result received:', result);
+              console.log('✅ Data type:', typeof result);
+              console.log('✅ Data stringified:', JSON.stringify(result));
+              
+              // Check if result has error property
+              if (result && result.error) {
+                console.error('❌ Backend error:', result.error);
+                console.error('❌ Error stack:', result.stack);
+                generateFallbackCalendar(weekStart);
+                return;
+              }
+              
+              // Check if result has success property and it's false
+              if (result && result.success === false) {
+                console.error('❌ Backend returned success: false');
+                console.error('❌ Error:', result.error);
+                generateFallbackCalendar(weekStart);
+                return;
+              }
+              
+              // Try to parse the data if it's a string
+              let lessonsByDay = result;
+              if (typeof result === 'string') {
+                try {
+                  lessonsByDay = JSON.parse(result);
+                  console.log('✅ Successfully parsed JSON data:', lessonsByDay);
+                } catch (e) {
+                  console.error('❌ Failed to parse JSON:', e);
+                  generateFallbackCalendar(weekStart);
+                  return;
+                }
+              }
+              
+              console.log('✅ Processed lesson data:', lessonsByDay);
+              if (lessonsByDay && Object.keys(lessonsByDay).length > 0) {
+                console.log('📊 Total days with lessons:', Object.keys(lessonsByDay).length);
+                console.log('📅 Lessons by day:', lessonsByDay);
+                
+                // Log detailed lesson information
+                Object.keys(lessonsByDay).forEach(date => {
+                  const dayLessons = lessonsByDay[date];
+                  console.log(`📆 ${date}: ${Object.keys(dayLessons).length} time slots`);
+                  Object.keys(dayLessons).forEach(time => {
+                    const timeLessons = dayLessons[time];
+                    console.log(`  ${time}: ${timeLessons.length} lessons`);
+                    timeLessons.forEach((lesson, index) => {
+                      console.log(`    ${index + 1}. ${lesson.studentName} (${lesson.status})`);
+                    });
+                  });
+                });
+                
+                // Generate calendar with lesson cards
+                generateCalendarWithLessonCards(weekStart, lessonsByDay);
+                window.calendarGenerating = false;
+              } else {
+                console.log('⚠️ No lesson data returned or empty object');
+                generateFallbackCalendar(weekStart);
+                window.calendarGenerating = false;
+              }
+            })
+            .withFailureHandler(function(error) {
+              console.error('❌ Error in getExistingLessonsFromSheet:', error);
+              // Fallback to simple calendar
+              generateFallbackCalendar(weekStart);
+              window.calendarGenerating = false;
+            })
+            .getExistingLessonsFromSheet(weekStart.toISOString());
+        } catch (error) {
+          console.error('❌ Error calling debug function:', error);
+          generateFallbackCalendar(weekStart);
+          window.calendarGenerating = false;
+        }
+      }
+
+      function selectTimeSlot(cell, date, time) {
+        // Open the time slot selection modal
+        openTimeSlotModal({
+          date: date,
+          time: time,
+          student: student,
+          onClose: () => {
+            // Close the time slot modal and return to booking modal
+          },
+          onConfirm: (lessonData) => {
+            // Handle the lesson booking
+            handleTimeSlotBooking(lessonData);
+          }
+        });
+      }
+
+      function updateWeekDisplay(weekStart) {
+        const weekEnd = new Date(weekStart);
+        weekEnd.setDate(weekStart.getDate() + 6);
+        
+        const startStr = weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        const endStr = weekEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        
+        bookLessonEls.currentWeekDisplay.textContent = `Week of ${startStr} - ${endStr}`;
+        
+        // Update date numbers in the calendar header
+        for (let day = 0; day < 7; day++) {
+          const dayDate = new Date(weekStart);
+          dayDate.setDate(weekStart.getDate() + day);
+          const dateElement = document.getElementById(`date-${day}`);
+          if (dateElement) {
+            dateElement.textContent = dayDate.getDate();
+          }
+        }
+      }
+
+      function navigateWeek(direction) {
+        currentWeek.setDate(currentWeek.getDate() + (direction * 7));
+        updateWeekDisplay(currentWeek);
+        generateCalendarGrid(currentWeek);
+      }
+
+      // Removed clearSelection function - no longer needed with time slot modal
+
+      const doClose = () => { onClose(); cleanup(); };
+
+      function cleanup(){
+        bookLessonEls.close.removeEventListener('click', doClose);
+        bookLessonEls.cancel.removeEventListener('click', doClose);
+        bookLessonEls.prevWeekBtn.removeEventListener('click', () => navigateWeek(-1));
+        bookLessonEls.nextWeekBtn.removeEventListener('click', () => navigateWeek(1));
+        hide(bookLessonEls.root);
+      }
+
+      // Removed old handleSaveLesson function - now using time slot modal
+
+      // Initialize calendar
+      updateWeekDisplay(currentWeek);
+      generateCalendarGrid(currentWeek);
+
+      // Add event listeners
+      bookLessonEls.close.addEventListener('click', doClose);
+      bookLessonEls.cancel.addEventListener('click', doClose);
+      bookLessonEls.prevWeekBtn.addEventListener('click', () => navigateWeek(-1));
+      bookLessonEls.nextWeekBtn.addEventListener('click', () => navigateWeek(1));
+      
+      show(bookLessonEls.root);
     }
 
     function openPaymentModal({ mode='add', payment=null, onSave=()=>{}, onDelete=()=>{}, onClose=()=>{} }={}){
@@ -1140,7 +2542,7 @@
             Phone: (combinePhone(studentEls) || undefined),
             Email: studentEls.email.value.trim() || undefined,
             'phone (secondary)': '',
-            Status: 'Demo',
+            Status: 'DEMO',
             '子': studentEls.child.checked ? '子' : undefined,
             Payment: 'NEO',
             Group: studentEls.group.value || 'Individual',
@@ -1153,7 +2555,7 @@
         const internal = {
           name: studentEls.name.value.trim(),
           kanji: studentEls.kanji.value.trim(),
-          status: 'Demo',
+          status: 'DEMO',
           latestByMonth: {},
           payments: [],
           notes: []
@@ -1480,7 +2882,7 @@
     OfflineQueue.init();
 
     // Enhanced cache management for dynamic updates
-    function updateStudentCache(studentId, type, data, revert = false) {
+    function updateStudentCache(studentId, type, data, revert = false, oldData = null) {
       if (!studentId) return;
       
       const cacheKey = String(studentId);
@@ -1509,16 +2911,47 @@
             }
           }
         } else {
-          // Add new data
+          // Add new data or update existing data
           if (type === 'payment') {
             if (!cachedData.payments) cachedData.payments = [];
             if (data) {
-              cachedData.payments.push(data);
+              // Check if this is an update (has oldData) or a new addition
+              if (oldData) {
+                // Update existing payment
+                const index = cachedData.payments.findIndex(p => 
+                  p['Transaction ID'] === oldData['Transaction ID'] || 
+                  p.transactionId === oldData.transactionId ||
+                  p.id === oldData.id
+                );
+                if (index !== -1) {
+                  cachedData.payments[index] = data;
+                } else {
+                  cachedData.payments.push(data);
+                }
+              } else {
+                // Add new payment
+                cachedData.payments.push(data);
+              }
             }
           } else if (type === 'note') {
             if (!cachedData.notes) cachedData.notes = [];
             if (data) {
-              cachedData.notes.push(data);
+              // Check if this is an update (has oldData) or a new addition
+              if (oldData) {
+                // Update existing note
+                const index = cachedData.notes.findIndex(n => 
+                  n.ID === oldData.ID || 
+                  (n.Date === oldData.Date && n.Note === oldData.Note && n.Staff === oldData.Staff)
+                );
+                if (index !== -1) {
+                  cachedData.notes[index] = data;
+                } else {
+                  cachedData.notes.push(data);
+                }
+              } else {
+                // Add new note
+                cachedData.notes.push(data);
+              }
             }
           } else if (type === 'student') {
             // Update student data
@@ -1532,7 +2965,7 @@
           cacheManager.set(localStorageKey, cachedData, 1800000); // 30 minutes
         }
         
-        console.log(`✅ Cache updated for student ${studentId}, type: ${type}, revert: ${revert}`);
+        console.log(`✅ Cache updated for student ${studentId}, type: ${type}, revert: ${revert}, update: ${!!oldData}`);
       }
     }
 
@@ -1623,12 +3056,16 @@
             cells[kanjiIndex].textContent = studentData['漢字'] || '';
           }
           if (statusIndex !== -1 && cells[statusIndex]) {
-            cells[statusIndex].textContent = studentData.Status || '';
-            // Update status badge styling
-            const statusBadge = cells[statusIndex].querySelector('.status-badge');
-            if (statusBadge) {
-              statusBadge.className = `status-badge ${(studentData.Status || '').toLowerCase()}`;
+            const status = studentData.Status || '';
+            let statusClass = '';
+            switch(status) {
+              case 'Active': statusClass = 'badge badge-status-active'; break;
+              case 'Dormant': statusClass = 'badge badge-status-dormant'; break;
+              case 'DEMO': statusClass = 'badge badge-status-demo'; break;
+              default: statusClass = 'badge badge-status-dormant';
             }
+            cells[statusIndex].innerHTML = '<span class="' + statusClass + '">' + status + '</span>';
+            cells[statusIndex].style.textAlign = 'center';
           }
           if (emailIndex !== -1 && cells[emailIndex]) {
             cells[emailIndex].textContent = studentData.Email || '';
@@ -1672,11 +3109,61 @@
         const cell = document.createElement('td');
         cell.className = 'px-4 py-3 text-sm text-gray-900';
         
-        if (header === 'Status') {
-          const status = studentData[header] || 'Demo';
-          cell.innerHTML = `<span class="status-badge ${status.toLowerCase()}">${status}</span>`;
-        } else {
-          cell.textContent = studentData[header] || '';
+        const cellValue = studentData[header] || '';
+        
+        // Handle different column types with proper badge styling
+        switch(header) {
+          case '当日キャンセル':
+            const cancelBadgeClass = cellValue === '済' ? 'badge badge-cancel-yes' : 'badge badge-cancel-no';
+            cell.innerHTML = '<span class="' + cancelBadgeClass + '">' + cellValue + '</span>';
+            cell.style.textAlign = 'center';
+            cell.className = 'text-center';
+            break;
+            
+          case 'Status':
+            let statusClass = '';
+            switch(cellValue) {
+              case 'Active': statusClass = 'badge badge-status-active'; break;
+              case 'Dormant': statusClass = 'badge badge-status-dormant'; break;
+              case 'DEMO': statusClass = 'badge badge-status-demo'; break;
+              default: statusClass = 'badge badge-status-dormant';
+            }
+            cell.innerHTML = '<span class="' + statusClass + '">' + cellValue + '</span>';
+            cell.style.textAlign = 'center';
+            break;
+            
+          case 'Payment':
+            const paymentClass = cellValue === 'NEO' ? 'badge badge-pay-neo' : 'badge badge-pay-old';
+            cell.innerHTML = '<span class="' + paymentClass + '">' + cellValue + '</span>';
+            cell.style.textAlign = 'center';
+            break;
+            
+          case 'Group':
+            const groupClass = cellValue === 'Individual' ? 'badge badge-group-individual' : 'badge badge-group-group';
+            cell.innerHTML = '<span class="' + groupClass + '">' + cellValue + '</span>';
+            cell.style.textAlign = 'center';
+            break;
+            
+          case '当日 Cancellation':
+            const cancelBadgeClass2 = cellValue === '済' ? 'badge badge-cancel-yes' : 'badge badge-cancel-no';
+            cell.innerHTML = '<span class="' + cancelBadgeClass2 + '">' + cellValue + '</span>';
+            cell.style.textAlign = 'center';
+            break;
+            
+          case '当日':
+            const cancelBadgeClass3 = cellValue === '済' ? 'badge badge-cancel-yes' : 'badge badge-cancel-no';
+            cell.innerHTML = '<span class="' + cancelBadgeClass3 + '">' + cellValue + '</span>';
+            cell.style.textAlign = 'center';
+            break;
+            
+          case '人数':
+            cell.style.textAlign = 'center';
+            cell.textContent = cellValue;
+            break;
+            
+          default:
+            cell.textContent = cellValue;
+            break;
         }
         
         newRow.appendChild(cell);
@@ -2133,6 +3620,9 @@
                     idCell.textContent = newStudentId;
                     tempRow.removeAttribute('data-temp-id');
                     tempRow.setAttribute('data-student-id', newStudentId);
+                    // Remove temporary styling and add click handler
+                    tempRow.style.opacity = '';
+                    tempRow.addEventListener('click', () => openStudentDetails(newStudentId));
                   }
                 }
                 
@@ -2358,34 +3848,70 @@
           switch (header) {
             case 'Name':
               value = studentData.Name || '';
+              cell.textContent = value;
               break;
             case '漢字':
               value = studentData['漢字'] || '';
+              cell.textContent = value;
               break;
             case 'Email':
               value = studentData.Email || '';
+              cell.textContent = value;
               break;
             case 'Phone':
               value = studentData.Phone || '';
+              cell.textContent = value;
               break;
             case 'Status':
               value = studentData.Status || '';
+              let statusClass = '';
+              switch(value) {
+                case 'Active': statusClass = 'badge badge-status-active'; break;
+                case 'Dormant': statusClass = 'badge badge-status-dormant'; break;
+                case 'DEMO': statusClass = 'badge badge-status-demo'; break;
+                default: statusClass = 'badge badge-status-dormant';
+              }
+              cell.innerHTML = '<span class="' + statusClass + '">' + value + '</span>';
+              cell.style.textAlign = 'center';
               break;
-            case 'Payment Type':
-              value = studentData['Payment Type'] || '';
+            case 'Payment':
+              value = studentData.Payment || '';
+              const paymentClass = value === 'NEO' ? 'badge badge-pay-neo' : 'badge badge-pay-old';
+              cell.innerHTML = '<span class="' + paymentClass + '">' + value + '</span>';
+              cell.style.textAlign = 'center';
               break;
-            case '当日キャンセル':
-              value = studentData['当日キャンセル'] || '';
+            case 'Group':
+              value = studentData.Group || '';
+              const groupClass = value === 'Individual' ? 'badge badge-group-individual' : 'badge badge-group-group';
+              cell.innerHTML = '<span class="' + groupClass + '">' + value + '</span>';
+              cell.style.textAlign = 'center';
+              break;
+            case '当日 Cancellation':
+              value = studentData['当日 Cancellation'] || '';
+              const cancelBadgeClass = value === '済' ? 'badge badge-cancel-yes' : 'badge badge-cancel-no';
+              cell.innerHTML = '<span class="' + cancelBadgeClass + '">' + value + '</span>';
+              cell.style.textAlign = 'center';
+              break;
+            case '当日':
+              value = studentData['当日'] || '';
+              const cancelBadgeClass2 = value === '済' ? 'badge badge-cancel-yes' : 'badge badge-cancel-no';
+              cell.innerHTML = '<span class="' + cancelBadgeClass2 + '">' + value + '</span>';
+              cell.style.textAlign = 'center';
+              break;
+            case '人数':
+              value = studentData['人数'] || '';
+              cell.textContent = value;
+              cell.style.textAlign = 'center';
               break;
             case '子':
               value = studentData['子'] || '';
+              cell.textContent = value;
+              cell.style.textAlign = 'center';
               break;
             default:
               // Keep existing value for other columns
-              return;
+              break;
           }
-          
-          cell.textContent = value;
         }
       });
     }
@@ -2685,8 +4211,8 @@
                 student.notes[originalIndex] = updatedNote;
                 renderNotes();
                 
-                // Update cache immediately
-                updateStudentCache(student.id, 'note', updatedNote);
+                // Update cache immediately - pass old note data to update existing entry
+                updateStudentCache(student.id, 'note', updatedNote, false, oldNote);
                 
                 // Save to backend
                 if (window.google && google.script && google.script.run) {
@@ -2701,7 +4227,7 @@
                       // Revert optimistic update
                       student.notes[originalIndex] = oldNote;
                       renderNotes();
-                      updateStudentCache(student.id, 'note', oldNote, true); // Revert
+                      updateStudentCache(student.id, 'note', oldNote, true, updatedNote); // Revert
                       
                       openConfirmModal({
                         title: 'Error',
@@ -2904,6 +4430,9 @@
         student.ID = model.student.ID;
       }
       
+      // Update global student reference
+      window.student = student;
+      console.log('🔍 Updated window.student:', window.student);
 
       
       renderHeader(); renderNotes();
@@ -2987,8 +4516,8 @@
                 student.payments[originalIndex] = updatedPayment;
                 renderPaymentsTable();
                 
-                // Update cache immediately
-                updateStudentCache(student.id, 'payment', updatedPayment);
+                // Update cache immediately - pass old payment data to update existing entry
+                updateStudentCache(student.id, 'payment', updatedPayment, false, oldPayment);
                 
                 // Update Latest Record with updated payment status and unscheduled lessons
                 updateLatestRecordWithPayment(updatedPayment);
@@ -2998,8 +4527,8 @@
                   google.script.run
                     .withSuccessHandler(function(result) {
                       console.log('Payment updated successfully:', result);
-                      // Update cache with server response
-                      updateStudentCache(student.id, 'payment', result);
+                      // Update cache with server response - pass old payment data to update existing entry
+                      updateStudentCache(student.id, 'payment', result, false, oldPayment);
                     })
                     .withFailureHandler(function(error) {
                       console.error('Failed to update payment:', error);
@@ -3007,7 +4536,7 @@
                       // Revert optimistic update
                       student.payments[originalIndex] = oldPayment;
                       renderPaymentsTable();
-                      updateStudentCache(student.id, 'payment', oldPayment, true); // Revert
+                      updateStudentCache(student.id, 'payment', oldPayment, true, updatedPayment); // Revert
                       
                       // Revert Latest Record changes
                       revertLatestRecordWithPayment(updatedPayment);

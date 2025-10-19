@@ -85,9 +85,9 @@ function getStudentById(id) {
 
 function getAllPayments() {
     Logger.log('[getAllPayments] Start');
-    var sh = SpreadsheetApp.openById(SS_ID).getSheetByName('PaymentLogs');
+    var sh = SpreadsheetApp.openById(SS_ID).getSheetByName('Payment');
     Logger.log('[getAllPayments] Sheet loaded');
-    var data = sh.getDataRange().getDisplayValues();
+    var data = sh.getDataRange().getValues();
     Logger.log('[getAllPayments] Data loaded, rows: ' + data.length);
     // Return headers and rows exactly as in the sheet
     return data;
@@ -168,14 +168,32 @@ function updateStudent(student) {
 
 
 function createOrUpdateGoogleContactForStudent(student, oldEmail) {
-  if (!student.FirstName && !student.LastName) return;
+  Logger.log('createOrUpdateGoogleContactForStudent called with student: ' + JSON.stringify(student) + ', oldEmail: ' + oldEmail);
   
-  const people     = People.People;
-  const firstName  = student.FirstName  || '';
-  const lastName   = student.LastName   || '';
-  const fullName   = (firstName + ' ' + lastName).trim();
-  const email      = student.email      || '';
-  const phone      = student.phone      || '';
+  // Handle both Name field (from frontend) and FirstName/LastName fields
+  const fullName = student.Name || '';
+  const firstName = student.FirstName || '';
+  const lastName = student.LastName || '';
+  
+  if (!fullName && !firstName && !lastName) {
+    Logger.log('No name provided, skipping contact creation');
+    return;
+  }
+  
+  const people = People.People;
+  
+  // Parse name if we have a full name but no first/last
+  let finalFirstName = firstName;
+  let finalLastName = lastName;
+  
+  if (fullName && !firstName && !lastName) {
+    const nameParts = fullName.trim().split(' ');
+    finalFirstName = nameParts[0] || '';
+    finalLastName = nameParts.slice(1).join(' ') || '';
+  }
+  const finalFullName = (finalFirstName + ' ' + finalLastName).trim();
+  const email      = student.Email || student.email || '';
+  const phone      = student.Phone || student.phone || '';
   const phone2     = student['phone (secondary)'] || '';
   const kanji      = student['漢字']     || '';
   const status     = student.Status     || 'Dormant';
@@ -241,7 +259,7 @@ function createOrUpdateGoogleContactForStudent(student, oldEmail) {
         s => s.type === 'CONTACT'
       );
       if (!isContact) return false;
-      if ((p.names || []).some(n => (n.displayName || '').trim() === fullName)) {
+      if ((p.names || []).some(n => (n.displayName || '').trim() === finalFullName)) {
         resourceName = p.resourceName;
         foundBy = 'name';
         return true;
@@ -251,7 +269,7 @@ function createOrUpdateGoogleContactForStudent(student, oldEmail) {
 
   // --- build the Person payload ---
   const personPayload = {
-    names: [{ givenName: firstName, familyName: lastName }],
+    names: [{ givenName: finalFirstName, familyName: finalLastName }],
     emailAddresses: email ? [{ value: email, type: 'work' }] : [],
     phoneNumbers: [],
     biographies: kanji ? [{ value: 'Kanji: ' + kanji, contentType: 'TEXT_PLAIN' }] : [],
@@ -270,13 +288,17 @@ function createOrUpdateGoogleContactForStudent(student, oldEmail) {
   // --- call the People API ---
   try {
     if (resourceName) {
-      people.updateContact(
+      Logger.log('Updating existing Google Contact: ' + resourceName);
+      const result = people.updateContact(
         resourceName,
         personPayload,
         { updatePersonFields: 'names,emailAddresses,phoneNumbers,biographies,memberships' }
       );
+      Logger.log('Google Contact updated successfully: ' + JSON.stringify(result));
     } else {
-      people.createContact(personPayload);
+      Logger.log('Creating new Google Contact');
+      const result = people.createContact(personPayload);
+      Logger.log('Google Contact created successfully: ' + JSON.stringify(result));
     }
   } catch (e) {
     Logger.log('Error creating/updating Google Contact: ' + e.message + '\nPayload: ' + JSON.stringify(personPayload) + '\nresourceName: ' + resourceName);
@@ -284,16 +306,124 @@ function createOrUpdateGoogleContactForStudent(student, oldEmail) {
   }
 }
 
+function deleteGoogleContactForStudent(student) {
+  Logger.log('deleteGoogleContactForStudent called with student: ' + JSON.stringify(student));
+  
+  if (!student.Name && !student.FirstName && !student.LastName) {
+    Logger.log('No name provided, skipping contact deletion');
+    return;
+  }
+  
+  const people = People.People;
+  
+  // Handle both Name field (from frontend) and FirstName/LastName fields
+  const fullName = student.Name || '';
+  const firstName = student.FirstName || '';
+  const lastName = student.LastName || '';
+  const email = student.Email || student.email || '';
+  
+  // Parse name if we have a full name but no first/last
+  let finalFirstName = firstName;
+  let finalLastName = lastName;
+  
+  if (fullName && !firstName && !lastName) {
+    const nameParts = fullName.trim().split(' ');
+    finalFirstName = nameParts[0] || '';
+    finalLastName = nameParts.slice(1).join(' ') || '';
+  }
+  
+  const finalFullName = (finalFirstName + ' ' + finalLastName).trim();
+  
+  function normalizeEmail(e) {
+    return (e || '').toLowerCase().trim();
+  }
+  
+  // Find the contact to delete
+  let resourceName = null;
+  
+  // 1. Try to find by email
+  if (email) {
+    const resp = people.Connections.list('people/me', {
+      personFields: 'emailAddresses,metadata',
+      pageSize: 2000
+    });
+    (resp.connections || []).some(p => {
+      const isContact = (p.metadata && p.metadata.sources || []).some(
+        s => s.type === 'CONTACT'
+      );
+      if (!isContact) return false;
+      if ((p.emailAddresses || []).some(e => normalizeEmail(e.value) === normalizeEmail(email))) {
+        resourceName = p.resourceName;
+        return true;
+      }
+    });
+  }
+  
+  // 2. Try to find by full name if not found by email
+  if (!resourceName && finalFullName) {
+    const resp2 = people.Connections.list('people/me', {
+      personFields: 'names,metadata',
+      pageSize: 2000
+    });
+    (resp2.connections || []).some(p => {
+      const isContact = (p.metadata && p.metadata.sources || []).some(
+        s => s.type === 'CONTACT'
+      );
+      if (!isContact) return false;
+      if ((p.names || []).some(n => (n.displayName || '').trim() === finalFullName)) {
+        resourceName = p.resourceName;
+        return true;
+      }
+    });
+  }
+  
+  if (resourceName) {
+    try {
+      Logger.log('Deleting Google Contact: ' + resourceName);
+      people.deleteContact(resourceName);
+      Logger.log('Google Contact deleted successfully: ' + resourceName);
+    } catch (e) {
+      Logger.log('Error deleting Google Contact: ' + e.message + '\nresourceName: ' + resourceName);
+      throw e;
+    }
+  } else {
+    Logger.log('No matching Google Contact found to delete');
+  }
+}
+
 function deleteStudent(id) {
+  Logger.log('deleteStudent called with ID: ' + id);
+  
   var sh      = SpreadsheetApp.openById(SS_ID).getSheetByName(STUDENT_SHEET),
       values  = sh.getDataRange().getValues(),
-      idx     = values[0].indexOf('ID');
+      headers = values[0],
+      idx     = headers.indexOf('ID');
+      
   for (var i = 1; i < values.length; i++) {
     if (String(values[i][idx]) === String(id)) {
+      // Get student data before deleting for Google Contact deletion
+      var studentData = {};
+      headers.forEach(function(header, index) {
+        studentData[header] = values[i][index];
+      });
+      
+      Logger.log('Student data to delete: ' + JSON.stringify(studentData));
+      
+      // Delete Google Contact if it exists
+      try {
+        deleteGoogleContactForStudent(studentData);
+      } catch (e) {
+        Logger.log('Error deleting Google Contact: ' + e.message);
+        // Don't fail the entire operation if contact deletion fails
+      }
+      
+      // Delete the row from spreadsheet
       sh.deleteRow(i+1);
+      Logger.log('Student row deleted successfully');
       return true;
     }
   }
+  Logger.log('Student not found with ID: ' + id);
   return false;
 }
 
@@ -447,7 +577,7 @@ function updateNote(note) {
 
 function updatePayment(pay) {
   var ss      = SpreadsheetApp.openById(SS_ID),
-      sh      = ss.getSheetByName(PAYMENT_SHEET),
+      sh      = ss.getSheetByName('Payment'),
       data    = sh.getDataRange().getValues(),
       headers = data[0],
       idx     = headers.indexOf('Transaction ID');
@@ -773,7 +903,7 @@ function getNewPaymentDefaults(studentID) {
   const staffName  = staffSheet.getRange('B1').getValue();
 
   return {
-    transactionID: '',
+    'Transaction ID': '',
     Date:          dateStr,
     Year:          yearStr,
     Month:         month,
@@ -788,14 +918,22 @@ function insertPayment(pay) {
   Logger.log('💰 insertPayment called with: %s', JSON.stringify(pay));
 
   var ss = SpreadsheetApp.openById(SS_ID);
-  var sh = ss.getSheetByName(PAYMENT_SHEET);
-  if (!sh) throw new Error('Sheet "' + PAYMENT_SHEET + '" not found.');
+  var sh = ss.getSheetByName('Payment');
+  if (!sh) throw new Error('Sheet "Payment" not found.');
 
   // 1) Pull headers from the first row
   var headers = sh.getDataRange().getValues()[0];
   Logger.log('📋 Payment sheet headers: %s', JSON.stringify(headers));
 
-  // 2) Build the new row, coercing Amount & Total into numbers
+  // 2) Generate Transaction ID if not provided
+  if (!pay['Transaction ID'] || pay['Transaction ID'] === '') {
+    var timestamp = new Date().getTime();
+    var randomSuffix = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
+    pay['Transaction ID'] = 'TXN' + timestamp + randomSuffix;
+    Logger.log('💰 Generated Transaction ID: ' + pay['Transaction ID']);
+  }
+
+  // 3) Build the new row, coercing Amount & Total into numbers
   var newRow = headers.map(function(h) {
     switch (h) {
       case 'Amount':
@@ -850,6 +988,30 @@ function insertPayment(pay) {
     }
   }
   // --- End update ---
+
+  // --- Update student status from Demo/Dormant to Active when payment is made ---
+  var studentSheet = ss.getSheetByName(STUDENT_SHEET);
+  if (studentSheet) {
+    var studentData = studentSheet.getDataRange().getValues();
+    var studentHeaders = studentData[0];
+    var studentIdIdx = studentHeaders.indexOf('ID');
+    var statusIdx = studentHeaders.indexOf('Status');
+    
+    if (studentIdIdx !== -1 && statusIdx !== -1) {
+      for (var i = 1; i < studentData.length; i++) {
+        var row = studentData[i];
+        if (String(row[studentIdIdx]) === String(pay['Student ID'])) {
+          var currentStatus = String(row[statusIdx] || '').trim();
+          if (currentStatus === 'Demo' || currentStatus === 'Dormant') {
+            studentSheet.getRange(i + 1, statusIdx + 1).setValue('Active');
+            Logger.log('📝 Updated student ID ' + pay['Student ID'] + ' status from ' + currentStatus + ' to Active due to payment');
+          }
+          break;
+        }
+      }
+    }
+  }
+  // --- End status update ---
 
   return true;
 }
@@ -1048,6 +1210,442 @@ function getLessonEventsForMonth(monthText) {
   return calendar.getEvents(startDate, endDate);
 }
 
+/**
+ * Fetch lessons for the current month and log them to console for debugging
+ * This function is used by the booking component to get lesson data
+ */
+function fetchLessonsForCurrentMonth() {
+  try {
+    Logger.log('=== Fetching lessons for current month ===');
+    
+    // Get current month in the format expected by getLessonEventsForMonth
+    var now = new Date();
+    var currentMonth = Utilities.formatDate(now, Session.getScriptTimeZone(), 'MMMM yyyy');
+    
+    Logger.log('Current month: ' + currentMonth);
+    
+    // Fetch lesson events for current month
+    var events = getLessonEventsForMonth(currentMonth);
+    
+    Logger.log('Total events found: ' + events.length);
+    
+    // Process and log each lesson event
+    var lessons = [];
+    for (var i = 0; i < events.length; i++) {
+      var event = events[i];
+      var lesson = {
+        title: event.getTitle(),
+        startTime: event.getStartTime(),
+        endTime: event.getEndTime(),
+        description: event.getDescription(),
+        location: event.getLocation(),
+        color: event.getColor(),
+        isAllDay: event.isAllDayEvent(),
+        isRecurring: event.isRecurringEvent()
+      };
+      
+      lessons.push(lesson);
+      
+      // Log individual lesson details
+      Logger.log('Lesson ' + (i + 1) + ':');
+      Logger.log('  Title: ' + lesson.title);
+      Logger.log('  Start: ' + lesson.startTime);
+      Logger.log('  End: ' + lesson.endTime);
+      Logger.log('  Color: ' + lesson.color);
+      Logger.log('  All Day: ' + lesson.isAllDay);
+      Logger.log('  Recurring: ' + lesson.isRecurring);
+      if (lesson.description) {
+        Logger.log('  Description: ' + lesson.description);
+      }
+      if (lesson.location) {
+        Logger.log('  Location: ' + lesson.location);
+      }
+      Logger.log('  ---');
+    }
+    
+    // Log summary
+    Logger.log('=== Lesson Summary for ' + currentMonth + ' ===');
+    Logger.log('Total lessons: ' + lessons.length);
+    
+    // Group by day for better overview
+    var lessonsByDay = {};
+    for (var j = 0; j < lessons.length; j++) {
+      var lesson = lessons[j];
+      var dayKey = Utilities.formatDate(lesson.startTime, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+      if (!lessonsByDay[dayKey]) {
+        lessonsByDay[dayKey] = [];
+      }
+      lessonsByDay[dayKey].push(lesson);
+    }
+    
+    // Log lessons grouped by day
+    for (var day in lessonsByDay) {
+      Logger.log('Day ' + day + ': ' + lessonsByDay[day].length + ' lessons');
+      for (var k = 0; k < lessonsByDay[day].length; k++) {
+        var dayLesson = lessonsByDay[day][k];
+        var timeStr = Utilities.formatDate(dayLesson.startTime, Session.getScriptTimeZone(), 'HH:mm');
+        Logger.log('  - ' + timeStr + ': ' + dayLesson.title);
+      }
+    }
+    
+    Logger.log('=== End of lesson data ===');
+    
+    return {
+      success: true,
+      month: currentMonth,
+      totalLessons: lessons.length,
+      lessons: lessons,
+      lessonsByDay: lessonsByDay
+    };
+    
+  } catch (error) {
+    Logger.log('Error fetching lessons for current month: ' + error.toString());
+    return {
+      success: false,
+      error: error.toString()
+    };
+  }
+}
+
+/**
+ * Simple test function to check if Google Apps Script is working
+ * @returns {string} Test message
+ */
+function testFunction() {
+  Logger.log('=== testFunction called ===');
+  return 'Google Apps Script is working!';
+}
+
+/**
+ * Test function that returns a simple object to check serialization
+ * @returns {Object} Simple test object
+ */
+function testObjectReturn() {
+  Logger.log('=== testObjectReturn called ===');
+  try {
+    var result = {
+      success: true,
+      message: 'Object return test',
+      timestamp: new Date().toISOString()
+    };
+    Logger.log('Returning object: ' + JSON.stringify(result));
+    return result;
+  } catch (error) {
+    Logger.log('ERROR in testObjectReturn: ' + error.toString());
+    return {
+      success: false,
+      error: error.toString()
+    };
+  }
+}
+
+/**
+ * Test function to check spreadsheet access
+ * @returns {Object} Test result
+ */
+function testSpreadsheetAccess() {
+  try {
+    Logger.log('=== testSpreadsheetAccess called ===');
+    Logger.log('SS_ID: ' + SS_ID);
+    
+    var ss = SpreadsheetApp.openById(SS_ID);
+    Logger.log('Spreadsheet opened successfully');
+    
+    var sheetNames = [];
+    var sheets = ss.getSheets();
+    for (var i = 0; i < sheets.length; i++) {
+      sheetNames.push(sheets[i].getName());
+    }
+    Logger.log('Available sheets: ' + JSON.stringify(sheetNames));
+    
+    return {
+      success: true,
+      message: 'Spreadsheet access working',
+      sheetNames: sheetNames
+    };
+    
+  } catch (error) {
+    Logger.log('ERROR in testSpreadsheetAccess: ' + error.toString());
+    return {
+      success: false,
+      error: error.toString()
+    };
+  }
+}
+
+/**
+ * Fetch actual lesson data from Google Calendar
+ * @returns {Object} Real lesson data from calendar
+ */
+function fetchAllSheetEntries() {
+  try {
+    Logger.log('=== fetchAllSheetEntries called - fetching real calendar data ===');
+    
+    // Use existing LESSON_CALENDAR_ID from Code.js configuration
+    if (!LESSON_CALENDAR_ID) {
+      Logger.log('LESSON_CALENDAR_ID not configured');
+      return { success: false, error: 'Calendar ID not configured', data: [] };
+    }
+    
+    // Get today's date range
+    var today = new Date();
+    var startTime = new Date(today);
+    startTime.setHours(0, 0, 0, 0);
+    var endTime = new Date(today);
+    endTime.setDate(endTime.getDate() + 1);
+    
+    Logger.log('Fetching events from ' + startTime + ' to ' + endTime);
+    Logger.log('Using calendar ID: ' + LESSON_CALENDAR_ID);
+    
+    // Get calendar events using existing configuration
+    var calendar = CalendarApp.getCalendarById(LESSON_CALENDAR_ID);
+    if (!calendar) {
+      Logger.log('Calendar not found: ' + LESSON_CALENDAR_ID);
+      return { success: false, error: 'Calendar not found', data: [] };
+    }
+    
+    var events = calendar.getEvents(startTime, endTime);
+    Logger.log('Found ' + events.length + ' events');
+    
+    // Process events with proper error handling and date serialization
+    var processedEvents = [];
+    for (var i = 0; i < events.length; i++) {
+      try {
+        var event = events[i];
+        var eventData = {
+          id: event.getId(),
+          title: event.getTitle(),
+          startTime: Utilities.formatDate(event.getStartTime(), Session.getScriptTimeZone(), "yyyy-MM-dd'T'HH:mm:ss"),
+          endTime: Utilities.formatDate(event.getEndTime(), Session.getScriptTimeZone(), "yyyy-MM-dd'T'HH:mm:ss"),
+          description: event.getDescription() || '',
+          location: event.getLocation() || '',
+          color: event.getColor(),
+          isAllDay: event.isAllDayEvent()
+        };
+        processedEvents.push(eventData);
+        Logger.log('Event ' + (i + 1) + ': ' + eventData.title + ' at ' + eventData.startTime);
+      } catch (eventError) {
+        Logger.log('Error processing event ' + (i + 1) + ': ' + eventError.toString());
+        continue;
+      }
+    }
+    
+    var result = {
+      success: true,
+      data: processedEvents,
+      rowCount: processedEvents.length,
+      message: 'Real calendar events retrieved successfully',
+      timestamp: new Date().toISOString(),
+      dateRange: {
+        start: Utilities.formatDate(startTime, Session.getScriptTimeZone(), "yyyy-MM-dd'T'HH:mm:ss'Z'"),
+        end: Utilities.formatDate(endTime, Session.getScriptTimeZone(), "yyyy-MM-dd'T'HH:mm:ss'Z'")
+      }
+    };
+    
+    Logger.log('Returning real calendar data with ' + processedEvents.length + ' events');
+    Logger.log('Result: ' + JSON.stringify(result));
+    return result;
+    
+  } catch (error) {
+    Logger.log('Calendar fetch error: ' + error.toString());
+    return {
+      success: false,
+      error: error.toString(),
+      data: []
+    };
+  }
+}
+
+/**
+ * Alternative function to test data fetching with different name
+ * @returns {Object} Test lesson data
+ */
+function getTestLessons() {
+  Logger.log('=== getTestLessons called ===');
+  
+  try {
+    var testData = {
+      success: true,
+      data: [
+        {
+          id: 'alt-test-1',
+          title: 'Alternative Test Lesson 1',
+          startTime: '10:00',
+          endTime: '11:00',
+          description: 'Test lesson 1',
+          location: 'Test Location',
+          color: 'blue',
+          isAllDay: false
+        },
+        {
+          id: 'alt-test-2',
+          title: 'Alternative Test Lesson 2', 
+          startTime: '14:00',
+          endTime: '15:00',
+          description: 'Test lesson 2',
+          location: 'Test Location 2',
+          color: 'red',
+          isAllDay: false
+        }
+      ],
+      rowCount: 2,
+      message: 'Alternative test function working',
+      timestamp: new Date().toISOString()
+    };
+    
+    Logger.log('getTestLessons returning: ' + JSON.stringify(testData));
+    return testData;
+    
+  } catch (error) {
+    Logger.log('Error in getTestLessons: ' + error.toString());
+    return {
+      success: false,
+      error: error.toString(),
+      data: []
+    };
+  }
+}
+
+/**
+ * Get lessons for a specific week for calendar display
+ * @param {string} weekStart - Week start date in ISO format
+ * @returns {Object} Lessons organized by date and time for calendar display
+ */
+function getLessonsForWeek(weekStart) {
+  try {
+    Logger.log('=== getLessonsForWeek called ===');
+    Logger.log('weekStart: ' + weekStart);
+    Logger.log('weekStart type: ' + typeof weekStart);
+    
+    // Validate input
+    if (!weekStart) {
+      Logger.log('ERROR: weekStart is null or undefined');
+      return {
+        success: false,
+        error: 'weekStart parameter is required',
+        lessonsByDay: {}
+      };
+    }
+    
+    var startDate = new Date(weekStart);
+    if (isNaN(startDate.getTime())) {
+      Logger.log('ERROR: Invalid weekStart date: ' + weekStart);
+      return {
+        success: false,
+        error: 'Invalid weekStart date format',
+        lessonsByDay: {}
+      };
+    }
+    
+    var endDate = new Date(startDate);
+    endDate.setDate(startDate.getDate() + 7); // Get 7 days from start
+    
+    Logger.log('Fetching lessons from ' + startDate.toISOString() + ' to ' + endDate.toISOString());
+    
+    // Check if calendar ID is configured
+    if (!LESSON_CALENDAR_ID) {
+      Logger.log('ERROR: LESSON_CALENDAR_ID is not configured');
+      return {
+        success: false,
+        error: 'Calendar ID not configured',
+        lessonsByDay: {}
+      };
+    }
+    
+    // Get calendar events for the week
+    var calendar = CalendarApp.getCalendarById(LESSON_CALENDAR_ID);
+    if (!calendar) {
+      Logger.log('ERROR: Calendar not found with ID: ' + LESSON_CALENDAR_ID);
+      return {
+        success: false,
+        error: 'Calendar not found',
+        lessonsByDay: {}
+      };
+    }
+    
+    var events = calendar.getEvents(startDate, endDate);
+    Logger.log('Found ' + events.length + ' events in the week');
+    
+    var lessonsByDay = {};
+    
+    // Process each event
+    for (var i = 0; i < events.length; i++) {
+      try {
+        var event = events[i];
+        var startTime = event.getStartTime();
+        var endTime = event.getEndTime();
+        var title = event.getTitle();
+        var color = event.getColor();
+        
+        Logger.log('Processing event ' + (i + 1) + ': ' + title);
+        
+        // Skip invalid events
+        if (!isValidLessonEvent_(event)) {
+          Logger.log('Skipping invalid event: ' + title);
+          continue;
+        }
+        
+        // Get date and time strings
+        var eventDate = Utilities.formatDate(startTime, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+        var eventTime = Utilities.formatDate(startTime, Session.getScriptTimeZone(), 'HH:mm');
+        
+        Logger.log('Event date: ' + eventDate + ', time: ' + eventTime);
+        
+        // Initialize day if not exists
+        if (!lessonsByDay[eventDate]) {
+          lessonsByDay[eventDate] = {};
+        }
+        
+        // Initialize time slot if not exists
+        if (!lessonsByDay[eventDate][eventTime]) {
+          lessonsByDay[eventDate][eventTime] = [];
+        }
+        
+        // Determine lesson status based on color
+        var status = 'scheduled';
+        if (color === '8' || color === '9') { // Graphite, Lavender
+          status = 'cancelled';
+        } else if (color === '5') { // Banana
+          status = 'rescheduled';
+        }
+        
+        // Add lesson to the time slot
+        lessonsByDay[eventDate][eventTime].push({
+          title: title,
+          studentName: title, // Use title as student name for now
+          status: status,
+          startTime: startTime,
+          endTime: endTime,
+          color: color
+        });
+        
+        Logger.log('Added lesson to ' + eventDate + ' at ' + eventTime);
+      } catch (eventError) {
+        Logger.log('Error processing event ' + (i + 1) + ': ' + eventError.toString());
+        continue;
+      }
+    }
+    
+    Logger.log('Processed lessons for ' + Object.keys(lessonsByDay).length + ' days');
+    Logger.log('Final lessonsByDay: ' + JSON.stringify(lessonsByDay));
+    
+    return {
+      success: true,
+      lessonsByDay: lessonsByDay,
+      totalLessons: events.length
+    };
+    
+  } catch (error) {
+    Logger.log('ERROR in getLessonsForWeek: ' + error.toString());
+    Logger.log('Error stack: ' + error.stack);
+    return {
+      success: false,
+      error: error.toString(),
+      lessonsByDay: {}
+    };
+  }
+}
+
 function updateScheduledLessonsForStudent(studentId, studentName, monthStr) {
   Logger.log('--- updateScheduledLessonsForStudent ---');
   Logger.log('Student ID: %s, Student Name: %s, Month: %s', studentId, studentName, monthStr);
@@ -1116,52 +1714,33 @@ function toYYYYMM(dateOrString) {
   return '';
 }
 
-function cacheMonthlyEvents(monthStr) {
-  // Default to current month if no monthStr provided
-  if (!monthStr) {
-    var today = new Date();
-    monthStr = Utilities.formatDate(today, Session.getScriptTimeZone(), 'MMMM yyyy');
-  }
-  
-  // Standardize monthStr to 'YYYY-MM'
-  var yyyymm = toYYYYMM(monthStr);
-  if (!yyyymm) {
-    Logger.log('Invalid monthStr format: ' + monthStr);
-    return;
-  }
-  
-  Logger.log('Caching events for month: ' + monthStr + ' (YYYY-MM: ' + yyyymm + ')');
-  
-  var ss = SpreadsheetApp.openById(SS_ID);
-  var cacheSheet = ss.getSheetByName('MonthlySchedule');
-  if (!cacheSheet) {
-    cacheSheet = ss.insertSheet('MonthlySchedule');
-  } else {
-    cacheSheet.clear();
-  }
-  
-  // Write headers
-  var headers = ['EventID', 'Title', 'Start', 'End', 'Status', 'StudentName'];
-  cacheSheet.getRange(1, 1, 1, headers.length).setValues([headers]);
-
-  // Use getAllEventsForMonth function to fetch ALL events (no filtering)
-  var events = getAllEventsForMonth(monthStr);
-  Logger.log('Retrieved ' + events.length + ' events from calendar for ' + monthStr);
-  
+/**
+ * Process events and extract valid lesson rows
+ * @param {Array} events - Array of calendar events
+ * @returns {Array} Array of processed event rows
+ */
+function processEventsForMonth(events) {
   var validRows = [];
   events.forEach(function(event) {
     var title = event.getTitle();
     // Ignore teacher breaks (case-insensitive 'break' or 'Teacher' in title)
     if (/break/i.test(title) || /teacher/i.test(title)) return;
-    // Determine status based on event color
-    var color = event.getColor();
+    
+    // Check for placeholder events first
     var status = 'scheduled'; // default
-    if (color === '8' || color === '9') { // Graphite, Lavender
-      status = 'cancelled';
-    } else if (color === '5') { // Banana
-      status = 'rescheduled';
-    } else if (color === '11') { // Orange
-      status = 'unbooked';
+    if (/(placeholder)/i.test(title)) {
+      status = 'reserved';
+      Logger.log('📅 Found placeholder event: ' + title + ' -> Status: reserved');
+    } else {
+      // Determine status based on event color (only if not a placeholder)
+      var color = event.getColor();
+      if (color === '8' || color === '9') { // Graphite, Lavender
+        status = 'cancelled';
+      } else if (color === '5') { // Banana
+        status = 'rescheduled';
+      } else if (color === '11') { // Orange
+        status = 'unbooked';
+      }
     }
     
     // Extract the part before the first parenthesis
@@ -1204,14 +1783,125 @@ function cacheMonthlyEvents(monthStr) {
       }
     }
   });
+  return validRows;
+}
+
+/**
+ * Cache events for a specific month to a specific sheet
+ * @param {string} monthStr - Month in format 'YYYY-MM' or 'MMMM yyyy'
+ * @param {string} sheetName - Name of the sheet to write to
+ * @returns {number} Number of events processed
+ */
+function cacheEventsToSheet(monthStr, sheetName) {
+  // Standardize monthStr to 'YYYY-MM'
+  var yyyymm = toYYYYMM(monthStr);
+  if (!yyyymm) {
+    Logger.log('Invalid monthStr format: ' + monthStr);
+    return 0;
+  }
+  
+  Logger.log('Caching events for month: ' + monthStr + ' (YYYY-MM: ' + yyyymm + ') to sheet: ' + sheetName);
+  
+  var ss = SpreadsheetApp.openById(SS_ID);
+  var cacheSheet = ss.getSheetByName(sheetName);
+  if (!cacheSheet) {
+    cacheSheet = ss.insertSheet(sheetName);
+  } else {
+    cacheSheet.clear();
+  }
+  
+  // Write headers
+  var headers = ['EventID', 'Title', 'Start', 'End', 'Status', 'StudentName'];
+  cacheSheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+
+  // Use getAllEventsForMonth function to fetch ALL events (no filtering)
+  var events = getAllEventsForMonth(monthStr);
+  Logger.log('Retrieved ' + events.length + ' events from calendar for ' + monthStr);
+  
+  // Process events using the extracted function
+  var validRows = processEventsForMonth(events);
+  
+  // Count different status types for summary
+  var statusCounts = {};
+  validRows.forEach(function(row) {
+    var status = row[4]; // Status is the 5th column (index 4)
+    statusCounts[status] = (statusCounts[status] || 0) + 1;
+  });
   
   Logger.log('Processed ' + validRows.length + ' valid lesson events');
+  Logger.log('Status breakdown: ' + JSON.stringify(statusCounts));
   
   if (validRows.length > 0) {
     cacheSheet.getRange(2, 1, validRows.length, headers.length).setValues(validRows);
   }
   
+  // Set A1 to the month for reference
+  cacheSheet.getRange('A1').setValue(yyyymm);
+  
   return validRows.length;
+}
+
+function cacheMonthlyEvents(monthStr) {
+  // Default to current month if no monthStr provided
+  if (!monthStr) {
+    var today = new Date();
+    monthStr = Utilities.formatDate(today, Session.getScriptTimeZone(), 'MMMM yyyy');
+  }
+  
+  return cacheEventsToSheet(monthStr, 'MonthlySchedule');
+}
+
+/**
+ * Cache events for both current month and next month into separate sheets
+ * @returns {Object} Summary of events processed for both months
+ */
+function cacheMonthlyEventsForBothMonths() {
+  Logger.log('=== Starting dual month cache operation ===');
+  
+  // Calculate current and next month
+  var today = new Date();
+  var currentMonth = Utilities.formatDate(today, Session.getScriptTimeZone(), 'yyyy-MM');
+  
+  // Calculate next month
+  var nextMonthDate = new Date(today.getFullYear(), today.getMonth() + 1, 1);
+  var nextMonth = Utilities.formatDate(nextMonthDate, Session.getScriptTimeZone(), 'yyyy-MM');
+  
+  Logger.log('Current month: ' + currentMonth);
+  Logger.log('Next month: ' + nextMonth);
+  
+  var results = {
+    currentMonth: {
+      month: currentMonth,
+      events: 0,
+      sheetName: 'MonthlySchedule'
+    },
+    nextMonth: {
+      month: nextMonth,
+      events: 0,
+      sheetName: 'NextMonthSchedule'
+    }
+  };
+  
+  try {
+    // Process current month
+    Logger.log('Processing current month: ' + currentMonth);
+    results.currentMonth.events = cacheEventsToSheet(currentMonth, 'MonthlySchedule');
+    Logger.log('✅ Current month processed: ' + results.currentMonth.events + ' events');
+    
+    // Process next month
+    Logger.log('Processing next month: ' + nextMonth);
+    results.nextMonth.events = cacheEventsToSheet(nextMonth, 'NextMonthSchedule');
+    Logger.log('✅ Next month processed: ' + results.nextMonth.events + ' events');
+    
+  } catch (error) {
+    Logger.log('❌ Error in dual month cache operation: ' + error.toString());
+    results.error = error.toString();
+  }
+  
+  Logger.log('=== Dual month cache operation completed ===');
+  Logger.log('Results: ' + JSON.stringify(results));
+  
+  return results;
 }
 
 function tallyLessonsForMonthAndStore(monthStr) {
@@ -1294,9 +1984,9 @@ function renderDashboard() {
   var diffText = (diff >= 0 ? '+' : '') + diff + ' this month';
   console.log('Current month:', thisMonth, 'Lessons:', lessonsThisMonth, 'Students:', studentsThisMonth);
 
-  // 2. Get total fees for this month from PaymentLogs
-  var paymentLogsSheet = ss.getSheetByName('PaymentLogs');
-  var paymentData = paymentLogsSheet ? paymentLogsSheet.getDataRange().getValues() : [];
+  // 2. Get total fees for this month from Payment sheet
+  var paymentSheet = ss.getSheetByName(PAYMENT_SHEET);
+  var paymentData = paymentSheet ? paymentSheet.getDataRange().getValues() : [];
   var paymentHeaders = paymentData[0] || [];
   var yearIdx = paymentHeaders.indexOf('Year');
   var monthIdx = paymentHeaders.indexOf('Month');
@@ -1304,7 +1994,7 @@ function renderDashboard() {
   var thisYear = now.getFullYear().toString();
   var thisMonthName = now.toLocaleString('default', { month: 'long' });
   var feesThisMonth = 0;
-  console.log('PaymentLogs data:', JSON.stringify(paymentData));
+  console.log('Payment sheet data:', JSON.stringify(paymentData));
   for (var i = 1; i < paymentData.length; i++) {
     var row = paymentData[i];
     // Accept both YYYY-MM and Month/Year formats
@@ -1620,7 +2310,7 @@ function getDashboardStatsForCards() {
 
 function getPaymentsForCurrentYear() {
   var ss = SpreadsheetApp.openById(SS_ID);
-  var paymentSheet = ss.getSheetByName('Payment');
+  var paymentSheet = ss.getSheetByName(PAYMENT_SHEET);
   var studentSheet = ss.getSheetByName('Students');
   var paymentData = paymentSheet.getDataRange().getValues();
   var paymentHeaders = paymentData[0];
@@ -1743,7 +2433,7 @@ function getDashboardStats() {
   var diffText = (diff >= 0 ? '+' : '') + diff + ' this month';
 
   // Total fees paid this year
-  var paymentSheet = ss.getSheetByName('Payment');
+  var paymentSheet = ss.getSheetByName(PAYMENT_SHEET);
   var paymentData = paymentSheet ? paymentSheet.getDataRange().getValues() : [];
   var paymentHeaders = paymentData[0] || [];
   var yearIdx = paymentHeaders.indexOf('Year');
@@ -1856,7 +2546,7 @@ function getUnpaidStudentsThisMonth() {
 
 function getPaymentLogs() {
   var ss = SpreadsheetApp.openById(SS_ID);
-  var sh = ss.getSheetByName('PaymentLogs');
+  var sh = ss.getSheetByName(PAYMENT_SHEET);
   var data = sh.getDataRange().getDisplayValues();
   var headers = data.shift(); // Remove header row
   return data.map(function(row) {
@@ -1929,9 +2619,9 @@ function getDashboardCardData() {
   var diff = lessonsThisMonth - lessonsLastMonth;
   var diffText = (diff >= 0 ? '+' : '') + diff + ' this month';
 
-  // Fees: sum all 'Total' in PaymentLogs
-  var paymentLogsSheet = ss.getSheetByName('PaymentLogs');
-  var paymentData = paymentLogsSheet ? paymentLogsSheet.getDataRange().getValues() : [];
+  // Fees: sum all 'Total' in Payment sheet
+  var paymentSheet = ss.getSheetByName(PAYMENT_SHEET);
+  var paymentData = paymentSheet ? paymentSheet.getDataRange().getValues() : [];
   var paymentHeaders = paymentData[0] || [];
   var totalIdx = paymentHeaders.indexOf('Total');
   var feesThisMonth = 0;
@@ -1953,8 +2643,14 @@ function getDashboardCardData() {
 function updateData() {
   var now = new Date();
   var monthStr = Utilities.formatDate(now, Session.getScriptTimeZone(), 'yyyy-MM');
-  cacheMonthlyEvents(monthStr);
+  
+  // Use the new dual-month function to cache both current and next month
+  var results = cacheMonthlyEventsForBothMonths();
+  
+  // Still tally stats for current month
   tallyLessonsForMonthAndStore(monthStr);
+  
+  return results;
 }
 
 function getTotalFeeFromStudentData(studentID, lessons) {
@@ -2198,15 +2894,15 @@ function getPaymentInfoForMonth(studentName, monthText) {
   Logger.log('Month text: ' + monthText);
   
   var ss = SpreadsheetApp.openById(SS_ID);
-  var paymentSheet = ss.getSheetByName('PaymentLogs');
+  var paymentSheet = ss.getSheetByName(PAYMENT_SHEET);
   if (!paymentSheet) {
-    Logger.log('PaymentLogs sheet not found');
+    Logger.log('Payment sheet not found');
     return null;
   }
-  
+
   var data = paymentSheet.getDataRange().getValues();
   var headers = data[0];
-  Logger.log('PaymentLogs headers: ' + JSON.stringify(headers));
+  Logger.log('Payment sheet headers: ' + JSON.stringify(headers));
   
   var studentNameIdx = headers.indexOf('Student Name');
   var monthIdx = headers.indexOf('Month');
@@ -2218,7 +2914,7 @@ function getPaymentInfoForMonth(studentName, monthText) {
   Logger.log('Column indices - StudentName: ' + studentNameIdx + ', Month: ' + monthIdx + ', Year: ' + yearIdx);
   
   if (studentNameIdx === -1 || monthIdx === -1) {
-    Logger.log('Required columns not found in PaymentLogs sheet');
+    Logger.log('Required columns not found in Payment sheet');
     return null;
   }
   
@@ -2284,7 +2980,7 @@ function getPaymentStatusForMonth(studentName, monthText) {
   // Check payment status for a student in a specific month
   // Simply check if there are any payment logs for this student in this month
   var ss = SpreadsheetApp.openById(SS_ID);
-  var paymentSheet = ss.getSheetByName('PaymentLogs');
+  var paymentSheet = ss.getSheetByName(PAYMENT_SHEET);
   if (!paymentSheet) return null;
   
   var data = paymentSheet.getDataRange().getValues();
@@ -2664,6 +3360,128 @@ function getAllStudentDataForCache() {
 }
 
 /**
+ * Get all students from Unpaid sheet (all students in this sheet are unpaid)
+ * Column A: Student Name, Column B: Student ID
+ * @returns {Array} Array of objects with student name and ID
+ */
+function getUnpaidStudents() {
+  Logger.log('=== getUnpaidStudents: Starting ===');
+  
+  try {
+    var ss = SpreadsheetApp.openById(SS_ID);
+    var unpaidSheet = ss.getSheetByName('Unpaid');
+    
+    if (!unpaidSheet) {
+      Logger.log('❌ Unpaid sheet not found');
+      return [];
+    }
+    
+    // Get only the specific columns we need: A (student name) and B (student ID)
+    var lastRow = unpaidSheet.getLastRow();
+    if (lastRow <= 1) {
+      Logger.log('No data rows found in Unpaid sheet');
+      return [];
+    }
+    
+    // Get only columns A and B (1st and 2nd columns, 1-indexed)
+    var studentNameData = unpaidSheet.getRange(1, 1, lastRow, 1).getDisplayValues(); // Column A
+    var studentIdData = unpaidSheet.getRange(1, 2, lastRow, 1).getDisplayValues(); // Column B
+    
+    Logger.log('Retrieved ' + lastRow + ' rows from columns A and B only');
+    
+    // Convert to flat arrays (remove nested arrays)
+    var studentNames = studentNameData.map(function(row) { return row[0]; });
+    var studentIds = studentIdData.map(function(row) { return row[0]; });
+    
+    var unpaidStudents = [];
+    
+    // Process each row (skip header row, start from index 1)
+    for (var i = 1; i < studentNames.length; i++) {
+      var studentName = studentNames[i] ? studentNames[i].toString().trim() : '';
+      var studentId = studentIds[i] ? studentIds[i].toString().trim() : '';
+      
+      // Add all students from the sheet (they are all unpaid)
+      if (studentId && studentName) {
+        unpaidStudents.push({
+          id: studentId,
+          name: studentName
+        });
+        
+        Logger.log('Found unpaid student: ' + studentName + ' (ID: ' + studentId + ')');
+      }
+    }
+    
+    Logger.log('=== getUnpaidStudents: Found ' + unpaidStudents.length + ' unpaid students ===');
+    return unpaidStudents;
+    
+  } catch (error) {
+    Logger.log('❌ Error in getUnpaidStudents: ' + error.toString());
+    return [];
+  }
+}
+
+/**
+ * Get all students from LessonsMonth sheet (all students in this sheet are unscheduled)
+ * Column E: Student Name, Column F: Student ID
+ * @returns {Array} Array of objects with student name and ID
+ */
+function getUnscheduledStudents() {
+  Logger.log('=== getUnscheduledStudents: Starting ===');
+  
+  try {
+    var ss = SpreadsheetApp.openById(SS_ID);
+    var lessonsSheet = ss.getSheetByName('LessonsMonth');
+    
+    if (!lessonsSheet) {
+      Logger.log('❌ LessonsMonth sheet not found');
+      return [];
+    }
+    
+    // Get only the specific columns we need: E (student name) and F (student ID)
+    var lastRow = lessonsSheet.getLastRow();
+    if (lastRow <= 1) {
+      Logger.log('No data rows found in LessonsMonth sheet');
+      return [];
+    }
+    
+    // Get only columns E and F (5th and 6th columns, 1-indexed)
+    var studentNameData = lessonsSheet.getRange(1, 5, lastRow, 1).getDisplayValues(); // Column E
+    var studentIdData = lessonsSheet.getRange(1, 6, lastRow, 1).getDisplayValues(); // Column F
+    
+    Logger.log('Retrieved ' + lastRow + ' rows from columns E and F only');
+    
+    // Convert to flat arrays (remove nested arrays)
+    var studentNames = studentNameData.map(function(row) { return row[0]; });
+    var studentIds = studentIdData.map(function(row) { return row[0]; });
+    
+    var unscheduledStudents = [];
+    
+    // Process each row (skip header row, start from index 1)
+    for (var i = 1; i < studentNames.length; i++) {
+      var studentName = studentNames[i] ? studentNames[i].toString().trim() : '';
+      var studentId = studentIds[i] ? studentIds[i].toString().trim() : '';
+      
+      // Add all students from the sheet (they are all unscheduled)
+      if (studentId && studentName) {
+        unscheduledStudents.push({
+          id: studentId,
+          name: studentName
+        });
+        
+        Logger.log('Found unscheduled student: ' + studentName + ' (ID: ' + studentId + ')');
+      }
+    }
+    
+    Logger.log('=== getUnscheduledStudents: Found ' + unscheduledStudents.length + ' unscheduled students ===');
+    return unscheduledStudents;
+    
+  } catch (error) {
+    Logger.log('❌ Error in getUnscheduledStudents: ' + error.toString());
+    return [];
+  }
+}
+
+/**
  * Optimized version that loads data in smaller batches
  * @param {number} batchSize - Number of students to process per batch
  * @returns {Object} Object with all student data keyed by student ID
@@ -2914,6 +3732,707 @@ function setupStatusManagementTriggers() {
     
   } catch (error) {
     Logger.log('❌ Error setting up triggers: ' + error.toString());
+  }
+}
+
+// ===== Lesson Management Functions =====
+
+/**
+ * Cancel a lesson by updating its status in Google Calendar
+ * @param {string} eventId - Google Calendar event ID
+ * @param {string} reason - Cancellation reason
+ * @param {string} studentId - Student ID for logging
+ * @returns {Object} Success/failure status
+ */
+function cancelLesson(eventId, reason, studentId) {
+  try {
+    Logger.log('=== cancelLesson called ===');
+    Logger.log('Event ID: ' + eventId);
+    Logger.log('Reason: ' + reason);
+    Logger.log('Student ID: ' + studentId);
+    
+    var calendar = CalendarApp.getCalendarById(LESSON_CALENDAR_ID);
+    var event = calendar.getEventById(eventId);
+    
+    if (!event) {
+      Logger.log('Event not found: ' + eventId);
+      return { success: false, error: 'Event not found' };
+    }
+    
+    // Update event title to show cancelled status
+    var originalTitle = event.getTitle();
+    var cancelledTitle = '[CANCELLED] ' + originalTitle;
+    event.setTitle(cancelledTitle);
+    
+    // Add cancellation note to description
+    var originalDescription = event.getDescription() || '';
+    var cancellationNote = '\n\n--- CANCELLATION ---\nReason: ' + reason + '\nCancelled by: ' + getCurrentStaffName() + '\nDate: ' + new Date().toLocaleString();
+    event.setDescription(originalDescription + cancellationNote);
+    
+    // Log the action
+    logLessonAction(studentId, eventId, 'cancel', null, null, reason);
+    
+    Logger.log('Lesson cancelled successfully: ' + eventId);
+    return { success: true, message: 'Lesson cancelled successfully' };
+    
+  } catch (error) {
+    Logger.log('Error cancelling lesson: ' + error.toString());
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
+ * Reschedule a lesson to a new date/time
+ * @param {string} eventId - Google Calendar event ID
+ * @param {string} newDateTime - New date/time in ISO format
+ * @param {string} reason - Reschedule reason
+ * @param {string} studentId - Student ID for logging
+ * @returns {Object} Success/failure status
+ */
+function rescheduleLesson(eventId, newDateTime, reason, studentId) {
+  try {
+    Logger.log('=== rescheduleLesson called ===');
+    Logger.log('Event ID: ' + eventId);
+    Logger.log('New DateTime: ' + newDateTime);
+    Logger.log('Reason: ' + reason);
+    Logger.log('Student ID: ' + studentId);
+    
+    var calendar = CalendarApp.getCalendarById(LESSON_CALENDAR_ID);
+    var event = calendar.getEventById(eventId);
+    
+    if (!event) {
+      Logger.log('Event not found: ' + eventId);
+      return { success: false, error: 'Event not found' };
+    }
+    
+    var oldStartTime = event.getStartTime();
+    var oldEndTime = event.getEndTime();
+    var duration = oldEndTime.getTime() - oldStartTime.getTime();
+    
+    // Create new start and end times
+    var newStartTime = new Date(newDateTime);
+    var newEndTime = new Date(newStartTime.getTime() + duration);
+    
+    // Update the event
+    event.setTime(newStartTime, newEndTime);
+    
+    // Add reschedule note to description
+    var originalDescription = event.getDescription() || '';
+    var rescheduleNote = '\n\n--- RESCHEDULED ---\nOld Time: ' + oldStartTime.toLocaleString() + '\nNew Time: ' + newStartTime.toLocaleString() + '\nReason: ' + reason + '\nRescheduled by: ' + getCurrentStaffName() + '\nDate: ' + new Date().toLocaleString();
+    event.setDescription(originalDescription + rescheduleNote);
+    
+    // Log the action
+    logLessonAction(studentId, eventId, 'reschedule', oldStartTime.toISOString(), newStartTime.toISOString(), reason);
+    
+    Logger.log('Lesson rescheduled successfully: ' + eventId);
+    return { success: true, message: 'Lesson rescheduled successfully' };
+    
+  } catch (error) {
+    Logger.log('Error rescheduling lesson: ' + error.toString());
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
+ * Remove a lesson completely from Google Calendar
+ * @param {string} eventId - Google Calendar event ID
+ * @param {string} reason - Removal reason
+ * @param {string} studentId - Student ID for logging
+ * @returns {Object} Success/failure status
+ */
+function removeLesson(eventId, reason, studentId) {
+  try {
+    Logger.log('=== removeLesson called ===');
+    Logger.log('Event ID: ' + eventId);
+    Logger.log('Reason: ' + reason);
+    Logger.log('Student ID: ' + studentId);
+    
+    var calendar = CalendarApp.getCalendarById(LESSON_CALENDAR_ID);
+    var event = calendar.getEventById(eventId);
+    
+    if (!event) {
+      Logger.log('Event not found: ' + eventId);
+      return { success: false, error: 'Event not found' };
+    }
+    
+    // Log the action before deletion
+    logLessonAction(studentId, eventId, 'remove', event.getStartTime().toISOString(), null, reason);
+    
+    // Delete the event
+    event.deleteEvent();
+    
+    Logger.log('Lesson removed successfully: ' + eventId);
+    return { success: true, message: 'Lesson removed successfully' };
+    
+  } catch (error) {
+    Logger.log('Error removing lesson: ' + error.toString());
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
+ * Log lesson actions for audit trail
+ * @param {string} studentId - Student ID
+ * @param {string} eventId - Google Calendar event ID
+ * @param {string} actionType - Type of action (cancel, reschedule, remove)
+ * @param {string} oldDateTime - Old date/time (for reschedule)
+ * @param {string} newDateTime - New date/time (for reschedule)
+ * @param {string} reason - Action reason
+ */
+function logLessonAction(studentId, eventId, actionType, oldDateTime, newDateTime, reason) {
+  try {
+    var ss = SpreadsheetApp.openById(SS_ID);
+    var sheet = ss.getSheetByName('LessonActions') || ss.insertSheet('LessonActions');
+    
+    // Set up headers if sheet is empty
+    if (sheet.getLastRow() === 0) {
+      sheet.getRange(1, 1, 1, 8).setValues([[
+        'ActionID', 'StudentID', 'EventID', 'ActionType', 'OldDateTime', 'NewDateTime', 'Reason', 'StaffMember', 'Timestamp'
+      ]]);
+    }
+    
+    // Generate unique action ID
+    var actionId = 'LA_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    
+    // Add the log entry
+    sheet.appendRow([
+      actionId,
+      studentId,
+      eventId,
+      actionType,
+      oldDateTime || '',
+      newDateTime || '',
+      reason || '',
+      getCurrentStaffName(),
+      new Date().toISOString()
+    ]);
+    
+    Logger.log('Lesson action logged: ' + actionId);
+    
+  } catch (error) {
+    Logger.log('Error logging lesson action: ' + error.toString());
+  }
+}
+
+/**
+ * Get lesson event details by event ID
+ * @param {string} eventId - Google Calendar event ID
+ * @returns {Object} Event details or error
+ */
+function getLessonEventDetails(eventId) {
+  try {
+    Logger.log('=== getLessonEventDetails called ===');
+    Logger.log('Event ID: ' + eventId);
+    
+    var calendar = CalendarApp.getCalendarById(LESSON_CALENDAR_ID);
+    var event = calendar.getEventById(eventId);
+    
+    if (!event) {
+      Logger.log('Event not found: ' + eventId);
+      return { success: false, error: 'Event not found' };
+    }
+    
+    var eventDetails = {
+      success: true,
+      id: event.getId(),
+      title: event.getTitle(),
+      startTime: event.getStartTime().toISOString(),
+      endTime: event.getEndTime().toISOString(),
+      description: event.getDescription() || '',
+      location: event.getLocation() || '',
+      guests: event.getGuestList().map(function(guest) { return guest.getEmail(); }),
+      isAllDay: event.isAllDayEvent()
+    };
+    
+    Logger.log('Event details retrieved: ' + eventId);
+    return eventDetails;
+    
+  } catch (error) {
+    Logger.log('Error getting event details: ' + error.toString());
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
+ * Book a new lesson by creating a Google Calendar event
+ * @param {string} studentId - Student ID
+ * @param {string} dateTime - Date and time in ISO format
+ * @param {number} duration - Duration in minutes
+ * @param {string} lessonType - Type of lesson (Individual/Group)
+ * @param {string} notes - Additional notes
+ * @returns {Object} Success/failure status
+ */
+function bookLesson(studentId, dateTime, duration, lessonType, notes) {
+  try {
+    Logger.log('Booking lesson for student: ' + studentId);
+    
+    // Get student details
+    var student = getStudentById(studentId);
+    if (!student) {
+      Logger.log('Student not found: ' + studentId);
+      return { success: false, error: 'Student not found' };
+    }
+    
+    var calendar = CalendarApp.getCalendarById(LESSON_CALENDAR_ID);
+    
+    // Create start and end times
+    var startTime = new Date(dateTime);
+    var endTime = new Date(startTime.getTime() + (50 * 60 * 1000)); // Fixed 50 minutes duration
+    
+    // Create event title
+    var studentName = student.Name || student.name || 'Unknown Student';
+    var title = studentName + ' (' + lessonType + ')';
+    
+    // Create event description
+    var description = 'Booked by: ' + getCurrentStaffName() + '\n';
+    description += 'Booked on: ' + new Date().toLocaleString() + '\n';
+    if (notes) {
+      description += '\nNotes: ' + notes;
+    }
+    
+    // Create the calendar event
+    var event = calendar.createEvent(title, startTime, endTime, {
+      description: description
+    });
+    
+    // Log the action
+    logLessonAction(studentId, event.getId(), 'book', null, startTime.toISOString(), 'New lesson booked');
+    
+    Logger.log('Lesson booked successfully: ' + event.getId());
+    return { 
+      success: true, 
+      message: 'Lesson booked successfully',
+      eventId: event.getId(),
+      title: title,
+      startTime: startTime.toISOString(),
+      endTime: endTime.toISOString()
+    };
+    
+  } catch (error) {
+    Logger.log('Error booking lesson: ' + error.toString());
+    return { success: false, error: error.toString() };
+  }
+}
+
+
+/**
+ * Get teacher calendar IDs from the spreadsheet
+ * @returns {Array} Array of teacher calendar IDs
+ */
+function getTeacherCalendarIds() {
+  try {
+    var ss = SpreadsheetApp.openById(SS_ID);
+    var sheet = ss.getSheetByName(STUDENT_SHEET);
+    if (!sheet) {
+      Logger.log('Student sheet not found');
+      return [];
+    }
+    
+    var data = sheet.getDataRange().getDisplayValues();
+    var headers = data[0];
+    var teacherCalendarIndex = headers.indexOf('Teacher Calendar ID');
+    
+    if (teacherCalendarIndex === -1) {
+      Logger.log('Teacher Calendar ID column not found');
+      return [];
+    }
+    
+    var teacherCalendars = [];
+    for (var i = 1; i < data.length; i++) {
+      var calendarId = data[i][teacherCalendarIndex];
+      if (calendarId && calendarId.trim() !== '') {
+        teacherCalendars.push(calendarId.trim());
+      }
+    }
+    
+    // Remove duplicates
+    teacherCalendars = [...new Set(teacherCalendars)];
+    Logger.log('Found ' + teacherCalendars.length + ' unique teacher calendars');
+    
+    return teacherCalendars;
+    
+  } catch (error) {
+    Logger.log('Error getting teacher calendar IDs: ' + error.toString());
+    return [];
+  }
+}
+
+/**
+ * Check for age group conflicts in existing lessons
+ * @param {Date} startTime - Lesson start time
+ * @param {Date} endTime - Lesson end time
+ * @param {string} studentType - 'child' or 'adult'
+ * @returns {Object} Conflict status
+ */
+function checkAgeGroupConflicts(startTime, endTime, studentType) {
+  try {
+    Logger.log('=== checkAgeGroupConflicts called ===');
+    Logger.log('Start time: ' + startTime.toISOString());
+    Logger.log('End time: ' + endTime.toISOString());
+    Logger.log('Student type: ' + studentType);
+    
+    // Get existing lessons from MonthlySchedule sheet
+    var existingLessons = getExistingLessonsFromSheet(startTime);
+    
+    // Check for conflicts in the time range
+    var eventDate = startTime.toISOString().split('T')[0];
+    var eventTime = startTime.toTimeString().split(' ')[0].substring(0, 5);
+    
+    if (existingLessons[eventDate] && existingLessons[eventDate][eventTime]) {
+      var existingLesson = existingLessons[eventDate][eventTime];
+      Logger.log('Found existing lesson: ' + existingLesson.title);
+      
+      return {
+        hasConflict: true,
+        reason: 'Time slot already has a lesson: ' + existingLesson.title
+      };
+    }
+    
+    Logger.log('No age group conflicts found');
+    return { hasConflict: false, reason: 'No conflicts' };
+    
+  } catch (error) {
+    Logger.log('Error checking age group conflicts: ' + error.toString());
+    return { hasConflict: false, reason: 'Error checking conflicts: ' + error.toString() };
+  }
+}
+
+/**
+ * Get student by name (helper function for age group checking)
+ * @param {string} studentName - Student name to search for
+ * @returns {Object|null} Student data or null if not found
+ */
+function getStudentByName(studentName) {
+  try {
+    var students = getStudents();
+    var headers = students[0];
+    var nameIndex = headers.indexOf('Name');
+    
+    if (nameIndex === -1) {
+      return null;
+    }
+    
+    for (var i = 1; i < students.length; i++) {
+      var studentData = students[i];
+      var name = studentData[nameIndex];
+      
+      if (name && name.trim() === studentName.trim()) {
+        var student = {};
+        headers.forEach(function(header, index) {
+          student[header] = studentData[index];
+        });
+        return student;
+      }
+    }
+    
+    return null;
+    
+  } catch (error) {
+    Logger.log('Error getting student by name: ' + error.toString());
+    return null;
+  }
+}
+
+
+/**
+ * Get existing lessons from MonthlySchedule sheet for a given week
+ * @param {Date} startDate - Start date of the week
+ * @returns {Object} Map of existing lessons by date and time
+ */
+function getExistingLessonsFromSheet(startDate) {
+  try {
+    Logger.log('=== getExistingLessonsFromSheet called ===');
+    Logger.log('Start date: ' + startDate);
+    Logger.log('Function is being called from frontend');
+    
+    // For testing, let's return only one day's data
+    Logger.log('TESTING: Returning only one day of data to test data size limits');
+    
+    // Open the spreadsheet and get the Lessons sheet
+    var ss = SpreadsheetApp.openById(SS_ID);
+    Logger.log('Spreadsheet opened successfully');
+    
+    var sheet = ss.getSheetByName('MonthlySchedule');
+    Logger.log('Looking for MonthlySchedule sheet...');
+    
+    if (!sheet) {
+      Logger.log('ERROR: MonthlySchedule sheet not found');
+      Logger.log('Available sheets: ' + ss.getSheets().map(s => s.getName()).join(', '));
+      
+      // Try to find MonthlySchedule first, then other sheets
+      var allSheets = ss.getSheets();
+      
+      // First priority: MonthlySchedule
+      for (var i = 0; i < allSheets.length; i++) {
+        var sheetName = allSheets[i].getName();
+        if (sheetName === 'MonthlySchedule') {
+          sheet = allSheets[i];
+          Logger.log('Found MonthlySchedule sheet: ' + sheetName);
+          break;
+        }
+      }
+      
+      // If MonthlySchedule not found, try other sheets
+      if (!sheet) {
+        for (var i = 0; i < allSheets.length; i++) {
+          var sheetName = allSheets[i].getName();
+          Logger.log('Checking alternative sheet: ' + sheetName);
+          if (sheetName.toLowerCase().includes('lesson') || 
+              sheetName.toLowerCase().includes('schedule') ||
+              sheetName.toLowerCase().includes('monthly')) {
+            sheet = allSheets[i];
+            Logger.log('Using alternative sheet: ' + sheetName);
+            break;
+          }
+        }
+      }
+      
+      if (!sheet) {
+        Logger.log('No suitable sheet found');
+        return {};
+      }
+    }
+    
+    Logger.log('Sheet found successfully: ' + sheet.getName());
+    
+    // Get the data range
+    var lastRow = sheet.getLastRow();
+    var lastCol = sheet.getLastColumn();
+    
+    if (lastRow <= 1) {
+      Logger.log('No data in Lessons sheet');
+      return {};
+    }
+    
+    Logger.log('Reading data from rows 1 to ' + lastRow + ', columns 1 to ' + lastCol);
+    
+    // Get all data from the sheet
+    var data = sheet.getDataRange().getValues();
+    var headers = data[0];
+    
+    Logger.log('Headers: ' + JSON.stringify(headers));
+    
+    // Find the column indices
+    var startTimeCol = headers.indexOf('Start');
+    var endTimeCol = headers.indexOf('End');
+    var studentNameCol = headers.indexOf('StudentName');
+    var statusCol = headers.indexOf('Status');
+    
+    Logger.log('Column indices - Start: ' + startTimeCol + ', End: ' + endTimeCol + ', StudentName: ' + studentNameCol + ', Status: ' + statusCol);
+    
+    if (startTimeCol === -1 || endTimeCol === -1 || studentNameCol === -1 || statusCol === -1) {
+      Logger.log('ERROR: Required columns not found');
+      Logger.log('Available headers: ' + JSON.stringify(headers));
+      Logger.log('Start Time col: ' + startTimeCol + ', End Time col: ' + endTimeCol + ', Student Name col: ' + studentNameCol + ', Status col: ' + statusCol);
+      return {};
+    }
+    
+    var lessonsByDay = {};
+    var totalLessons = 0;
+    
+    // Parse the start date to get the week range
+    var weekStart = new Date(startDate);
+    var weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekStart.getDate() + 7);
+    
+    var weekStartStr = Utilities.formatDate(weekStart, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+    var weekEndStr = Utilities.formatDate(weekEnd, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+    
+    Logger.log('Week range: ' + weekStartStr + ' to ' + weekEndStr);
+    Logger.log('Total rows to process: ' + (data.length - 1));
+    
+    // Process each row (skip header row)
+    Logger.log('Starting to process ' + (data.length - 1) + ' data rows');
+    for (var i = 1; i < data.length; i++) {
+      var row = data[i];
+      var startTime = row[startTimeCol];
+      var endTime = row[endTimeCol];
+      var studentName = row[studentNameCol];
+      var status = row[statusCol];
+      
+      Logger.log('Row ' + i + ': startTime=' + startTime + ', studentName=' + studentName + ', status=' + status);
+      
+      if (!startTime || !studentName) {
+        Logger.log('Skipping row ' + i + ' - missing startTime or studentName');
+        continue;
+      }
+      
+      // Parse the start time
+      var startDateObj = new Date(startTime);
+      if (isNaN(startDateObj.getTime())) continue;
+      
+      // Format date as YYYY-MM-DD
+      var eventDate = Utilities.formatDate(startDateObj, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+      
+      // Check if lesson is within the week range
+      if (eventDate < weekStartStr || eventDate >= weekEndStr) {
+        Logger.log('Skipping lesson on ' + eventDate + ' (outside week range ' + weekStartStr + ' to ' + weekEndStr + ')');
+        continue;
+      }
+      
+      // Format time as HH:mm
+      var eventTime = Utilities.formatDate(startDateObj, Session.getScriptTimeZone(), 'HH:mm');
+      
+      Logger.log('Processing lesson: ' + studentName + ' on ' + eventDate + ' at ' + eventTime + ' (status: ' + status + ')');
+      
+      // Initialize day if not exists
+      if (!lessonsByDay[eventDate]) {
+        lessonsByDay[eventDate] = {};
+      }
+      
+      // Initialize time slot if not exists
+      if (!lessonsByDay[eventDate][eventTime]) {
+        lessonsByDay[eventDate][eventTime] = [];
+      }
+      
+      // Add lesson to the time slot
+      lessonsByDay[eventDate][eventTime].push({
+        title: studentName,
+        studentName: studentName,
+        status: status,
+        startTime: startTime,
+        endTime: endTime
+      });
+      
+      totalLessons++;
+    }
+    
+    Logger.log('Processed ' + totalLessons + ' lessons for ' + Object.keys(lessonsByDay).length + ' days');
+    
+    // Check data size before returning
+    var dataString = JSON.stringify(lessonsByDay);
+    var dataSize = dataString.length;
+    Logger.log('Data size: ' + dataSize + ' characters');
+    Logger.log('Sample data: ' + dataString.substring(0, 200) + '...');
+    
+    // Check if data is too large for Google Apps Script
+    if (dataSize > 50000) { // 50KB limit
+      Logger.log('WARNING: Data size exceeds 50KB limit, truncating...');
+      var truncatedData = {};
+      var dayCount = 0;
+      for (var date in lessonsByDay) {
+        if (dayCount >= 3) break; // Limit to 3 days
+        truncatedData[date] = {};
+        var timeCount = 0;
+        for (var time in lessonsByDay[date]) {
+          if (timeCount >= 5) break; // Limit to 5 time slots per day
+          truncatedData[date][time] = lessonsByDay[date][time].map(function(lesson) {
+            return {
+              studentName: lesson.studentName,
+              status: lesson.status,
+              startTime: lesson.startTime,
+              endTime: lesson.endTime
+            };
+          });
+          timeCount++;
+        }
+        dayCount++;
+      }
+      Logger.log('Truncated data size: ' + JSON.stringify(truncatedData).length + ' characters');
+      return truncatedData;
+    }
+    
+    Logger.log('Returning week lessonsByDay with ' + Object.keys(lessonsByDay).length + ' days');
+    
+    // Debug: Log the actual return value
+    var returnValue = lessonsByDay;
+    Logger.log('About to return: ' + JSON.stringify(returnValue).substring(0, 200) + '...');
+    Logger.log('Return value type: ' + typeof returnValue);
+    Logger.log('Return value keys: ' + Object.keys(returnValue));
+    
+    // Return the actual lesson data as JSON string
+    Logger.log('Returning actual lesson data as JSON string');
+    return JSON.stringify(lessonsByDay);
+    
+  } catch (error) {
+    Logger.log('Error in getExistingLessonsFromSheet: ' + error.toString());
+    Logger.log('Error stack: ' + error.stack);
+    return {};
+  }
+}
+
+function testFunction() {
+  Logger.log('Test function called successfully');
+  return { test: 'success', message: 'Google Apps Script is working' };
+}
+
+function debugGetExistingLessonsFromSheet() {
+  try {
+    Logger.log('=== DEBUG: getExistingLessonsFromSheet ===');
+    
+    // Test with today's date
+    var today = new Date();
+    var todayStr = Utilities.formatDate(today, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+    Logger.log('Testing with today\'s date: ' + todayStr);
+    
+    // Open spreadsheet
+    var ss = SpreadsheetApp.openById(SS_ID);
+    Logger.log('Spreadsheet opened successfully');
+    
+    // List all sheets
+    var sheets = ss.getSheets();
+    Logger.log('Available sheets: ' + sheets.map(s => s.getName()).join(', '));
+    
+           // First, specifically look for MonthlySchedule sheet
+           var targetSheet = null;
+           for (var i = 0; i < sheets.length; i++) {
+             var sheetName = sheets[i].getName();
+             if (sheetName === 'MonthlySchedule') {
+               targetSheet = sheets[i];
+               Logger.log('Found MonthlySchedule sheet: ' + sheetName);
+               break;
+             }
+           }
+           
+           // If MonthlySchedule not found, try to find alternative sheets
+           if (!targetSheet) {
+             for (var i = 0; i < sheets.length; i++) {
+               var sheetName = sheets[i].getName();
+               if (sheetName.toLowerCase().includes('lesson') || 
+                   sheetName.toLowerCase().includes('schedule') ||
+                   sheetName.toLowerCase().includes('monthly')) {
+                 targetSheet = sheets[i];
+                 Logger.log('Found alternative sheet: ' + sheetName);
+                 break;
+               }
+             }
+           }
+    
+    if (!targetSheet) {
+      Logger.log('No suitable sheet found, using first sheet: ' + sheets[0].getName());
+      targetSheet = sheets[0];
+    }
+    
+    // Get data from sheet
+    var lastRow = targetSheet.getLastRow();
+    var lastCol = targetSheet.getLastColumn();
+    Logger.log('Sheet: ' + targetSheet.getName() + ', Rows: ' + lastRow + ', Cols: ' + lastCol);
+    
+    if (lastRow <= 1) {
+      Logger.log('No data in sheet');
+      return { error: 'No data in sheet' };
+    }
+    
+    // Get headers
+    var headers = targetSheet.getRange(1, 1, 1, lastCol).getValues()[0];
+    Logger.log('Headers: ' + JSON.stringify(headers));
+    
+    // Get first few rows of data
+    var sampleData = targetSheet.getRange(1, 1, Math.min(5, lastRow), lastCol).getValues();
+    Logger.log('Sample data: ' + JSON.stringify(sampleData));
+    
+    return { 
+      success: true, 
+      sheetName: targetSheet.getName(),
+      rows: lastRow,
+      cols: lastCol,
+      headers: headers,
+      sampleData: sampleData
+    };
+    
+  } catch (error) {
+    Logger.log('Error in debugGetExistingLessonsFromSheet: ' + error.toString());
+    return { error: error.toString() };
   }
 }
 
