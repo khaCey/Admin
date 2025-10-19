@@ -54,13 +54,19 @@
   </nav>
 
   <!-- Sidebar (Students only) -->
-  <nav id="sidebar" class="fixed top-16 left-0 h-screen w-64 bg-gray-50 border-r border-gray-200 transition-transform duration-300 z-40" style="display:none">
+  <nav id="sidebar" class="fixed top-16 left-0 h-screen w-64 bg-gray-50 border-r border-gray-200 transition-transform duration-300 z-40 transform -translate-x-full">
       <div class="p-4">
         <ul>
 <li>
             <a class="flex items-center space-x-3 px-4 py-3 text-gray-700 hover:bg-green-100 hover:text-green-700 rounded-lg transition-colors active:bg-green-600 active:text-white" href="#" onclick="showStudents(); return false;">
               <i data-lucide="users" class="w-5 h-5"></i>
               <span>Students</span>
+            </a>
+          </li>
+          <li>
+            <a class="flex items-center space-x-3 px-4 py-3 text-gray-700 hover:bg-green-100 hover:text-green-700 rounded-lg transition-colors" href="#" onclick="showCodePage(); return false;">
+              <i data-lucide="code" class="w-5 h-5"></i>
+              <span>Code</span>
             </a>
           </li>
 </ul>
@@ -74,6 +80,115 @@
       <div id="studentsRoot"></div>
     </div>
   </main>
+
+  <!-- Code page content (hidden by default) -->
+  <div id="codePage" class="pt-16 h-screen bg-gray-100 transition-all duration-300 w-full sidebar-content flex flex-col" style="display: none;">
+    <div class="p-6 w-full flex flex-col h-full">
+      <div class="max-w-7xl mx-auto w-full">
+        <!-- Page Header -->
+        <div class="mb-8">
+          <h1 class="text-3xl font-bold text-gray-900">Code Management</h1>
+          <p class="text-gray-600 mt-2">Manage and view your Google Apps Script code</p>
+        </div>
+
+        <!-- Code Actions -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+          <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+            <div class="flex items-center mb-4">
+              <div class="p-2 bg-blue-100 rounded-lg">
+                <i data-lucide="upload" class="w-6 h-6 text-blue-600"></i>
+              </div>
+              <h3 class="text-lg font-semibold text-gray-900 ml-3">Push Code</h3>
+            </div>
+            <p class="text-gray-600 mb-4">Deploy your local changes to Google Apps Script</p>
+            <button onclick="pushCode()" class="w-full bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors">
+              Push to Apps Script
+            </button>
+          </div>
+
+          <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+            <div class="flex items-center mb-4">
+              <div class="p-2 bg-green-100 rounded-lg">
+                <i data-lucide="download" class="w-6 h-6 text-green-600"></i>
+              </div>
+              <h3 class="text-lg font-semibold text-gray-900 ml-3">Pull Code</h3>
+            </div>
+            <p class="text-gray-600 mb-4">Download the latest code from Google Apps Script</p>
+            <button onclick="pullCode()" class="w-full bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors">
+              Pull from Apps Script
+            </button>
+          </div>
+
+          <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+            <div class="flex items-center mb-4">
+              <div class="p-2 bg-purple-100 rounded-lg">
+                <i data-lucide="git-branch" class="w-6 h-6 text-purple-600"></i>
+              </div>
+              <h3 class="text-lg font-semibold text-gray-900 ml-3">Version Control</h3>
+            </div>
+            <p class="text-gray-600 mb-4">Manage code versions and deployments</p>
+            <button onclick="showVersions()" class="w-full bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition-colors">
+              View Versions
+            </button>
+          </div>
+        </div>
+
+        <!-- Code Status -->
+        <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-8">
+          <h2 class="text-xl font-semibold text-gray-900 mb-4">Code Status</h2>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+              <h3 class="text-sm font-medium text-gray-500 mb-2">Last Push</h3>
+              <p class="text-lg font-semibold text-gray-900" id="lastPushTime">Never</p>
+            </div>
+            <div>
+              <h3 class="text-sm font-medium text-gray-500 mb-2">Status</h3>
+              <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800" id="codeStatus">
+                Up to date
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Recent Changes -->
+        <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+          <h2 class="text-xl font-semibold text-gray-900 mb-4">Recent Changes</h2>
+          <div class="space-y-4" id="recentChanges">
+            <div class="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+              <div class="flex items-center">
+                <div class="w-2 h-2 bg-green-500 rounded-full mr-3"></div>
+                <div>
+                  <p class="font-medium text-gray-900">Fixed lesson grouping logic</p>
+                  <p class="text-sm text-gray-500">Updated frontend to group lessons by eventID</p>
+                </div>
+              </div>
+              <span class="text-sm text-gray-500">2 hours ago</span>
+            </div>
+            <div class="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+              <div class="flex items-center">
+                <div class="w-2 h-2 bg-blue-500 rounded-full mr-3"></div>
+                <div>
+                  <p class="font-medium text-gray-900">Added EventID to backend</p>
+                  <p class="text-sm text-gray-500">Updated getExistingLessonsFromSheet to include eventID</p>
+                </div>
+              </div>
+              <span class="text-sm text-gray-500">4 hours ago</span>
+            </div>
+            <div class="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+              <div class="flex items-center">
+                <div class="w-2 h-2 bg-yellow-500 rounded-full mr-3"></div>
+                <div>
+                  <p class="font-medium text-gray-900">Fixed card positioning</p>
+                  <p class="text-sm text-gray-500">Updated card positioning logic to use unique lessons count</p>
+                </div>
+              </div>
+              <span class="text-sm text-gray-500">6 hours ago</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <!-- Loader overlay -->
   <div id="loader" class="fixed inset-0 bg-black/50 hidden items-center justify-center">
@@ -627,42 +742,42 @@
           </div>
 
           <!-- Calendar Grid -->
-          <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
-            <!-- Calendar Header - Sticky -->
-            <div class="sticky top-0 z-10 grid grid-cols-8 bg-green-600 text-white">
-              <div class="px-4 py-3 text-sm font-semibold text-center">Time</div>
-              <div class="px-4 py-3 text-sm font-semibold text-center" data-day="0">
-                <div>MON</div>
-                <div id="date-0" class="text-xs font-normal mt-1">--</div>
+          <div class="bg-white overflow-hidden">
+            <!-- Calendar Body - Scrollable (with sticky header inside) -->
+            <div class="overflow-y-auto" style="max-height: 70vh; min-height: 400px;">
+              <!-- Calendar Header - Sticky -->
+              <div class="sticky top-0 z-10 grid grid-cols-8 bg-green-600 text-white">
+                <div class="px-4 py-3 text-sm font-semibold text-center">Time</div>
+                <div class="px-4 py-3 text-sm font-semibold text-center" data-day="0">
+                  <div>MON</div>
+                  <div id="date-0" class="text-xs font-normal mt-1">--</div>
+                </div>
+                <div class="px-4 py-3 text-sm font-semibold text-center" data-day="1">
+                  <div>TUE</div>
+                  <div id="date-1" class="text-xs font-normal mt-1">--</div>
+                </div>
+                <div class="px-4 py-3 text-sm font-semibold text-center" data-day="2">
+                  <div>WED</div>
+                  <div id="date-2" class="text-xs font-normal mt-1">--</div>
+                </div>
+                <div class="px-4 py-3 text-sm font-semibold text-center" data-day="3">
+                  <div>THU</div>
+                  <div id="date-3" class="text-xs font-normal mt-1">--</div>
+                </div>
+                <div class="px-4 py-3 text-sm font-semibold text-center" data-day="4">
+                  <div>FRI</div>
+                  <div id="date-4" class="text-xs font-normal mt-1">--</div>
+                </div>
+                <div class="px-4 py-3 text-sm font-semibold text-center" data-day="5">
+                  <div>SAT</div>
+                  <div id="date-5" class="text-xs font-normal mt-1">--</div>
+                </div>
+                <div class="px-4 py-3 text-sm font-semibold text-center" data-day="6">
+                  <div>SUN</div>
+                  <div id="date-6" class="text-xs font-normal mt-1">--</div>
+                </div>
               </div>
-              <div class="px-4 py-3 text-sm font-semibold text-center" data-day="1">
-                <div>TUE</div>
-                <div id="date-1" class="text-xs font-normal mt-1">--</div>
-              </div>
-              <div class="px-4 py-3 text-sm font-semibold text-center" data-day="2">
-                <div>WED</div>
-                <div id="date-2" class="text-xs font-normal mt-1">--</div>
-              </div>
-              <div class="px-4 py-3 text-sm font-semibold text-center" data-day="3">
-                <div>THU</div>
-                <div id="date-3" class="text-xs font-normal mt-1">--</div>
-              </div>
-              <div class="px-4 py-3 text-sm font-semibold text-center" data-day="4">
-                <div>FRI</div>
-                <div id="date-4" class="text-xs font-normal mt-1">--</div>
-              </div>
-              <div class="px-4 py-4 text-sm font-semibold text-center" data-day="5">
-                <div>SAT</div>
-                <div id="date-5" class="text-xs font-normal mt-1">--</div>
-              </div>
-              <div class="px-4 py-3 text-sm font-semibold text-center" data-day="6">
-                <div>SUN</div>
-                <div id="date-6" class="text-xs font-normal mt-1">--</div>
-              </div>
-            </div>
-            
-            <!-- Calendar Body - Scrollable -->
-            <div class="overflow-y-auto" style="max-height: 70vh; min-height: 400px; margin: 0; padding: 0;">
+              
               <div id="calendarGrid" class="grid grid-cols-8" style="grid-auto-rows: 60px; min-height: 660px; margin: 0; padding: 0;">
                 <!-- Time slots will be generated by JavaScript -->
               </div>
@@ -1760,7 +1875,11 @@
               slotCell.title = `Closed (${hours.start}:00-${hours.end}:00)`;
             } else {
               // Check for existing lessons at this time
-              const dayKey = dayDate.toISOString().split('T')[0];
+              // Use local date formatting to avoid timezone shift
+              const year = dayDate.getFullYear();
+              const month = String(dayDate.getMonth() + 1).padStart(2, '0');
+              const dayOfMonth = String(dayDate.getDate()).padStart(2, '0');
+              const dayKey = `${year}-${month}-${dayOfMonth}`;
               const dayLessons = lessonsByDay[dayKey] && lessonsByDay[dayKey][slotTime];
               
               if (dayLessons && dayLessons.length > 0) {
@@ -1768,18 +1887,35 @@
                 const scheduledLessons = dayLessons.filter(lesson => lesson.status === 'scheduled');
                 
                 if (scheduledLessons.length > 0) {
+                  // Group lessons by eventID to avoid duplicates
+                  const groupedLessons = {};
+                  scheduledLessons.forEach(lesson => {
+                    const eventId = lesson.eventID || lesson.title || 'unknown';
+                    if (!groupedLessons[eventId]) {
+                      groupedLessons[eventId] = {
+                        eventID: eventId,
+                        title: lesson.title || 'Group Lesson',
+                        status: lesson.status,
+                        startTime: lesson.startTime,
+                        endTime: lesson.endTime
+                      };
+                    }
+                  });
+                  
+                  const uniqueLessons = Object.values(groupedLessons);
+                  
                   // Show existing lessons as cards
                   const lessonsContainer = document.createElement('div');
                   lessonsContainer.className = 'flex h-full p-1 relative';
                   
-                  scheduledLessons.forEach((lesson, index) => {
+                  uniqueLessons.forEach((lesson, index) => {
                   const lessonCard = document.createElement('div');
                   lessonCard.className = 'bg-green-600 border border-green-700 rounded-md text-xs p-2 absolute top-1 w-4/5 shadow-sm hover:shadow-lg transition-all duration-200 cursor-pointer text-white';
                   lessonCard.style.height = '50px';
                   lessonCard.style.zIndex = 10 + index;
                   
                   // Calculate position: first card at left, last card at right, others distributed
-                  const totalCards = dayLessons.length;
+                  const totalCards = uniqueLessons.length;
                   const containerWidth = 100; // percentage
                   const cardWidth = 80; // percentage
                   const availableSpace = containerWidth - cardWidth;
@@ -1794,8 +1930,9 @@
                   
                   const title = document.createElement('div');
                   title.className = 'font-semibold text-white truncate mb-1';
-                  title.textContent = lesson.studentName || lesson.title || 'Lesson';
+                  title.textContent = lesson.title || 'Group Lesson';
                   lessonCard.appendChild(title);
+                  
                   
                   if (lesson.status) {
                     const status = document.createElement('div');
@@ -1904,7 +2041,11 @@
             dayDate.setDate(weekStart.getDate() + day);
             const dayOfWeek = dayDate.getDay();
             const hours = openingHours[dayOfWeek];
-            const dayKey = dayDate.toISOString().split('T')[0];
+            // Use local date formatting to avoid timezone shift
+            const year = dayDate.getFullYear();
+            const month = String(dayDate.getMonth() + 1).padStart(2, '0');
+            const dayOfMonth = String(dayDate.getDate()).padStart(2, '0');
+            const dayKey = `${year}-${month}-${dayOfMonth}`;
 
             const slotCell = document.createElement('div');
             slotCell.className = 'px-1 text-sm border-r border-gray-200 transition-colors flex flex-col justify-start relative';
@@ -1929,18 +2070,35 @@
                 const scheduledLessons = dayLessons.filter(lesson => lesson.status === 'scheduled');
                 
                 if (scheduledLessons.length > 0) {
+                  // Group lessons by eventID to avoid duplicates
+                  const groupedLessons = {};
+                  scheduledLessons.forEach(lesson => {
+                    const eventId = lesson.eventID || lesson.title || 'unknown';
+                    if (!groupedLessons[eventId]) {
+                      groupedLessons[eventId] = {
+                        eventID: eventId,
+                        title: lesson.title || 'Group Lesson',
+                        status: lesson.status,
+                        startTime: lesson.startTime,
+                        endTime: lesson.endTime
+                      };
+                    }
+                  });
+                  
+                  const uniqueLessons = Object.values(groupedLessons);
+                  
                   // Display lesson cards
                   const lessonsContainer = document.createElement('div');
                   lessonsContainer.className = 'flex h-full p-1 relative';
 
-                  scheduledLessons.forEach((lesson, index) => {
+                  uniqueLessons.forEach((lesson, index) => {
                   const lessonCard = document.createElement('div');
                   lessonCard.className = 'bg-green-600 border border-green-700 rounded-md text-xs p-2 absolute top-1 w-4/5 shadow-sm hover:shadow-lg transition-all duration-200 cursor-pointer text-white';
                   lessonCard.style.height = '50px';
                   lessonCard.style.zIndex = 10 + index;
                   
                   // Calculate position: first card at left, last card at right, others distributed
-                  const totalCards = dayLessons.length;
+                  const totalCards = uniqueLessons.length;
                   const containerWidth = 100; // percentage
                   const cardWidth = 80; // percentage
                   const availableSpace = containerWidth - cardWidth;
@@ -1955,8 +2113,9 @@
 
                   const title = document.createElement('div');
                   title.className = 'font-semibold text-white truncate mb-1';
-                  title.textContent = lesson.title || lesson.studentName || 'Lesson';
+                  title.textContent = lesson.title || 'Group Lesson';
                   lessonCard.appendChild(title);
+                  
 
                   const time = document.createElement('div');
                   time.className = 'text-white text-xs truncate mb-1';
@@ -4711,6 +4870,107 @@
     
     // Initial cache status update
     setTimeout(updateCacheStatus, 2000);
+
+    // Sidebar toggle functionality
+    const sidebar = document.getElementById('sidebar');
+    const toggleBtn = document.getElementById('toggleSidebarBtn');
+    const sidebarMenuIcon = document.getElementById('sidebarMenuIcon');
+
+    // Initialize sidebar state
+    sidebar.setAttribute('data-hidden', 'true');
+
+    function toggleSidebar(event) {
+      event.preventDefault();
+      event.stopPropagation();
+      
+      console.log('🔧 Toggle sidebar clicked');
+      console.log('Sidebar classes:', sidebar.className);
+      console.log('Data hidden:', sidebar.getAttribute('data-hidden'));
+      
+      const isHidden = sidebar.getAttribute('data-hidden') === 'true';
+      console.log('Is hidden:', isHidden);
+      
+      if (isHidden) {
+        // Show sidebar
+        sidebar.classList.remove('-translate-x-full');
+        sidebar.setAttribute('data-hidden', 'false');
+        sidebarMenuIcon.setAttribute('data-lucide', 'x');
+        console.log('✅ Showing sidebar');
+      } else {
+        // Hide sidebar
+        sidebar.classList.add('-translate-x-full');
+        sidebar.setAttribute('data-hidden', 'true');
+        sidebarMenuIcon.setAttribute('data-lucide', 'menu');
+        console.log('✅ Hiding sidebar');
+      }
+      
+      // Re-initialize icons immediately
+      if (window.lucide && lucide.createIcons) {
+        lucide.createIcons();
+      }
+    }
+
+    if (toggleBtn) {
+      toggleBtn.addEventListener('click', toggleSidebar);
+    }
+
+    // Code page navigation
+    function showCodePage() {
+      // Hide main content
+      document.getElementById('mainContent').style.display = 'none';
+      // Show code page
+      document.getElementById('codePage').style.display = 'flex';
+      // Re-initialize icons
+      if (window.lucide && lucide.createIcons) lucide.createIcons();
+    }
+
+    // Code management functions
+    function pushCode() {
+      const button = event.target;
+      const originalText = button.textContent;
+      button.textContent = 'Pushing...';
+      button.disabled = true;
+      
+      setTimeout(() => {
+        button.textContent = 'Push Complete';
+        button.classList.remove('bg-blue-600', 'hover:bg-blue-700');
+        button.classList.add('bg-green-600');
+        
+        // Update last push time
+        document.getElementById('lastPushTime').textContent = new Date().toLocaleString();
+        
+        setTimeout(() => {
+          button.textContent = originalText;
+          button.disabled = false;
+          button.classList.remove('bg-green-600');
+          button.classList.add('bg-blue-600', 'hover:bg-blue-700');
+        }, 2000);
+      }, 2000);
+    }
+
+    function pullCode() {
+      const button = event.target;
+      const originalText = button.textContent;
+      button.textContent = 'Pulling...';
+      button.disabled = true;
+      
+      setTimeout(() => {
+        button.textContent = 'Pull Complete';
+        button.classList.remove('bg-green-600', 'hover:bg-green-700');
+        button.classList.add('bg-blue-600');
+        
+        setTimeout(() => {
+          button.textContent = originalText;
+          button.disabled = false;
+          button.classList.remove('bg-blue-600');
+          button.classList.add('bg-green-600', 'hover:bg-green-700');
+        }, 2000);
+      }, 2000);
+    }
+
+    function showVersions() {
+      alert('Version control feature coming soon!');
+    }
   </script>
 
 </body>

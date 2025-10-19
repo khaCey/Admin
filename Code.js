@@ -4217,8 +4217,10 @@ function getExistingLessonsFromSheet(startDate) {
     var endTimeCol = headers.indexOf('End');
     var studentNameCol = headers.indexOf('StudentName');
     var statusCol = headers.indexOf('Status');
+    var eventIdCol = headers.indexOf('EventID');
+    var titleCol = headers.indexOf('Title');
     
-    Logger.log('Column indices - Start: ' + startTimeCol + ', End: ' + endTimeCol + ', StudentName: ' + studentNameCol + ', Status: ' + statusCol);
+    Logger.log('Column indices - Start: ' + startTimeCol + ', End: ' + endTimeCol + ', StudentName: ' + studentNameCol + ', Status: ' + statusCol + ', EventID: ' + eventIdCol + ', Title: ' + titleCol);
     
     if (startTimeCol === -1 || endTimeCol === -1 || studentNameCol === -1 || statusCol === -1) {
       Logger.log('ERROR: Required columns not found');
@@ -4287,7 +4289,8 @@ function getExistingLessonsFromSheet(startDate) {
       
       // Add lesson to the time slot
       lessonsByDay[eventDate][eventTime].push({
-        title: studentName,
+        eventID: row[eventIdCol],
+        title: row[titleCol],
         studentName: studentName,
         status: status,
         startTime: startTime,
