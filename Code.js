@@ -1,7 +1,7 @@
 // ─── CONFIGURATION (from user's source) ────────────────────────────────────────
 var SS_ID               = '1upKC-iNWs7HIeKiVVAegve5O5WbNebbjMlveMcvnuow';
 var STUDENT_SHEET       = 'Students';
-var PAYMENT_SHEET       = 'Payment';
+var PAYMENT_SHEET       = 'PaymentLogs';
 var NOTES_SHEET         = 'Notes';
 var LESSON_SHEET        = 'Lessons';
 var LESSON_CALENDAR_ID  = 'greensquare.jp_h8u0oufn8feana384v67o46o78@group.calendar.google.com';
