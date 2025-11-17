@@ -1,0 +1,278 @@
+<!-- =================================================================== -->
+<!-- BOOKING CALENDAR COMPONENT - BACKUP -->
+<!-- Date: 2025-01-XX -->
+<!-- This is a complete backup of the original booking calendar component -->
+<!-- Use this file to restore the booking calendar if needed -->
+<!-- =================================================================== -->
+<!--
+LOCATION IN Index.html:
+- HTML Modals: Lines ~1412-1801
+  * Book Lesson Modal: Lines 1412-1493
+  * Time Slot Modal: Lines 1755-1801
+- Element References: Lines ~2504-2517
+  * bookLessonEls: Lines 2504-2509
+  * timeSlotEls: Lines 2512-2517
+- JavaScript Functions: Lines ~2998-4065
+  * openTimeSlotModal(): Lines 2998-3155
+  * handleTimeSlotBooking(): Lines 3157-3172
+  * bookLessonWithTotal(): Lines 3174-3287
+  * openBookLessonModal(): Lines 3289-4065 (includes all nested functions)
+- Button Event Listener: Lines ~867-886
+-->
+
+<!-- ===== HTML: Book Lesson Modal ===== -->
+<div id="bookLessonModal" class="fixed inset-0 z-[9999] hidden">
+  <div class="absolute inset-0 bg-black/50"></div>
+  <div class="absolute inset-0 flex items-center justify-center p-4 sm:p-8 overflow-auto">
+    <div class="w-full max-w-6xl rounded-2xl bg-white modal-card ring-1 ring-black/5">
+      <header class="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+        <div>
+          <h3 id="bookLessonTitle" class="text-xl font-semibold text-gray-900">Book a New Lesson</h3>
+          <p id="bookLessonStudentInfo" class="text-sm text-gray-600 mt-1">Loading student information...</p>
+        </div>
+        <button type="button" id="bookLessonClose" class="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium hover:bg-gray-50">Close</button>
+      </header>
+      
+      <div class="p-6">
+        <!-- Week Navigation -->
+        <div class="flex items-center justify-between mb-6">
+          <button type="button" id="prevWeekBtn" class="flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+            </svg>
+            Previous Week
+          </button>
+          <h4 id="currentWeekDisplay" class="text-lg font-semibold text-gray-900">Week of [Date]</h4>
+          <button type="button" id="nextWeekBtn" class="flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
+            Next Week
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+            </svg>
+          </button>
+        </div>
+
+        <!-- Calendar Grid -->
+        <div class="bg-white overflow-hidden">
+          <!-- Calendar Body - Scrollable (with sticky header inside) -->
+          <div class="overflow-y-auto" style="max-height: 70vh; min-height: 400px;">
+            <!-- Calendar Header - Sticky -->
+            <div class="sticky top-0 z-20 grid grid-cols-8 bg-green-600 text-white shadow-md">
+              <div class="px-4 py-3 text-sm font-semibold text-center">Time</div>
+              <div class="px-4 py-3 text-sm font-semibold text-center" data-day="0">
+                <div>MON</div>
+                <div id="date-0" class="text-xs font-normal mt-1">--</div>
+              </div>
+              <div class="px-4 py-3 text-sm font-semibold text-center" data-day="1">
+                <div>TUE</div>
+                <div id="date-1" class="text-xs font-normal mt-1">--</div>
+              </div>
+              <div class="px-4 py-3 text-sm font-semibold text-center" data-day="2">
+                <div>WED</div>
+                <div id="date-2" class="text-xs font-normal mt-1">--</div>
+              </div>
+              <div class="px-4 py-3 text-sm font-semibold text-center" data-day="3">
+                <div>THU</div>
+                <div id="date-3" class="text-xs font-normal mt-1">--</div>
+              </div>
+              <div class="px-4 py-3 text-sm font-semibold text-center" data-day="4">
+                <div>FRI</div>
+                <div id="date-4" class="text-xs font-normal mt-1">--</div>
+              </div>
+              <div class="px-4 py-3 text-sm font-semibold text-center" data-day="5">
+                <div>SAT</div>
+                <div id="date-5" class="text-xs font-normal mt-1">--</div>
+              </div>
+              <div class="px-4 py-3 text-sm font-semibold text-center" data-day="6">
+                <div>SUN</div>
+                <div id="date-6" class="text-xs font-normal mt-1">--</div>
+              </div>
+            </div>
+            
+            <div id="calendarGrid" class="grid grid-cols-8" style="grid-auto-rows: 60px; min-height: 660px; margin: 0; padding-top: 2px;">
+              <!-- Time slots will be generated by JavaScript -->
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <footer class="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-200">
+        <button type="button" id="bookLessonCancel" class="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Close</button>
+      </footer>
+    </div>
+  </div>
+</div>
+
+<!-- ===== HTML: Time Slot Selection Modal ===== -->
+<div id="timeSlotModal" class="fixed inset-0 z-[9999] hidden">
+  <div class="absolute inset-0 bg-black/50"></div>
+  <div class="absolute inset-0 flex items-center justify-center p-4 sm:p-8 overflow-auto">
+    <div class="w-full max-w-md rounded-2xl bg-white modal-card ring-1 ring-black/5">
+      <header class="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+        <div>
+          <h3 id="timeSlotTitle" class="text-lg font-semibold text-gray-900">Select Time Slot</h3>
+          <p id="timeSlotInfo" class="text-sm text-gray-600 mt-1">Choose your preferred time</p>
+        </div>
+        <button type="button" id="timeSlotClose" class="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium hover:bg-gray-50">Close</button>
+      </header>
+      
+      <div class="p-6">
+        <div class="mb-4">
+          <label class="block text-sm font-medium text-gray-700 mb-2">Selected Time</label>
+          <div id="selectedTimeDisplay" class="p-3 bg-gray-50 rounded-lg text-lg font-medium text-gray-900">
+            <!-- Selected time will be displayed here -->
+          </div>
+        </div>
+        
+        <div class="mb-4">
+          <label class="block text-sm font-medium text-gray-700 mb-2">Lesson Type</label>
+          <select id="slotType" class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm">
+            <option value="Online">Online</option>
+            <option value="Cafe">Cafe</option>
+          </select>
+        </div>
+        
+        <div class="mb-4">
+          <label class="block text-sm font-medium text-gray-700 mb-2">Notes (Optional)</label>
+          <textarea id="slotNotes" rows="3" class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm" placeholder="Any additional notes for this lesson..."></textarea>
+        </div>
+        
+        <div id="totalLessonsContainer" class="mb-4">
+          <label class="block text-sm font-medium text-gray-700 mb-2">Total Lessons for Month</label>
+          <input type="number" id="slotTotalLessons" min="1" class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm" placeholder="Enter total number of lessons for this month" required />
+        </div>
+      </div>
+
+      <footer class="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-200">
+        <button type="button" id="timeSlotCancel" class="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
+        <button type="button" id="timeSlotConfirm" class="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">Confirm Booking</button>
+      </footer>
+    </div>
+  </div>
+</div>
+
+<!-- =================================================================== -->
+<!-- JAVASCRIPT: Element References -->
+<!-- =================================================================== -->
+<script>
+// Element references for booking calendar
+const bookLessonEls = {
+  root: $('#bookLessonModal'), 
+  title: $('#bookLessonTitle'),
+  close: $('#bookLessonClose'), 
+  cancel: $('#bookLessonCancel'),
+  studentInfo: $('#bookLessonStudentInfo'), 
+  calendarGrid: $('#calendarGrid'),
+  currentWeekDisplay: $('#currentWeekDisplay'), 
+  prevWeekBtn: $('#prevWeekBtn'), 
+  nextWeekBtn: $('#nextWeekBtn')
+};
+
+const timeSlotEls = {
+  root: $('#timeSlotModal'), 
+  title: $('#timeSlotTitle'), 
+  info: $('#timeSlotInfo'),
+  close: $('#timeSlotClose'), 
+  cancel: $('#timeSlotCancel'), 
+  confirm: $('#timeSlotConfirm'),
+  selectedTimeDisplay: $('#selectedTimeDisplay'), 
+  type: $('#slotType'), 
+  notes: $('#slotNotes'), 
+  totalLessons: $('#slotTotalLessons'),
+  totalLessonsContainer: $('#totalLessonsContainer')
+};
+</script>
+
+<!-- =================================================================== -->
+<!-- JAVASCRIPT: Main Functions -->
+<!-- =================================================================== -->
+<!-- 
+LOCATION IN Index.html: Lines ~2218-4040
+Copy these functions from Index.html when restoring
+-->
+
+<script>
+// ===== COMPLETE JAVASCRIPT FUNCTIONS FOR BOOKING CALENDAR =====
+// NOTE: These are references - actual code is in Index.html lines ~2998-4040
+// Key functions:
+// 1. openTimeSlotModal() - Lines ~2998-3155
+// 2. handleTimeSlotBooking() - Lines ~3157-3172
+// 3. bookLessonWithTotal() - Lines ~3174-3287
+// 4. openBookLessonModal() - Lines ~3289-4040
+//    - generateCalendarWithLessons() - nested function
+//    - generateCalendarWithLessonCards() - nested function
+//    - generateFallbackCalendar() - nested function
+//    - createSimpleBookingCalendar() - nested function
+//    - generateCalendarGrid() - nested function
+//    - selectTimeSlot() - nested function
+//    - updateWeekDisplay() - nested function
+//    - navigateWeek() - nested function
+
+// IMPORTANT: When restoring, copy the complete openBookLessonModal function
+// and all nested functions from Index.html lines 3289-4040
+</script>
+
+<!-- =================================================================== -->
+<!-- BUTTON EVENT LISTENER -->
+<!-- =================================================================== -->
+<script>
+// Book Lesson button functionality
+const bookLessonBtn = document.getElementById('bookLessonBtn');
+if (bookLessonBtn) {
+  bookLessonBtn.addEventListener('click', function() {
+    if (window.student && (window.student.ID || window.student.id)) {
+      openBookLessonModal({ 
+        student: window.student,
+        onClose: () => {
+          console.log('Book lesson modal closed');
+        }
+      });
+    } else {
+      showToast('Please select a student first to book a lesson.', 'warning');
+    }
+  });
+}
+</script>
+
+<!-- =================================================================== -->
+<!-- RESTORATION INSTRUCTIONS -->
+<!-- =================================================================== -->
+<!-- 
+To restore this backup to Index.html:
+
+1. HTML MODALS (Lines ~1412-1801 in Index.html):
+   - Copy the "Book Lesson Modal" HTML (lines 1412-1493)
+   - Copy the "Time Slot Selection Modal" HTML (lines 1755-1801)
+
+2. ELEMENT REFERENCES (Lines ~2504-2517 in Index.html):
+   - Copy bookLessonEls object definition (lines 2504-2509)
+   - Copy timeSlotEls object definition (lines 2512-2517)
+
+3. JAVASCRIPT FUNCTIONS (Lines ~2998-4065 in Index.html):
+   - Copy openTimeSlotModal() function (lines 2998-3155)
+   - Copy handleTimeSlotBooking() function (lines 3157-3172)
+   - Copy bookLessonWithTotal() function (lines 3174-3287)
+   - Copy openBookLessonModal() function (lines 3289-4065)
+     * This includes all nested functions:
+       - generateCalendarWithLessons()
+       - generateCalendarWithLessonCards()
+       - generateFallbackCalendar()
+       - createSimpleBookingCalendar()
+       - generateCalendarGrid()
+       - selectTimeSlot()
+       - updateWeekDisplay()
+       - navigateWeek()
+
+4. BUTTON EVENT LISTENER (Lines ~867-886 in Index.html):
+   - Copy the bookLessonBtn event listener code
+
+5. TEST:
+   - Open the app and test booking functionality
+   - Verify calendar displays correctly
+   - Verify time slot selection works
+   - Verify booking creates calendar events
+-->
+<!-- =================================================================== -->
+<!-- END OF BACKUP -->
+<!-- =================================================================== -->
+

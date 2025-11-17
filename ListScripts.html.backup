@@ -406,7 +406,11 @@ window.openStudentDetails = function(id){
         console.log('⏳ Bulk loading still in progress - this student will be cached soon');
       }
       
-      // All students are now cached in bulk loading
+      // Check if this is a Dormant student (not cached in bulk loading)
+      const currentStudentRow = window._rows.find(row => String(row[window._headers.indexOf('ID')]) === String(id));
+      if (currentStudentRow && currentStudentRow[statusIdx] !== 'Active') {
+        console.log('ℹ️ Dormant student - will load individually (not cached in bulk loading)');
+      }
       
       // If no cache, try to preload this specific student's data
       console.log('🔄 No cached data for student', id, '- attempting to preload...');
@@ -709,11 +713,19 @@ window.openStudentDetails = function(id){
       return;
     }
     
-    // Extract all student IDs from table rows
+    // Extract student IDs from table rows, but only count Active students
+    const statusIdx = window._headers.indexOf('Status');
+    let activeStudentIds = [];
+    
     window._rows.forEach(row => {
       if (row[idIdx]) {
         const studentId = String(row[idIdx]).trim();
-        studentIds.push(studentId);
+        const status = row[statusIdx];
+        
+        if (status === 'Active') {
+          activeStudentIds.push(studentId);
+        }
+        studentIds.push(studentId); // Keep all for display
       }
     });
     
@@ -732,7 +744,7 @@ window.openStudentDetails = function(id){
             <span class="text-lg font-medium">Loading all student data...</span>
           </div>
           <div class="text-sm text-gray-600">
-            Caching ${studentIds.length} students with payments and notes for instant access
+            Caching ${activeStudentIds.length} Active students with payments and notes for instant access
           </div>
           <div class="text-xs text-gray-500">
             This may take a moment - please wait until loading completes
@@ -885,7 +897,7 @@ window.openStudentDetails = function(id){
           // Loading message already removed when table rendered
         }
       })
-      .getAllStudentDataForCacheBatched(35); // Use batched version with 35 students per batch
+      .getAllStudentDataForCacheBatched(20); // Use batched version with 20 students per batch
   }
 
   /**
