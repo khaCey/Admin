@@ -4,7 +4,7 @@
   <base target="_top">
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Student Admin – Isolated Nav + Students</title>
+  <title>Student Admin - Green Square</title>
 
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -104,21 +104,21 @@
     // Tooltip configuration - map element IDs/selectors to tooltip content
     const TOOLTIP_CONFIG = {
       // Example tooltips - add more as needed
-      'unscheduledBtn': {
-        text: 'This feature shows lessons that haven\'t been scheduled yet. Coming soon!',
-        type: 'new',
-        feature: 'unscheduledLessons'
-      },
+      // 'unscheduledBtn': {
+      //   text: 'View students who haven\'t scheduled their lessons yet',
+      //   type: 'help',
+      //   feature: 'unscheduledLessons'
+      // },
       'notifBtn': {
         text: 'Notification system is currently under development.',
         type: 'new',
         feature: 'notifications'
       },
-      'bookLessonBtn': {
-        text: 'Book lessons for students using the calendar interface. Click to open the booking modal.',
-        type: 'help',
-        feature: 'lessonBooking'
-      }
+      // 'bookLessonBtn': {
+      //   text: 'Book lessons for students using the calendar interface. Click to open the booking modal.',
+      //   type: 'help',
+      //   feature: 'lessonBooking'
+      // }
       // Add more tooltips here as needed
     };
     
@@ -492,10 +492,16 @@
       document.addEventListener('DOMContentLoaded', function() {
         // Wait a bit for feature flags to load
         setTimeout(initTooltipSystem, 500);
+        // Diagnostic functions removed
       });
     } else {
       setTimeout(initTooltipSystem, 500);
+      // Run diagnostic first, then log free time slots
+      setTimeout(runTeacherScheduleDiagnostic, 800);
+      setTimeout(logFreeTimeSlots, 1500);
     }
+    
+    // Diagnostic functions removed - runTeacherScheduleDiagnostic and logFreeTimeSlots
     
     // Re-render tooltips when feature flags are loaded
     const originalToggleFeatureVisibility = toggleFeatureVisibility;
@@ -1013,7 +1019,7 @@
                   const studentId = this.getAttribute('data-student-id');
                   if (studentId && typeof openStudentDetails === 'function') {
                     openStudentDetails(studentId);
-                    closeNewFeatureModal();
+                    // Don't close the parent modal - keep it open so user can access other students
                   }
                 });
                 
@@ -1114,7 +1120,7 @@
                   const studentId = this.getAttribute('data-student-id');
                   if (studentId && typeof openStudentDetails === 'function') {
                     openStudentDetails(studentId);
-                    closeNewFeatureModal();
+                    // Don't close the parent modal - keep it open so user can access other students
                   }
                 });
                 
@@ -1210,7 +1216,7 @@
             <header class="flex items-center justify-between px-4 py-3 border-b border-gray-200">
               <h3 class="font-semibold">Lessons This Month</h3>
               <div class="flex items-center gap-2">
-                <button id="bookLessonBtn" data-feature="lessonBooking" class="inline-flex items-center gap-2 rounded-lg bg-blue-600 text-white px-3 py-1.5 text-sm font-semibold hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2" style="display: none;">
+                <button id="bookLessonBtn" data-feature="lessonBooking" class="inline-flex items-center gap-2 rounded-lg bg-blue-600 text-white px-3 py-1.5 text-sm font-semibold hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
                   <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
                   </svg>
@@ -1435,6 +1441,15 @@
         </header>
         
         <div class="p-6">
+          <!-- Teacher Filter -->
+          <div class="mb-4">
+            <label for="teacherFilterSelect" class="block text-sm font-medium text-gray-700 mb-2">Filter by Teacher (Optional)</label>
+            <select id="teacherFilterSelect" class="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+              <option value="">All Teachers</option>
+              <!-- Teacher options will be populated by JavaScript -->
+            </select>
+          </div>
+          
           <!-- Week Navigation -->
           <div class="flex items-center justify-between mb-6">
             <button type="button" id="prevWeekBtn" class="flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
@@ -1504,135 +1519,7 @@
     </div>
   </div>
 
-  <!-- ===== BACKUP: Original Booking Calendar Component (Hidden) ===== -->
-  <!-- This is a backup copy of the original booking calendar component -->
-  <!-- If rework doesn't go according to plan, uncomment this section and remove the new version -->
-  <!--
-  <div id="bookLessonModal_BACKUP" class="fixed inset-0 z-[9999] hidden" style="display: none !important;">
-    <div class="absolute inset-0 bg-black/50"></div>
-    <div class="absolute inset-0 flex items-center justify-center p-4 sm:p-8 overflow-auto">
-      <div class="w-full max-w-6xl rounded-2xl bg-white modal-card ring-1 ring-black/5">
-        <header class="flex items-center justify-between px-6 py-4 border-b border-gray-200">
-          <div>
-            <h3 id="bookLessonTitle_BACKUP" class="text-xl font-semibold text-gray-900">Book a New Lesson</h3>
-            <p id="bookLessonStudentInfo_BACKUP" class="text-sm text-gray-600 mt-1">Loading student information...</p>
-          </div>
-          <button type="button" id="bookLessonClose_BACKUP" class="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium hover:bg-gray-50">Close</button>
-        </header>
-        
-        <div class="p-6">
-          <div class="flex items-center justify-between mb-6">
-            <button type="button" id="prevWeekBtn_BACKUP" class="flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
-              </svg>
-              Previous Week
-            </button>
-            <h4 id="currentWeekDisplay_BACKUP" class="text-lg font-semibold text-gray-900">Week of [Date]</h4>
-            <button type="button" id="nextWeekBtn_BACKUP" class="flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
-              Next Week
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
-              </svg>
-            </button>
-          </div>
-
-          <div class="bg-white overflow-hidden">
-            <div class="overflow-y-auto" style="max-height: 70vh; min-height: 400px;">
-              <div class="sticky top-0 z-20 grid grid-cols-8 bg-green-600 text-white shadow-md">
-                <div class="px-4 py-3 text-sm font-semibold text-center">Time</div>
-                <div class="px-4 py-3 text-sm font-semibold text-center" data-day="0">
-                  <div>MON</div>
-                  <div id="date-0_BACKUP" class="text-xs font-normal mt-1">--</div>
-                </div>
-                <div class="px-4 py-3 text-sm font-semibold text-center" data-day="1">
-                  <div>TUE</div>
-                  <div id="date-1_BACKUP" class="text-xs font-normal mt-1">--</div>
-                </div>
-                <div class="px-4 py-3 text-sm font-semibold text-center" data-day="2">
-                  <div>WED</div>
-                  <div id="date-2_BACKUP" class="text-xs font-normal mt-1">--</div>
-                </div>
-                <div class="px-4 py-3 text-sm font-semibold text-center" data-day="3">
-                  <div>THU</div>
-                  <div id="date-3_BACKUP" class="text-xs font-normal mt-1">--</div>
-                </div>
-                <div class="px-4 py-3 text-sm font-semibold text-center" data-day="4">
-                  <div>FRI</div>
-                  <div id="date-4_BACKUP" class="text-xs font-normal mt-1">--</div>
-                </div>
-                <div class="px-4 py-3 text-sm font-semibold text-center" data-day="5">
-                  <div>SAT</div>
-                  <div id="date-5_BACKUP" class="text-xs font-normal mt-1">--</div>
-                </div>
-                <div class="px-4 py-3 text-sm font-semibold text-center" data-day="6">
-                  <div>SUN</div>
-                  <div id="date-6_BACKUP" class="text-xs font-normal mt-1">--</div>
-                </div>
-              </div>
-              
-              <div id="calendarGrid_BACKUP" class="grid grid-cols-8" style="grid-auto-rows: 60px; min-height: 660px; margin: 0; padding-top: 2px;">
-                <!-- Time slots will be generated by JavaScript -->
-              </div>
-            </div>
-          </div>
-
-        </div>
-
-        <footer class="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-200">
-          <button type="button" id="bookLessonCancel_BACKUP" class="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Close</button>
-        </footer>
-      </div>
-    </div>
-  </div>
-
-  <div id="timeSlotModal_BACKUP" class="fixed inset-0 z-[9999] hidden" style="display: none !important;">
-    <div class="absolute inset-0 bg-black/50"></div>
-    <div class="absolute inset-0 flex items-center justify-center p-4 sm:p-8 overflow-auto">
-      <div class="w-full max-w-md rounded-2xl bg-white modal-card ring-1 ring-black/5">
-        <header class="flex items-center justify-between px-6 py-4 border-b border-gray-200">
-          <div>
-            <h3 id="timeSlotTitle_BACKUP" class="text-lg font-semibold text-gray-900">Select Time Slot</h3>
-            <p id="timeSlotInfo_BACKUP" class="text-sm text-gray-600 mt-1">Choose your preferred time</p>
-          </div>
-          <button type="button" id="timeSlotClose_BACKUP" class="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium hover:bg-gray-50">Close</button>
-        </header>
-        
-        <div class="p-6">
-          <div class="mb-4">
-            <label class="block text-sm font-medium text-gray-700 mb-2">Selected Time</label>
-            <div id="selectedTimeDisplay_BACKUP" class="p-3 bg-gray-50 rounded-lg text-lg font-medium text-gray-900">
-            </div>
-          </div>
-          
-          <div class="mb-4">
-            <label class="block text-sm font-medium text-gray-700 mb-2">Lesson Type</label>
-            <select id="slotType_BACKUP" class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm">
-              <option value="Online">Online</option>
-              <option value="Cafe">Cafe</option>
-            </select>
-          </div>
-          
-          <div class="mb-4">
-            <label class="block text-sm font-medium text-gray-700 mb-2">Notes (Optional)</label>
-            <textarea id="slotNotes_BACKUP" rows="3" class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm" placeholder="Any additional notes for this lesson..."></textarea>
-          </div>
-          
-          <div id="totalLessonsContainer_BACKUP" class="mb-4">
-            <label class="block text-sm font-medium text-gray-700 mb-2">Total Lessons for Month</label>
-            <input type="number" id="slotTotalLessons_BACKUP" min="1" class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm" placeholder="Enter total number of lessons for this month" required />
-          </div>
-        </div>
-
-        <footer class="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-200">
-          <button type="button" id="timeSlotCancel_BACKUP" class="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
-          <button type="button" id="timeSlotConfirm_BACKUP" class="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">Confirm Booking</button>
-        </footer>
-      </div>
-    </div>
-  </div>
-  -->
-  <!-- ===== END BACKUP: Original Booking Calendar Component ===== -->
+  <!-- ===== BACKUP: Original Booking Calendar Component (Removed - see BookingCalendar-BACKUP.html) ===== -->
 
   <!-- ===== NEW Booking Calendar Modal (Availability-Based - HIDDEN) ===== -->
   <div id="bookLessonModalNew" class="fixed inset-0 z-[9999] hidden" style="display: none !important;">
@@ -1926,7 +1813,7 @@
   <div id="toastContainer" class="fixed top-20 right-4 z-[10000] flex flex-col gap-2 pointer-events-none"></div>
 
   <!-- ===== Unpaid Students Modal ===== -->
-  <div id="newFeatureModal" class="fixed inset-0 z-[9999] hidden">
+  <div id="newFeatureModal" class="fixed inset-0 z-[50] hidden">
     <div class="absolute inset-0 bg-black/50"></div>
     <div class="absolute inset-0 flex items-center justify-center p-4 sm:p-8 overflow-auto">
       <div class="w-full max-w-4xl rounded-2xl bg-white modal-card ring-1 ring-black/5">
@@ -2125,6 +2012,7 @@
                 <select id="e_paytype" class="w-full rounded-md border border-gray-300 px-3 py-2">
                   <option>NEO</option>
                   <option>OLD</option>
+                  <option>Owner's Lesson</option>
                 </select>
               </div>
               <div class="sm:col-span-1">
@@ -2212,7 +2100,7 @@
       }
 
       // Get student's payment type and group info
-      const paymentType = student.paymentType || 'NEO'; // Default to NEO
+      const paymentType = student.paymentType || student['Payment Type'] || student['Payment'] || 'NEO'; // Default to NEO
       const group = student.group || 'Individual';
       const groupSize = student.groupSize || '2';
 
@@ -2226,7 +2114,10 @@
       // Fee calculation based on actual fee table structure
       let pricePerLesson = 0;
       
-      if (paymentType === 'NEO') {
+      // Check for Owner's Lesson payment type first - flat rate of 9350 per lesson
+      if (paymentType === "Owner's Lesson" || paymentType === "Owners Lesson") {
+        pricePerLesson = 9350;
+      } else if (paymentType === 'NEO') {
         if (group === 'Individual') {
           // Determine frequency based on lesson count
           if (lessonsCount <= 3) {
@@ -3320,16 +3211,17 @@
           .withFailureHandler(function(error) {
             console.error('Error loading teacher calendar IDs:', error);
           })
-          .getTeacherSchedules();
+          .getTeacherNames();
       }
       
-      // Load total lessons for current month when modal opens
+      // Load total lessons for current month when modal opens (optional - won't block modal if function doesn't exist)
       const studentId = student.ID || student.id;
       const currentMonth = new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' });
       
       // Store total lessons in a variable accessible to time slot modal
       window.currentStudentTotalLessons = null;
       
+      // Try to get total lessons, but don't block if function doesn't exist
       if (window.google && google.script && google.script.run) {
         google.script.run
           .withSuccessHandler(function(total) {
@@ -3340,6 +3232,8 @@
             }
           })
           .withFailureHandler(function(error) {
+            // Function doesn't exist or error occurred - continue without it
+            console.log('getStudentLessonTotal not available:', error);
             window.currentStudentTotalLessons = null;
           })
           .getStudentLessonTotal(studentId, currentMonth);
@@ -3355,6 +3249,10 @@
       // To get to Monday: if Sunday(0), go back 6 days; otherwise go back (dayOfWeek - 1) days
       const daysToMonday = dayOfWeek === 0 ? -6 : -(dayOfWeek - 1);
       currentWeek.setDate(currentWeek.getDate() + daysToMonday);
+      
+      // Store current week globally so filter change handler can access it
+      window.currentBookingWeek = currentWeek.toISOString();
+      
       let selectedSlot = null;
 
       function generateCalendarWithLessons(weekStart, lessonsByDay) {
@@ -3457,13 +3355,8 @@
             slotCell.dataset.date = dayDate.toISOString().split('T')[0];
             slotCell.dataset.time = slotTime;
             
-            // Check if this time slot is within opening hours for this day
-            if (hour < hours.start || hour > hours.end) {
-              // Outside opening hours - unavailable
-              slotCell.className += ' bg-gray-100 text-gray-400 cursor-not-allowed';
-              slotCell.textContent = '';
-              slotCell.title = `Closed (${hours.start}:00-${hours.end}:00)`;
-            } else {
+            // Make all slots bookable - removed opening hours check
+            {
               // Check for existing lessons at this time
               // Use local date formatting to avoid timezone shift
               const year = dayDate.getFullYear();
@@ -3602,16 +3495,10 @@
         // lessonsByDay is already organized by date and time from getLessonsForWeek
         const lessonsByDateTime = lessonsByDay;
 
+        // Generate time slots from 10:00 to 21:00 (10am to 9pm)
         const allTimeSlots = new Set();
-        for (let day = 0; day < 7; day++) {
-          const dayDate = new Date(weekStart);
-          dayDate.setDate(weekStart.getDate() + day);
-          const dayOfWeek = dayDate.getDay();
-          const hours = openingHours[dayOfWeek];
-
-          for (let hour = hours.start; hour <= hours.end; hour++) {
-            allTimeSlots.add(`${hour.toString().padStart(2, '0')}:00`);
-          }
+        for (let hour = 10; hour <= 21; hour++) {
+          allTimeSlots.add(`${hour.toString().padStart(2, '0')}:00`);
         }
 
         const timeSlots = Array.from(allTimeSlots).sort();
@@ -3710,11 +3597,8 @@
             slotCell.dataset.time = slotTime;
             slotCell.dataset.slotIndex = slotIndex;
 
-            if (hour < hours.start || hour > hours.end) {
-              slotCell.className += ' bg-gray-100 text-gray-400 cursor-not-allowed';
-              slotCell.textContent = '';
-              slotCell.title = `Closed (${hours.start}:00-${hours.end}:00)`;
-            } else {
+            // Make all slots bookable - removed opening hours check
+            {
               // Check for teacher shifts starting at this slot
               // Try both date formats (with and without leading zeros in dayKey)
               const dateFormats = [dayKey];
@@ -3758,17 +3642,26 @@
                       shiftElement.style.width = `${barWidth}%`;
                       shiftElement.style.height = `${(spanSlots * cellHeight) - 4}px`;
                       shiftElement.style.zIndex = '1';
+                      shiftElement.style.pointerEvents = 'none'; // Allow clicks to pass through to slot cell
                       
                       // Use teacher color from shift data (hex code from column C)
                       const teacherColor = shift.color || '#c084fc'; // Default purple if not specified
                       shiftElement.style.backgroundColor = teacherColor;
                       shiftElement.style.borderColor = teacherColor;
-                      shiftElement.style.opacity = '0.8';
+                      shiftElement.style.opacity = '1'; // Solid color, not translucent
                       
-                      // Tooltip with teacher info (for hover)
+                      // Tooltip with teacher info (for hover) - re-enable pointer events for tooltip
                       const teacherName = shift.teacherName;
                       const timeRange = `${shift.startTime} - ${shift.endTime}`;
                       shiftElement.title = `Teacher Shift: ${teacherName} (${timeRange})`;
+                      
+                      // Re-enable pointer events on hover for tooltip
+                      shiftElement.addEventListener('mouseenter', () => {
+                        shiftElement.style.pointerEvents = 'auto';
+                      });
+                      shiftElement.addEventListener('mouseleave', () => {
+                        shiftElement.style.pointerEvents = 'none';
+                      });
                       
                       slotCell.appendChild(shiftElement);
                     }
@@ -3781,9 +3674,21 @@
               // Check if there are lessons at this time
               const dayLessons = lessonsByDateTime[dayKey] && lessonsByDateTime[dayKey][slotTime];
               
+              // Debug: Log when we're checking for lessons
+              if (slotIndex === 0 && day === 0) {
+                console.log('Checking lessons for dayKey:', dayKey, 'slotTime:', slotTime);
+                console.log('lessonsByDateTime[dayKey]:', lessonsByDateTime[dayKey]);
+                console.log('dayLessons:', dayLessons);
+              }
+              
               if (dayLessons && dayLessons.length > 0) {
                 // Filter to only show scheduled lessons
                 const scheduledLessons = dayLessons.filter(lesson => lesson.status === 'scheduled');
+                
+                // Debug: Log scheduled lessons
+                if (slotIndex === 0 && day === 0) {
+                  console.log('scheduledLessons:', scheduledLessons);
+                }
                 
                 if (scheduledLessons.length > 0) {
                   // Group lessons by eventID to avoid duplicates
@@ -3890,9 +3795,17 @@
                 
                 // Add click handler for booking even when there are existing lessons (allow double booking)
                 slotCell.addEventListener('click', () => selectTimeSlot(slotCell, dayDate, slotTime));
+                } else {
+                  // There are lessons but none are scheduled (all cancelled/demo/rescheduled)
+                  // Still make the slot bookable
+                  slotCell.className += ' bg-green-50 text-green-700 hover:bg-green-200 cursor-pointer';
+                  slotCell.textContent = '';
+                  slotCell.title = `${slotTime} - Available (has ${dayLessons.length} non-scheduled lesson${dayLessons.length > 1 ? 's' : ''})`;
+                  
+                  slotCell.addEventListener('click', () => selectTimeSlot(slotCell, dayDate, slotTime));
                 }
               } else {
-                // Available slot
+                // Available slot (no lessons at all)
                 slotCell.className += ' bg-green-50 text-green-700 hover:bg-green-200 cursor-pointer';
                 slotCell.textContent = '';
                 slotCell.title = `${slotTime} - Available`;
@@ -3991,15 +3904,65 @@
         
       }
 
-      function createSimpleBookingCalendar(weekStart) {
-        
+      function createSimpleBookingCalendar(weekStart, teacherFilter) {
         // Clear the calendar grid
         bookLessonEls.calendarGrid.innerHTML = '';
         
-        // Create a simple calendar with time slots 10:00-20:00
+        // Show loading spinner
+        bookLessonEls.calendarGrid.innerHTML = `
+          <div class="col-span-8 flex flex-col items-center justify-center min-h-[400px] w-full bg-gray-50 rounded-lg p-8">
+            <div class="relative">
+              <div class="animate-spin rounded-full h-12 w-12 border-4 border-gray-200"></div>
+              <div class="animate-spin rounded-full h-12 w-12 border-4 border-blue-600 border-t-transparent absolute top-0 left-0"></div>
+            </div>
+            <div class="mt-4 text-center">
+              <p class="text-lg font-medium text-gray-900">Loading Availability</p>
+              <p class="text-sm text-gray-500 mt-1">Checking teacher schedules...</p>
+            </div>
+          </div>
+        `;
+        
+        // Get student ID from global student object
+        const studentId = window.student?.ID || window.student?.id;
+        
+        // Call backend to get available slots
+        google.script.run
+          .withSuccessHandler(function(result) {
+            let availableSlots = {};
+            if (typeof result === 'string') {
+              try {
+                availableSlots = JSON.parse(result);
+              } catch (e) {
+                console.error('Failed to parse availability JSON:', e);
+                availableSlots = {};
+              }
+            } else {
+              availableSlots = result;
+            }
+            
+            if (availableSlots.error) {
+              bookLessonEls.calendarGrid.innerHTML = 
+                `<div class="col-span-8 p-4 text-red-600">Error: ${availableSlots.error}</div>`;
+              return;
+            }
+            
+            // Generate calendar with availability
+            generateAvailabilityCalendar(weekStart, availableSlots);
+          })
+          .withFailureHandler(function(error) {
+            console.error('Error fetching available slots:', error);
+            bookLessonEls.calendarGrid.innerHTML = 
+              `<div class="col-span-8 p-4 text-red-600">Error loading availability: ${error}</div>`;
+          })
+          .getAvailableSlotsForWeek(weekStart.toISOString(), studentId || null, teacherFilter || null);
+      }
+      
+      function generateAvailabilityCalendar(weekStart, availableSlots) {
+        // Clear the calendar grid
+        bookLessonEls.calendarGrid.innerHTML = '';
+        
         const timeSlots = ['10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00'];
         
-        // Generate calendar rows
         timeSlots.forEach(slotTime => {
           const hour = parseInt(slotTime.split(':')[0]);
           
@@ -4009,47 +3972,128 @@
           timeCell.style.height = '60px';
           timeCell.textContent = slotTime;
           
-          // Add horizontal line through the entire calendar width
           const horizontalLine = document.createElement('div');
           horizontalLine.className = 'absolute top-0 left-0 h-px bg-gray-300';
-          horizontalLine.style.width = 'calc(100% * 8)'; // Span all 8 columns
+          horizontalLine.style.width = 'calc(100% * 8)';
           horizontalLine.style.zIndex = '10';
           timeCell.appendChild(horizontalLine);
           
           bookLessonEls.calendarGrid.appendChild(timeCell);
-
+          
           // Day columns (Monday to Sunday)
           for (let day = 0; day < 7; day++) {
             const dayDate = new Date(weekStart);
             dayDate.setDate(weekStart.getDate() + day);
+            const dateStr = dayDate.toISOString().split('T')[0];
             
             const slotCell = document.createElement('div');
-            slotCell.className = 'px-1 text-sm border-r border-gray-200 transition-colors flex flex-col justify-start relative bg-gray-50 p-0 cursor-pointer hover:bg-gray-100';
+            slotCell.className = 'px-1 text-sm border-r border-gray-200 transition-colors flex flex-col justify-start relative';
             slotCell.style.height = '60px';
             slotCell.dataset.day = day;
             slotCell.dataset.hour = hour;
-            slotCell.dataset.date = dayDate.toISOString().split('T')[0];
+            slotCell.dataset.date = dateStr;
             slotCell.dataset.time = slotTime;
-            slotCell.title = `${slotTime} - Click to book lesson`;
             
-            // Add click handler for booking
-            slotCell.addEventListener('click', () => {
-              console.log('Time slot clicked:', slotTime, 'on', dayDate.toISOString().split('T')[0]);
-              showToast(`Booking lesson for ${slotTime} on ${dayDate.toISOString().split('T')[0]}`, 'info');
-            });
+            // Get availability for this slot
+            const availability = availableSlots[dateStr] && availableSlots[dateStr][slotTime];
+            
+            if (!availability || !availability.available) {
+              // Not available - gray out
+              slotCell.className += ' bg-gray-100 text-gray-400 cursor-not-allowed';
+              slotCell.title = availability?.reason || 'Not available';
+            } else {
+              // Available - show as clickable
+              slotCell.className += ' bg-green-50 hover:bg-green-100 cursor-pointer border-2 border-green-300';
+              slotCell.title = `Available (${availability.availableSlots} slot${availability.availableSlots > 1 ? 's' : ''}) - Click to book`;
+              
+              // Show availability info
+              const infoDiv = document.createElement('div');
+              infoDiv.className = 'text-xs text-green-700 p-1';
+              infoDiv.textContent = `${availability.availableSlots} slot${availability.availableSlots > 1 ? 's' : ''}`;
+              slotCell.appendChild(infoDiv);
+              
+              // Add click handler
+              slotCell.addEventListener('click', () => {
+                selectTimeSlot(slotCell, dayDate, slotTime);
+              });
+            }
             
             bookLessonEls.calendarGrid.appendChild(slotCell);
           }
         });
+      }
+      
+      function setupTeacherFilter() {
+        const teacherFilterSelect = document.getElementById('teacherFilterSelect');
+        if (!teacherFilterSelect) {
+          console.error('Teacher filter select element not found');
+          return;
+        }
         
+        // Get list of teachers from backend
+        google.script.run
+          .withSuccessHandler(function(teachers) {
+            // Clear existing options except "All Teachers"
+            teacherFilterSelect.innerHTML = '<option value="">All Teachers</option>';
+            
+            // Add teacher options
+            if (teachers && Array.isArray(teachers) && teachers.length > 0) {
+              teachers.forEach(function(teacher) {
+                const option = document.createElement('option');
+                option.value = teacher;
+                option.textContent = teacher;
+                teacherFilterSelect.appendChild(option);
+              });
+            }
+            
+            // Store reference to current week in a way accessible to the change handler
+            // The currentWeek variable is in the openBookLessonModal scope
+            // We'll use a closure or store it on the element
+            teacherFilterSelect.dataset.currentWeek = new Date().toISOString();
+            
+            // Add change event listener
+            teacherFilterSelect.addEventListener('change', function() {
+              const selectedTeacher = this.value;
+              const teacherFilter = selectedTeacher ? [selectedTeacher] : null;
+              
+              // Get current week - try to get from stored variable or calculate
+              let currentWeek;
+              if (window.currentBookingWeek) {
+                currentWeek = new Date(window.currentBookingWeek);
+              } else {
+                currentWeek = new Date();
+                const dayOfWeek = currentWeek.getDay();
+                const daysToMonday = dayOfWeek === 0 ? -6 : -(dayOfWeek - 1);
+                currentWeek.setDate(currentWeek.getDate() + daysToMonday);
+              }
+              
+              // Re-render calendar with filter
+              createSimpleBookingCalendar(currentWeek, teacherFilter);
+            });
+          })
+          .withFailureHandler(function(error) {
+            console.error('Error loading teachers:', error);
+            // Keep "All Teachers" option only
+          })
+          .getTeacherNames(); // Get list of teacher names for filter
       }
 
       function generateCalendarGrid(weekStart) {
         // Prevent multiple simultaneous calendar generations
         if (window.calendarGenerating) {
+          console.log('Calendar generation already in progress, skipping...');
           return;
         }
         window.calendarGenerating = true;
+        
+        // Debug: Check if calendar grid element exists
+        console.log('generateCalendarGrid called with weekStart:', weekStart);
+        console.log('bookLessonEls.calendarGrid:', bookLessonEls.calendarGrid);
+        if (!bookLessonEls || !bookLessonEls.calendarGrid) {
+          console.error('ERROR: Calendar grid element not found!');
+          window.calendarGenerating = false;
+          return;
+        }
         
         // Clear existing grid
         bookLessonEls.calendarGrid.innerHTML = '';
@@ -4110,9 +4154,25 @@
               }
             }
             
-            // Debug: Log teacher shifts data
+            // Debug: Log data received
+            console.log('Lessons received:', lessonsByDay);
+            console.log('Number of days with lessons:', Object.keys(lessonsByDay || {}).length);
             console.log('Teacher shifts received:', teacherShiftsByDay);
             console.log('Number of days with shifts:', Object.keys(teacherShiftsByDay || {}).length);
+            
+            // Log sample lesson data structure
+            if (lessonsByDay && Object.keys(lessonsByDay).length > 0) {
+              const firstDay = Object.keys(lessonsByDay)[0];
+              console.log('Sample day key:', firstDay);
+              console.log('Lessons for first day:', lessonsByDay[firstDay]);
+            }
+            
+            // Log sample teacher shift data structure
+            if (teacherShiftsByDay && Object.keys(teacherShiftsByDay).length > 0) {
+              const firstDay = Object.keys(teacherShiftsByDay)[0];
+              console.log('Sample shift day key:', firstDay);
+              console.log('Shifts for first day:', teacherShiftsByDay[firstDay]);
+            }
             
             // Generate calendar with both lessons and teacher shifts
             generateCalendarWithLessonCards(weekStart, lessonsByDay, teacherShiftsByDay);
@@ -4168,7 +4228,16 @@
       function navigateWeek(direction) {
         currentWeek.setDate(currentWeek.getDate() + (direction * 7));
         updateWeekDisplay(currentWeek);
-        generateCalendarGrid(currentWeek);
+        
+        // Update stored week
+        window.currentBookingWeek = currentWeek.toISOString();
+        
+        // Get current teacher filter
+        const teacherFilterSelect = document.getElementById('teacherFilterSelect');
+        const selectedTeacher = teacherFilterSelect ? teacherFilterSelect.value : '';
+        const teacherFilter = selectedTeacher ? [selectedTeacher] : null;
+        
+        createSimpleBookingCalendar(currentWeek, teacherFilter);
       }
 
       // Removed clearSelection function - no longer needed with time slot modal
@@ -4185,9 +4254,12 @@
 
       // Removed old handleSaveLesson function - now using time slot modal
 
+      // Initialize teacher filter
+      setupTeacherFilter();
+      
       // Initialize calendar
       updateWeekDisplay(currentWeek);
-      generateCalendarGrid(currentWeek);
+      createSimpleBookingCalendar(currentWeek, null);
 
       // Add event listeners
       bookLessonEls.close.addEventListener('click', doClose);
@@ -4234,6 +4306,9 @@
     /* ===== END BACKUP: Original Booking Calendar JavaScript Functions ===== */
 
     // ===== NEW Booking Calendar Functions (Availability-Based) =====
+    // Global cache for availability data (keyed by week start ISO string)
+    window.bookingAvailabilityCache = window.bookingAvailabilityCache || {};
+    
     const bookLessonElsNew = {
       root: $('#bookLessonModalNew'), title: $('#bookLessonTitleNew'),
       close: $('#bookLessonCloseNew'), cancel: $('#bookLessonCancelNew'),
@@ -4249,6 +4324,70 @@
       totalLessonsContainer: $('#totalLessonsContainerNew')
     };
 
+    // Pre-load availability data for current week and next week
+    function preloadBookingAvailability() {
+      // Calculate current week (Monday)
+      let currentWeek = new Date();
+      const dayOfWeek = currentWeek.getDay();
+      const daysToMonday = dayOfWeek === 0 ? -6 : -(dayOfWeek - 1);
+      currentWeek.setDate(currentWeek.getDate() + daysToMonday);
+      currentWeek.setHours(0, 0, 0, 0);
+      
+      // Calculate next week
+      let nextWeek = new Date(currentWeek);
+      nextWeek.setDate(currentWeek.getDate() + 7);
+      
+      const weeksToLoad = [currentWeek, nextWeek];
+      
+      weeksToLoad.forEach((weekStart) => {
+        const weekKey = weekStart.toISOString();
+        
+        // Skip if already cached
+        if (window.bookingAvailabilityCache[weekKey]) {
+          console.log('Week already cached:', weekKey);
+          return;
+        }
+        
+        // Load availability data
+        try {
+          google.script.run
+            .withSuccessHandler(function(result) {
+              let availabilityData = {};
+              if (typeof result === 'string') {
+                try {
+                  availabilityData = JSON.parse(result);
+                } catch (e) {
+                  console.error('Failed to parse availability data:', e);
+                  availabilityData = {};
+                }
+              } else {
+                availabilityData = result || {};
+              }
+              
+              // Cache the data
+              window.bookingAvailabilityCache[weekKey] = availabilityData;
+              console.log('Pre-loaded availability for week:', weekKey, Object.keys(availabilityData).length, 'dates');
+            })
+            .withFailureHandler(function(error) {
+              console.error('Error pre-loading availability for week', weekKey, ':', error);
+              // Cache empty object to prevent repeated failed requests
+              window.bookingAvailabilityCache[weekKey] = {};
+            })
+            .getWeekAvailability(weekStart.toISOString(), '');
+        } catch (error) {
+          console.error('Error calling getWeekAvailability for pre-load:', error);
+          window.bookingAvailabilityCache[weekKey] = {};
+        }
+      });
+    }
+    
+    // Pre-load availability data when page loads
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', preloadBookingAvailability);
+    } else {
+      preloadBookingAvailability();
+    }
+
     function openBookLessonModalNew({ student=null, onClose=()=>{} }={}){
       if (!student) {
         console.error('No student data provided for booking lesson');
@@ -4259,6 +4398,8 @@
       const studentName = student.Name || student.name || 'Unknown Student';
       const studentKanji = student['漢字'] || student.kanji || '';
       const studentGroup = student.Group || student.group || 'Individual';
+      const studentId = student.ID || student.id || student['Student ID'] || '';
+      const isChildStudent = !!(student['子'] === '子' || student.child === true || student.child === '子');
       
       bookLessonElsNew.studentInfo.textContent = `${studentName} ${studentKanji ? '(' + studentKanji + ')' : ''} - ${studentGroup}`;
       
@@ -4267,8 +4408,14 @@
       const dayOfWeek = currentWeek.getDay();
       const daysToMonday = dayOfWeek === 0 ? -6 : -(dayOfWeek - 1);
       currentWeek.setDate(currentWeek.getDate() + daysToMonday);
+      
+      // Store student info for use in calendar generation
+      window.currentBookingStudent = {
+        id: studentId,
+        isChild: isChildStudent
+      };
 
-      function generateAvailabilityCalendar(weekStart, availabilityData) {
+      function generateAvailabilityCalendar(weekStart, availabilityData, existingLessons) {
         bookLessonElsNew.calendarGrid.innerHTML = '';
 
         const timeSlots = [];
@@ -4278,6 +4425,7 @@
 
         const cellHeight = 60;
         const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        const isChildStudent = window.currentBookingStudent && window.currentBookingStudent.isChild;
 
         timeSlots.forEach((slotTime) => {
           // Time column
@@ -4313,18 +4461,45 @@
             // Get availability data for this time slot
             const availability = availabilityData[dateStr] && availabilityData[dateStr][slotTime];
             
-            console.log(`Checking ${dateStr} ${slotTime}:`, availability);
+            // Check if this slot has adult lessons (for child students)
+            let hasAdultLesson = false;
+            if (isChildStudent && existingLessons && existingLessons[dateStr] && existingLessons[dateStr][slotTime]) {
+              const lessons = existingLessons[dateStr][slotTime];
+              if (Array.isArray(lessons) && lessons.length > 0) {
+                // Check if any lesson is NOT a kids lesson (i.e., is an adult lesson)
+                hasAdultLesson = lessons.some(lesson => {
+                  const isKidsLesson = lesson.isKidsLesson === true || lesson.isKidsLesson === '子';
+                  return !isKidsLesson;
+                });
+              }
+            }
+            
+            // Check if slot is at least 1 hour in the future
+            const slotDateTime = new Date(dayDate);
+            const [hours, minutes] = slotTime.split(':').map(Number);
+            slotDateTime.setHours(hours, minutes, 0, 0);
+            const now = new Date();
+            const oneHourFromNow = new Date(now.getTime() + (60 * 60 * 1000)); // 1 hour in milliseconds
+            const isTooSoon = slotDateTime < oneHourFromNow;
+            
+            console.log(`Checking ${dateStr} ${slotTime}:`, availability, 'hasAdultLesson:', hasAdultLesson, 'isTooSoon:', isTooSoon);
             
             if (!availability) {
               // No data - show as unknown/loading
               slotCell.className += ' bg-yellow-50 text-yellow-700 cursor-help';
               slotCell.textContent = '?';
               slotCell.title = 'Availability data not available - teacher schedules may need to be cached';
-            } else if (!availability.available) {
-              // Not available - gray out
+            } else if (!availability.available || hasAdultLesson || isTooSoon) {
+              // Not available - gray out (either no availability OR has adult lessons for child student OR too soon)
               slotCell.className += ' bg-gray-100 text-gray-400 cursor-not-allowed';
               slotCell.textContent = '';
-              slotCell.title = `No availability (${availability.teacherCount} teachers, ${availability.lessonCount} lessons)`;
+              if (isTooSoon) {
+                slotCell.title = 'Lessons must be booked at least 1 hour in advance';
+              } else if (hasAdultLesson) {
+                slotCell.title = 'Slot contains adult lessons - kids cannot be booked here';
+              } else {
+                slotCell.title = `No availability (${availability.teacherCount} teachers, ${availability.lessonCount} lessons)`;
+              }
             } else {
               // Available - show availability card
               const availableSlots = availability.availableSlots;
@@ -4360,7 +4535,69 @@
       }
 
       function generateCalendarGridNew(weekStart) {
-        // Show loading spinner
+        // Normalize week start to Monday at midnight for cache key
+        const weekKey = new Date(weekStart);
+        weekKey.setHours(0, 0, 0, 0);
+        const cacheKey = weekKey.toISOString();
+        const studentId = window.currentBookingStudent ? window.currentBookingStudent.id : '';
+        
+        // Check if data is already cached (pre-loaded when student details opened)
+        const cachedAvailability = window.bookingAvailabilityCache && window.bookingAvailabilityCache[cacheKey];
+        const cachedLessons = window.bookingExistingLessonsCache && window.bookingExistingLessonsCache[cacheKey];
+        
+        // Debug logging
+        console.log('Calendar cache check:', {
+          cacheKey: cacheKey,
+          hasAvailabilityCache: !!cachedAvailability,
+          hasLessonsCache: !!cachedLessons,
+          availabilityCacheKeys: window.bookingAvailabilityCache ? Object.keys(window.bookingAvailabilityCache) : [],
+          lessonsCacheKeys: window.bookingExistingLessonsCache ? Object.keys(window.bookingExistingLessonsCache) : []
+        });
+        
+        // If we have availability cached, use it immediately (lessons can be empty initially)
+        if (cachedAvailability) {
+          console.log('Using pre-loaded cached data for week:', cacheKey);
+          generateAvailabilityCalendar(weekStart, cachedAvailability, cachedLessons || {});
+          
+          // If lessons are missing, fetch them in background and update
+          if (!cachedLessons) {
+            console.log('Lessons cache missing, fetching in background...');
+            try {
+              google.script.run
+                .withSuccessHandler(function(result) {
+                  let existingLessons = {};
+                  if (typeof result === 'string') {
+                    try {
+                      existingLessons = JSON.parse(result);
+                    } catch (e) {
+                      console.error('Failed to parse existing lessons:', e);
+                      existingLessons = {};
+                    }
+                  } else {
+                    existingLessons = result || {};
+                  }
+                  
+                  if (!window.bookingExistingLessonsCache) {
+                    window.bookingExistingLessonsCache = {};
+                  }
+                  window.bookingExistingLessonsCache[cacheKey] = existingLessons;
+                  
+                  // Re-render with updated lessons data
+                  generateAvailabilityCalendar(weekStart, cachedAvailability, existingLessons);
+                })
+                .withFailureHandler(function(error) {
+                  console.error('Error getting existing lessons:', error);
+                })
+                .getExistingLessonsFromSheet(weekStart.toISOString());
+            } catch (error) {
+              console.error('Error calling getExistingLessonsFromSheet:', error);
+            }
+          }
+          return; // Exit early - no loading spinner needed
+        }
+        
+        // Only show loading spinner if NO cache exists at all
+        console.log('No cache found, fetching data...');
         bookLessonElsNew.calendarGrid.innerHTML = `
           <div class="col-span-8 flex flex-col items-center justify-center min-h-[400px] w-full bg-gray-50 rounded-lg p-8">
             <div class="relative">
@@ -4374,53 +4611,119 @@
           </div>
         `;
 
-        try {
-          google.script.run
-            .withSuccessHandler(function(result) {
-              console.log('Availability data received:', result);
-              let availabilityData = {};
-              if (typeof result === 'string') {
-                try {
-                  availabilityData = JSON.parse(result);
-                  console.log('Parsed availability data:', availabilityData);
-                } catch (e) {
-                  console.error('Failed to parse availability data:', e);
-                  console.error('Raw result:', result);
-                  availabilityData = {};
-                }
-              } else {
-                availabilityData = result || {};
-              }
+        // Fetch both availability and existing lessons in parallel
+        Promise.all([
+          new Promise((resolve, reject) => {
+            // Fetch availability from server
+            try {
+              google.script.run
+                .withSuccessHandler(function(result) {
+                  let availabilityData = {};
+                  if (typeof result === 'string') {
+                    try {
+                      availabilityData = JSON.parse(result);
+                    } catch (e) {
+                      console.error('Failed to parse availability data:', e);
+                      availabilityData = {};
+                    }
+                  } else {
+                    availabilityData = result || {};
+                  }
 
-              // Check if we have any data
-              const dateKeys = Object.keys(availabilityData);
-              console.log('Availability dates found:', dateKeys.length);
-              if (dateKeys.length === 0) {
-                console.warn('No availability data returned - teacher schedules may need to be cached');
-                showToast('No availability data found. Please ensure teacher schedules are cached.', 'warning');
-              }
+                  // Cache the data
+                  if (!window.bookingAvailabilityCache) {
+                    window.bookingAvailabilityCache = {};
+                  }
+                  window.bookingAvailabilityCache[cacheKey] = availabilityData;
+                  console.log('Cached availability data for week:', cacheKey);
+                  resolve(availabilityData);
+                })
+                .withFailureHandler(function(error) {
+                  console.error('Error getting availability:', error);
+                  resolve({}); // Resolve with empty instead of rejecting
+                })
+                .getWeekAvailability(weekStart.toISOString(), studentId);
+            } catch (error) {
+              resolve({}); // Resolve with empty on error
+            }
+          }),
+          new Promise((resolve, reject) => {
+            // Check cache first for existing lessons
+            if (cachedLessons) {
+              console.log('Using cached existing lessons for week:', cacheKey);
+              resolve(cachedLessons);
+              return;
+            }
+            
+            // Fetch existing lessons
+            try {
+              google.script.run
+                .withSuccessHandler(function(result) {
+                  let existingLessons = {};
+                  if (typeof result === 'string') {
+                    try {
+                      existingLessons = JSON.parse(result);
+                    } catch (e) {
+                      console.error('Failed to parse existing lessons:', e);
+                      existingLessons = {};
+                    }
+                  } else {
+                    existingLessons = result || {};
+                  }
+                  
+                  // Cache the data
+                  if (!window.bookingExistingLessonsCache) {
+                    window.bookingExistingLessonsCache = {};
+                  }
+                  window.bookingExistingLessonsCache[cacheKey] = existingLessons;
+                  resolve(existingLessons);
+                })
+                .withFailureHandler(function(error) {
+                  console.error('Error getting existing lessons:', error);
+                  resolve({}); // Resolve with empty object instead of rejecting
+                })
+                .getExistingLessonsFromSheet(weekStart.toISOString());
+            } catch (error) {
+              resolve({}); // Resolve with empty object on error
+            }
+          })
+        ]).then(([availabilityData, existingLessons]) => {
+          // Check if we have any data
+          const dateKeys = Object.keys(availabilityData);
+          console.log('Availability dates found:', dateKeys.length);
+          if (dateKeys.length === 0) {
+            console.warn('No availability data returned - teacher schedules may need to be cached');
+            showToast('No availability data found. Please ensure teacher schedules are cached.', 'warning');
+          }
 
-              generateAvailabilityCalendar(weekStart, availabilityData);
-            })
-            .withFailureHandler(function(error) {
-              console.error('Error getting availability:', error);
-              showToast('Error loading availability data: ' + error, 'error');
-              bookLessonElsNew.calendarGrid.innerHTML = `
-                <div class="col-span-8 p-8 text-center">
-                  <p class="text-gray-500 mb-2">Error loading availability</p>
-                  <p class="text-sm text-gray-400">${error}</p>
-                  <p class="text-sm text-gray-400 mt-2">Please ensure teacher schedules are cached.</p>
-                </div>
-              `;
-            })
-            .getWeekAvailability(weekStart.toISOString());
-        } catch (error) {
-          console.error('Error calling getWeekAvailability:', error);
-          showToast('Error loading availability: ' + error, 'error');
-        }
+          generateAvailabilityCalendar(weekStart, availabilityData, existingLessons);
+        }).catch((error) => {
+          console.error('Error loading calendar data:', error);
+          showToast('Error loading availability data: ' + error, 'error');
+          bookLessonElsNew.calendarGrid.innerHTML = `
+            <div class="col-span-8 p-8 text-center">
+              <p class="text-gray-500 mb-2">Error loading availability</p>
+              <p class="text-sm text-gray-400">${error}</p>
+              <p class="text-sm text-gray-400 mt-2">Please ensure teacher schedules are cached.</p>
+            </div>
+          `;
+        });
       }
 
       function selectTimeSlotNew(cell, date, time) {
+        // Check if slot is at least 1 hour in the future
+        const slotDateTime = new Date(date);
+        const [hours, minutes] = time.split(':').map(Number);
+        slotDateTime.setHours(hours, minutes, 0, 0);
+        const now = new Date();
+        const oneHourFromNow = new Date(now.getTime() + (60 * 60 * 1000)); // 1 hour in milliseconds
+        
+        if (slotDateTime < oneHourFromNow) {
+          const timeUntilLesson = Math.round((slotDateTime.getTime() - now.getTime()) / (60 * 1000));
+          showToast('Lessons must be booked at least 1 hour in advance. Selected time is only ' + timeUntilLesson + ' minutes away.', 'error');
+          return;
+        }
+        
         openTimeSlotModalNew({
           date: date,
           time: time,
@@ -4456,6 +4759,92 @@
         currentWeek.setDate(currentWeek.getDate() + (direction * 7));
         updateWeekDisplayNew(currentWeek);
         generateCalendarGridNew(currentWeek);
+        
+        // Pre-load the next week in the navigation direction for smooth navigation
+        const studentId = window.currentBookingStudent ? window.currentBookingStudent.id : '';
+        const nextWeekToLoad = new Date(currentWeek);
+        nextWeekToLoad.setDate(currentWeek.getDate() + (direction * 7));
+        nextWeekToLoad.setHours(0, 0, 0, 0);
+        const nextWeekKey = nextWeekToLoad.toISOString();
+        
+        // Pre-load if not already cached
+        if (!window.bookingAvailabilityCache || !window.bookingAvailabilityCache[nextWeekKey]) {
+          // Pre-load availability
+          try {
+            google.script.run
+              .withSuccessHandler(function(result) {
+                let availabilityData = {};
+                if (typeof result === 'string') {
+                  try {
+                    availabilityData = JSON.parse(result);
+                  } catch (e) {
+                    console.error('Failed to parse availability data:', e);
+                    availabilityData = {};
+                  }
+                } else {
+                  availabilityData = result || {};
+                }
+                
+                if (!window.bookingAvailabilityCache) {
+                  window.bookingAvailabilityCache = {};
+                }
+                window.bookingAvailabilityCache[nextWeekKey] = availabilityData;
+                console.log('Pre-loaded availability for week (navigation):', nextWeekKey);
+              })
+              .withFailureHandler(function(error) {
+                console.error('Error pre-loading availability for week', nextWeekKey, ':', error);
+                if (!window.bookingAvailabilityCache) {
+                  window.bookingAvailabilityCache = {};
+                }
+                window.bookingAvailabilityCache[nextWeekKey] = {};
+              })
+              .getWeekAvailability(nextWeekToLoad.toISOString(), studentId);
+          } catch (error) {
+            console.error('Error calling getWeekAvailability for pre-load (navigation):', error);
+            if (!window.bookingAvailabilityCache) {
+              window.bookingAvailabilityCache = {};
+            }
+            window.bookingAvailabilityCache[nextWeekKey] = {};
+          }
+          
+          // Pre-load existing lessons
+          try {
+            google.script.run
+              .withSuccessHandler(function(result) {
+                let existingLessons = {};
+                if (typeof result === 'string') {
+                  try {
+                    existingLessons = JSON.parse(result);
+                  } catch (e) {
+                    console.error('Failed to parse existing lessons:', e);
+                    existingLessons = {};
+                  }
+                } else {
+                  existingLessons = result || {};
+                }
+                
+                if (!window.bookingExistingLessonsCache) {
+                  window.bookingExistingLessonsCache = {};
+                }
+                window.bookingExistingLessonsCache[nextWeekKey] = existingLessons;
+                console.log('Pre-loaded existing lessons for week (navigation):', nextWeekKey);
+              })
+              .withFailureHandler(function(error) {
+                console.error('Error pre-loading existing lessons for week', nextWeekKey, ':', error);
+                if (!window.bookingExistingLessonsCache) {
+                  window.bookingExistingLessonsCache = {};
+                }
+                window.bookingExistingLessonsCache[nextWeekKey] = {};
+              })
+              .getExistingLessonsFromSheet(nextWeekToLoad.toISOString());
+          } catch (error) {
+            console.error('Error calling getExistingLessonsFromSheet for pre-load (navigation):', error);
+            if (!window.bookingExistingLessonsCache) {
+              window.bookingExistingLessonsCache = {};
+            }
+            window.bookingExistingLessonsCache[nextWeekKey] = {};
+          }
+        }
       }
 
       const doClose = () => { onClose(); cleanup(); };
@@ -4744,7 +5133,6 @@
           Method: payEls.method.value,
           Staff: payEls.staff.value.trim()
         };
-        console.log('Payment payload being sent:', payload);
         console.log('Transaction ID value:', txnValue);
         console.log('Price value:', payEls.price.value);
         console.log('Lessons value:', payEls.lessons.value);
@@ -5340,7 +5728,6 @@
           cacheManager.set(localStorageKey, cachedData, 1800000); // 30 minutes
         }
         
-        console.log(`✅ Removed payment from cache for student ${studentId}`);
       }
     }
 
@@ -5582,13 +5969,11 @@
       // Update the Latest Record display
       updateLatestRecord();
       
-      console.log(`✅ Updated Latest Record for ${targetMonth}: Payment=済, ${unscheduledCount} unscheduled lessons`);
     }
 
     function revertLatestRecordWithPayment(payment) {
       if (!payment || !payment.Month) return;
       
-      console.log('🔄 Reverting Latest Record for payment:', payment);
       
       // Get current month and next month
       const now = new Date();
@@ -5600,7 +5985,6 @@
       let targetMonth = currentMonth;
       if (payment.Month) {
         const monthStr = payment.Month.toLowerCase();
-        console.log('🔍 Payment month string:', monthStr);
         if (monthStr.includes('jan')) targetMonth = 'Jan';
         else if (monthStr.includes('feb')) targetMonth = 'Feb';
         else if (monthStr.includes('mar')) targetMonth = 'Mar';
@@ -5645,7 +6029,6 @@
       // Update the Latest Record display
       updateLatestRecord();
       
-      console.log(`✅ Reverted Latest Record for ${targetMonth}: Payment=未`);
     }
 
     // Wire up modal buttons
@@ -5655,7 +6038,9 @@
         onSave: (payment) => {
           // Optimistic update: Add payment to UI immediately
           if (!student.payments) student.payments = [];
-          student.payments.push(payment);
+          // Normalize the payment to ensure Transaction ID is properly set
+          const normalizedPayment = normalisePayments([payment])[0] || payment;
+          student.payments.push(normalizedPayment);
           renderPaymentsTable();
           
           // Update cache immediately
@@ -5668,9 +6053,20 @@
           if (window.google && google.script && google.script.run) {
             google.script.run
               .withSuccessHandler(function(result) {
-                console.log('Payment added successfully:', result);
+                // Normalize the result to ensure Transaction ID is properly set
+                const normalizedResult = normalisePayments([result])[0] || result;
                 // Update cache with server response
-                updateStudentCache(student.id, 'payment', result);
+                updateStudentCache(student.id, 'payment', normalizedResult);
+                // Update the payment in the local array if it exists
+                const index = student.payments.findIndex(p => 
+                  (p['Transaction ID'] === result['Transaction ID']) ||
+                  (p.transactionId === result['Transaction ID']) ||
+                  (normalizedResult && p['Transaction ID'] === normalizedResult['Transaction ID'])
+                );
+                if (index !== -1) {
+                  student.payments[index] = normalizedResult;
+                  renderPaymentsTable();
+                }
               })
               .withFailureHandler(function(error) {
                 console.error('Failed to add payment:', error);
@@ -6782,15 +7178,42 @@
     function normalisePayments(maybe){
       const arr = toArray(maybe);
       return arr.map(p => {
-        const date = p.date || p.Date || p['Date'] || '';
+        // Preserve all original fields first
+        const normalized = { ...p };
+        
+        // Extract and normalize common fields
+        const date = p.date || p.Date || p['Date Paid'] || p['Payment Date'] || '';
         const lessons = p['Amount'] || (p.lessons ?? p.Lessons ?? p['Number of lessons'] ?? '');
         const price = p['Total'] || (p.price ?? p.Price ?? p.amount);
         const method = p.method || p.Method || '';
         const staff  = p.staff  || p.Staff  || '';
-        const txn    = p['Transaction ID'] || p.transactionId || p.id || p['Txn'] || '';
+        // Try multiple variations of Transaction ID field name
+        const txn    = p['Transaction ID'] || p['TransactionID'] || p['transaction ID'] || 
+                      p['transactionId'] || p.transactionId || p.id || p['Txn'] || p.txn || 
+                      p['TXN'] || p['TXN ID'] || '';
         const year = p.Year || (p.year ?? (date ? new Date(date).getFullYear() : ''));
         const monthName = p.Month || p.month || '';
-        return { transactionId: txn, date, year, month: monthName, price, lessons, method, staff };
+        
+        // Add normalized fields while preserving originals
+        normalized.transactionId = txn;
+        normalized['Transaction ID'] = txn;  // Ensure this field exists
+        normalized.date = date;
+        normalized.Date = date;
+        normalized['Date Paid'] = date;
+        normalized.year = year;
+        normalized.Year = year;
+        normalized.month = monthName;
+        normalized.Month = monthName;
+        normalized.price = price;
+        normalized.Total = price;
+        normalized.lessons = lessons;
+        normalized.Amount = lessons;
+        normalized.method = method;
+        normalized.Method = method;
+        normalized.staff = staff;
+        normalized.Staff = staff;
+        
+        return normalized;
       });
     }
     function normaliseNotes(maybe){
@@ -6901,6 +7324,123 @@
       renderHeader(); renderNotes();
       renderPaymentsTable();
       initLatestRecord(); // Initialize with data from the initial response
+      
+      // Pre-load booking availability data in the background
+      preloadStudentBookingAvailability(student.id || student.ID);
+    }
+    
+    // Pre-load booking availability for a specific student
+    function preloadStudentBookingAvailability(studentId) {
+      if (!studentId || !window.google || !google.script || !google.script.run) {
+        return;
+      }
+      
+      console.log('Pre-loading booking availability for student:', studentId);
+      
+      // Calculate current week (Monday)
+      let currentWeek = new Date();
+      const dayOfWeek = currentWeek.getDay();
+      const daysToMonday = dayOfWeek === 0 ? -6 : -(dayOfWeek - 1);
+      currentWeek.setDate(currentWeek.getDate() + daysToMonday);
+      currentWeek.setHours(0, 0, 0, 0);
+      
+      // Pre-load 6 weeks ahead (covers current month + next month)
+      const weeksToLoad = [];
+      for (let i = 0; i < 6; i++) {
+        const week = new Date(currentWeek);
+        week.setDate(currentWeek.getDate() + (i * 7));
+        weeksToLoad.push({
+          week: week,
+          key: week.toISOString()
+        });
+      }
+      
+      // Load availability and existing lessons for both weeks
+      weeksToLoad.forEach(({ week, key }) => {
+        // Skip if already cached
+        if (window.bookingAvailabilityCache && window.bookingAvailabilityCache[key]) {
+          console.log('Week already cached:', key);
+          return;
+        }
+        
+        // Fetch availability with student ID for proper filtering
+        try {
+          google.script.run
+            .withSuccessHandler(function(result) {
+              let availabilityData = {};
+              if (typeof result === 'string') {
+                try {
+                  availabilityData = JSON.parse(result);
+                } catch (e) {
+                  console.error('Failed to parse availability data:', e);
+                  availabilityData = {};
+                }
+              } else {
+                availabilityData = result || {};
+              }
+              
+              // Cache the data
+              if (!window.bookingAvailabilityCache) {
+                window.bookingAvailabilityCache = {};
+              }
+              window.bookingAvailabilityCache[key] = availabilityData;
+              console.log('Pre-loaded availability for student week:', key, Object.keys(availabilityData).length, 'dates');
+            })
+            .withFailureHandler(function(error) {
+              console.error('Error pre-loading availability for week', key, ':', error);
+              if (!window.bookingAvailabilityCache) {
+                window.bookingAvailabilityCache = {};
+              }
+              window.bookingAvailabilityCache[key] = {};
+            })
+            .getWeekAvailability(week.toISOString(), studentId);
+        } catch (error) {
+          console.error('Error calling getWeekAvailability for pre-load:', error);
+          if (!window.bookingAvailabilityCache) {
+            window.bookingAvailabilityCache = {};
+          }
+          window.bookingAvailabilityCache[key] = {};
+        }
+        
+        // Also pre-load existing lessons for the week
+        try {
+          google.script.run
+            .withSuccessHandler(function(result) {
+              let existingLessons = {};
+              if (typeof result === 'string') {
+                try {
+                  existingLessons = JSON.parse(result);
+                } catch (e) {
+                  console.error('Failed to parse existing lessons:', e);
+                  existingLessons = {};
+                }
+              } else {
+                existingLessons = result || {};
+              }
+              
+              // Cache existing lessons with a separate key
+              if (!window.bookingExistingLessonsCache) {
+                window.bookingExistingLessonsCache = {};
+              }
+              window.bookingExistingLessonsCache[key] = existingLessons;
+              console.log('Pre-loaded existing lessons for week:', key);
+            })
+            .withFailureHandler(function(error) {
+              console.error('Error pre-loading existing lessons for week', key, ':', error);
+              if (!window.bookingExistingLessonsCache) {
+                window.bookingExistingLessonsCache = {};
+              }
+              window.bookingExistingLessonsCache[key] = {};
+            })
+            .getExistingLessonsFromSheet(week.toISOString());
+        } catch (error) {
+          console.error('Error calling getExistingLessonsFromSheet for pre-load:', error);
+          if (!window.bookingExistingLessonsCache) {
+            window.bookingExistingLessonsCache = {};
+          }
+          window.bookingExistingLessonsCache[key] = {};
+        }
+      });
     }
     window.loadStudent = loadStudent;
 
@@ -6910,6 +7450,26 @@
       if (!list.length){ 
         el.paymentsBody.innerHTML = `<tr><td colspan="8" class="px-3 py-6 text-center text-gray-500">No payments</td></tr>`; 
         return; 
+      }
+      
+      // Debug: Log payment structure to diagnose Transaction ID issue
+      if (list.length > 0) {
+        console.log('🔍 Debug - Total payments:', list.length);
+        console.log('🔍 Debug - First payment object (full):', JSON.stringify(list[0], null, 2));
+        console.log('🔍 Debug - First payment object keys:', Object.keys(list[0]));
+        console.log('🔍 Debug - Transaction ID check:', {
+          'Transaction ID': list[0]['Transaction ID'],
+          'transactionId': list[0].transactionId,
+          'TransactionID': list[0]['TransactionID'],
+          'transaction ID': list[0]['transaction ID'],
+          'id': list[0].id,
+          'Txn': list[0]['Txn'],
+          'txn': list[0].txn
+        });
+        // Check all payments
+        list.forEach((p, idx) => {
+          const txn = p.transactionId || p['Transaction ID'] || p['TransactionID'] || p.id || '';
+        });
       }
       
       // Sort payments by date (latest first)
@@ -6941,12 +7501,25 @@
         
         const method = p.Method || p.method || '';
         const staff = p.Staff || p.staff || '';
-        const txn = p['Transaction ID'] || p.id || p.transactionId || '';
+        // Try multiple variations of Transaction ID field name (handle header variations)
+        // Check normalized transactionId first since normalisePayments creates it
+        const txn = p.transactionId || p['Transaction ID'] || p['TransactionID'] || p['transaction ID'] || 
+                   p['transactionId'] || p.id || p['Txn'] || p.txn || 
+                   p['TXN'] || p['TXN ID'] || '';
         
-
+        // Debug for this specific payment
+        if (!txn && index === 0) {
+          console.warn('⚠️ Transaction ID is empty for payment:', {
+            payment: p,
+            allKeys: Object.keys(p),
+            transactionId: p.transactionId,
+            'Transaction ID': p['Transaction ID'],
+            'TransactionID': p['TransactionID']
+          });
+        }
         
         return `<tr class="odd:bg-gray-50 hover:bg-gray-100 cursor-pointer payment-row" data-index="${index}">
-          <td class="px-3 py-2 whitespace-nowrap">${txn}</td>
+          <td class="px-3 py-2 whitespace-nowrap">${txn || '<span class="text-gray-400 italic">No ID</span>'}</td>
           <td class="px-3 py-2 whitespace-nowrap">${d}</td>
           <td class="px-3 py-2 whitespace-nowrap">${year}</td>
           <td class="px-3 py-2 whitespace-nowrap">${month}</td>
@@ -6969,14 +7542,17 @@
             payment: payment,
             onSave: (updatedPayment) => {
               // Optimistic update: Update UI immediately
+              // Normalize the updated payment to ensure Transaction ID is properly set
+              const normalizedUpdated = normalisePayments([updatedPayment])[0] || updatedPayment;
               const originalIndex = student.payments.findIndex(p => 
                 p['Transaction ID'] === payment['Transaction ID'] || 
-                p.transactionId === payment.transactionId
+                p.transactionId === payment.transactionId ||
+                p['Transaction ID'] === normalizedUpdated['Transaction ID']
               );
               
               if (originalIndex !== -1) {
                 const oldPayment = student.payments[originalIndex];
-                student.payments[originalIndex] = updatedPayment;
+                student.payments[originalIndex] = normalizedUpdated;
                 renderPaymentsTable();
                 
                 // Update cache immediately - pass old payment data to update existing entry
@@ -6989,9 +7565,15 @@
                 if (window.google && google.script && google.script.run) {
                   google.script.run
                     .withSuccessHandler(function(result) {
-                      console.log('Payment updated successfully:', result);
+                      // Normalize the result to ensure Transaction ID is properly set
+                      const normalizedResult = normalisePayments([result])[0] || result;
                       // Update cache with server response - pass old payment data to update existing entry
-                      updateStudentCache(student.id, 'payment', result, false, oldPayment);
+                      updateStudentCache(student.id, 'payment', normalizedResult, false, oldPayment);
+                      // Update the payment in the local array
+                      if (originalIndex !== -1 && student.payments[originalIndex]) {
+                        student.payments[originalIndex] = normalizedResult;
+                        renderPaymentsTable();
+                      }
                     })
                     .withFailureHandler(function(error) {
                       console.error('Failed to update payment:', error);
@@ -7019,7 +7601,6 @@
                     .updatePayment(updatedPayment);
                 } else {
                   // Fallback: just update frontend if backend not available
-                  console.log('Payment updated (backend not available):', updatedPayment);
                 }
               }
             },
@@ -7036,7 +7617,6 @@
                                        paymentToDelete['Txn'] || 
                                        paymentToDelete.txn;
                   
-                  console.log('Payment to delete:', paymentToDelete);
                   console.log('Transaction ID found:', transactionId);
                   
                   if (!transactionId) {
@@ -7077,7 +7657,6 @@
                     if (window.google && google.script && google.script.run) {
                       google.script.run
                         .withSuccessHandler(function(result) {
-                          console.log('Payment deleted successfully:', result);
                           // Cache already updated, no additional action needed
                         })
                         .withFailureHandler(function(error) {
@@ -7103,7 +7682,6 @@
                         .deletePayment({ ...paymentToDelete, 'Transaction ID': transactionId });
                     } else {
                       // Fallback: just update frontend if backend not available
-                      console.log('Payment deleted (backend not available):', paymentToDelete);
                     }
                   }
                 },
