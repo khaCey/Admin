@@ -430,6 +430,8 @@ window.openStudentDetails = function(id){
                     if (typeof loadStudent === 'function') {
                       loadStudent(model);
                     }
+                // Clear force-refresh flag after successful fetch
+                window.__forceRefreshOnLoad = false;
                     
                     // Re-enable edit/delete buttons after data is loaded
                     var editBtn = document.getElementById('editBtn');
@@ -471,6 +473,8 @@ window.openStudentDetails = function(id){
             })
             .withFailureHandler(function(err) {
               console.error('getStudentDetails failed', err);
+            // Clear force-refresh flag even on failure to avoid repeated skips
+            window.__forceRefreshOnLoad = false;
             })
             .getStudentDetails(id);
         }, 100); // Small delay to prevent rapid calls
@@ -589,6 +593,9 @@ window.openStudentDetails = function(id){
     }
   }
 
+  // Force fresh fetch on page load (bypass cached student data once after reload)
+  window.__forceRefreshOnLoad = true;
+
   /**
    * Get student details from cache or fallback to server
    * @param {string|number} studentId - Student ID
@@ -601,6 +608,12 @@ window.openStudentDetails = function(id){
     }
     
     var cacheKey = String(studentId).trim();
+    
+    // If force-refresh flag is set (e.g., right after page reload), skip cache once
+    if (window.__forceRefreshOnLoad) {
+      console.log('♻️ Force refresh on load enabled, skipping cache for', cacheKey);
+      return null;
+    }
     
     // First check memory cache (fastest)
     if (window._studentDetailsCache && window._studentDetailsCache[cacheKey]) {

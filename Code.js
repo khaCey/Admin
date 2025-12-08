@@ -5,6 +5,7 @@ var PAYMENT_SHEET       = 'Payment';
 var NOTES_SHEET         = 'Notes';
 var LESSON_SHEET        = 'Lessons';
 var LESSON_CALENDAR_ID  = 'greensquare.jp_h8u0oufn8feana384v67o46o78@group.calendar.google.com';
+var SHAM_CALENDAR_ID    = 'c_403306dccf2039f61a620a4cfc22424c5a6f79e945054e57f30ecc50c90b9207@group.calendar.google.com';
 
 // Fee table definition
 var feeTable = {
@@ -64,10 +65,10 @@ var feeTable = {
 var FEATURE_FLAGS = {
   notifications: { enabled: false, description: 'Notification system' },
   unpaidStudents: { enabled: true, description: 'Unpaid students button' },
-  unscheduledLessons: { enabled: false, description: 'Unscheduled lessons button' },
+  unscheduledLessons: { enabled: true, description: 'Unscheduled lessons button' },
   codePage: { enabled: true, description: 'Code management page' },
   lessonBooking: { enabled: true, description: 'Lesson booking calendar' },
-  lessonActions: { enabled: false, description: 'Cancel/Reschedule/Remove lesson actions' }
+  lessonActions: { enabled: true, description: 'Cancel/Reschedule/Remove lesson actions' }
 };
 // ─── END CONFIGURATION ─────────────────────────────────────────────────────────
 
@@ -1180,13 +1181,20 @@ function getStudentEventsForMonth(studentName, monthText) {
   var startIdx = headers.indexOf('Start');
   var endIdx = headers.indexOf('End');
   var eventIdIdx = headers.indexOf('EventID');
+  // Fallback if header row was misaligned (e.g., month written into A1 previously)
+  if (eventIdIdx === -1) {
+    Logger.log('EventID column not found in headers, falling back to column 0');
+    eventIdIdx = 0;
+  }
   var titleIdx = headers.indexOf('Title');
   
-  Logger.log('Column indices - StudentName: ' + studentNameIdx + ', Status: ' + statusIdx + ', Start: ' + startIdx);
+  Logger.log('Column indices - StudentName: ' + studentNameIdx + ', Status: ' + statusIdx + ', Start: ' + startIdx + ', EventID: ' + eventIdIdx);
+  Logger.log('Indices - EventID: ' + eventIdIdx + ', Title: ' + titleIdx + ', Start: ' + startIdx + ', Status: ' + statusIdx);
   
   var studentEvents = [];
   
   Logger.log('Searching for student: "' + studentName + '" in month: "' + monthText + '"');
+  Logger.log('Total rows in MonthlySchedule: ' + (data.length - 1));
   
   // Parse the target month to get year and month number
   var targetYear, targetMonth;
@@ -1227,11 +1235,26 @@ function getStudentEventsForMonth(studentName, monthText) {
           var day = Utilities.formatDate(startTime, Session.getScriptTimeZone(), 'dd');
           var time = Utilities.formatDate(startTime, Session.getScriptTimeZone(), 'HH:mm');
           
-          studentEvents.push({
+          // Get eventID if available
+          var eventID = eventIdIdx >= 0 ? String(row[eventIdIdx] || '').trim() : '';
+          
+          Logger.log('Matched row ' + i + ': eventID=' + eventID + ', day=' + day + ', time=' + time + ', status=' + status + ', title=' + row[titleIdx]);
+          
+          var eventObj = {
             day: day,
             time: time,
             status: status
-          });
+          };
+          
+          // Add eventID if available (support both eventID and eventId for compatibility)
+          if (eventID) {
+            eventObj.eventID = eventID;
+            eventObj.eventId = eventID;
+          } else {
+            Logger.log('⚠️ No EventID for row ' + i + ' (' + day + ' ' + time + ') despite match');
+          }
+          
+          studentEvents.push(eventObj);
         }
       }
     }
@@ -1823,6 +1846,19 @@ function processEventsForMonth(events) {
         lastName = lastParts[lastParts.length - 1];
       }
     }
+
+    // Determine teacher name from calendar ID (used for all rows)
+    var teacherName = '';
+    try {
+      var calendarId = event.getOriginalCalendarId();
+      if (calendarId === SHAM_CALENDAR_ID) {
+        teacherName = 'Sham';
+      }
+      // Add more teacher calendar checks here if needed
+    } catch (e) {
+      Logger.log('Could not get calendar ID for event: ' + e.toString());
+    }
+
     for (var i = 0; i < names.length; i++) {
       var parts = names[i].split(/\s+/);
       if (parts.length > 1) {
@@ -1833,7 +1869,8 @@ function processEventsForMonth(events) {
           event.getEndTime(),
           status,
           names[i],
-          isKidsLesson ? '子' : ''  // NEW COLUMN: Add IsKidsLesson
+          isKidsLesson ? '子' : '',  // IsKidsLesson column
+          teacherName  // TeacherName column
         ]);
       } else {
         // If no last name, append the lastName found from the group
@@ -1845,7 +1882,8 @@ function processEventsForMonth(events) {
           event.getEndTime(),
           status,
           fullName.trim(),
-          isKidsLesson ? '子' : ''  // NEW COLUMN: Add IsKidsLesson
+          isKidsLesson ? '子' : '',  // IsKidsLesson column
+          teacherName  // TeacherName column (ensure 8 columns)
         ]);
       }
     }
@@ -1878,7 +1916,7 @@ function cacheEventsToSheet(monthStr, sheetName) {
   }
   
   // Write headers - ADD NEW COLUMN
-  var headers = ['EventID', 'Title', 'Start', 'End', 'Status', 'StudentName', 'IsKidsLesson'];
+  var headers = ['EventID', 'Title', 'Start', 'End', 'Status', 'StudentName', 'IsKidsLesson', 'TeacherName'];
   cacheSheet.getRange(1, 1, 1, headers.length).setValues([headers]);
 
   // Use getAllEventsForMonth function to fetch ALL events (no filtering)
@@ -1901,9 +1939,6 @@ function cacheEventsToSheet(monthStr, sheetName) {
   if (validRows.length > 0) {
     cacheSheet.getRange(2, 1, validRows.length, headers.length).setValues(validRows);
   }
-  
-  // Set A1 to the month for reference
-  cacheSheet.getRange('A1').setValue(yyyymm);
   
   // Refresh booking availability for affected months
   try {
@@ -3580,12 +3615,129 @@ function getTeacherNames() {
     }
     
     var teachers = Array.from(teacherSet).sort();
+    
+    // Add "Sham" to the list if not already present (Sham has a separate calendar)
+    if (teachers.indexOf('Sham') === -1) {
+      teachers.push('Sham');
+      teachers.sort();
+    }
+    
     Logger.log('Found ' + teachers.length + ' unique teachers');
     return teachers;
     
   } catch (error) {
     Logger.log('Error in getTeacherNames: ' + error.toString());
-    return [];
+    // Return at least Sham if error occurs
+    return ['Sham'];
+  }
+}
+
+/**
+ * Check if a specific teacher is available at a given time
+ * @param {string} teacherName - Name of the teacher (e.g., "Sham")
+ * @param {Date} startTime - Start time of the lesson
+ * @param {Date} endTime - End time of the lesson
+ * @param {boolean} checkShamCalendarOnly - If true, only check Sham's calendar (for Sham-only lessons). If false, check both calendars (for regular lessons with Sham)
+ * @returns {boolean} True if teacher is available, false otherwise
+ */
+function checkTeacherAvailability(teacherName, startTime, endTime, checkShamCalendarOnly) {
+  try {
+    if (!teacherName || teacherName.trim().toLowerCase() !== 'sham') {
+      // For other teachers, check TeacherSchedules sheet
+      var dateStr = Utilities.formatDate(startTime, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+      var schedules = getCachedTeacherSchedule(dateStr);
+      var teacherScheduled = schedules.some(function(schedule) {
+        if (schedule.teacherName.toLowerCase() !== teacherName.toLowerCase()) {
+          return false;
+        }
+        
+        var timeStr = Utilities.formatDate(startTime, Session.getScriptTimeZone(), 'HH:mm');
+        var endTimeStr = Utilities.formatDate(endTime, Session.getScriptTimeZone(), 'HH:mm');
+        
+        var normalizedStartTime = String(schedule.startTime || '').trim().substring(0, 5);
+        var normalizedEndTime = String(schedule.endTime || '').trim().substring(0, 5);
+        var normalizedTimeStr = String(timeStr || '').trim().substring(0, 5);
+        var normalizedEndTimeStr = String(endTimeStr || '').trim().substring(0, 5);
+        
+        return normalizedTimeStr >= normalizedStartTime && normalizedEndTimeStr <= normalizedEndTime;
+      });
+      
+      return teacherScheduled;
+    }
+    
+    // For Sham, check TeacherSchedules first
+    var dateStr = Utilities.formatDate(startTime, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+    var schedules = getCachedTeacherSchedule(dateStr);
+    var shamScheduled = schedules.some(function(schedule) {
+      if (schedule.teacherName.toLowerCase() !== 'sham') {
+        return false;
+      }
+      
+      var timeStr = Utilities.formatDate(startTime, Session.getScriptTimeZone(), 'HH:mm');
+      var endTimeStr = Utilities.formatDate(endTime, Session.getScriptTimeZone(), 'HH:mm');
+      
+      var normalizedStartTime = String(schedule.startTime || '').trim().substring(0, 5);
+      var normalizedEndTime = String(schedule.endTime || '').trim().substring(0, 5);
+      var normalizedTimeStr = String(timeStr || '').trim().substring(0, 5);
+      var normalizedEndTimeStr = String(endTimeStr || '').trim().substring(0, 5);
+      
+      return normalizedTimeStr >= normalizedStartTime && normalizedEndTimeStr <= normalizedEndTime;
+    });
+    
+    if (!shamScheduled) {
+      Logger.log('Sham is not scheduled to work at this time');
+      return false;
+    }
+    
+    // Check Sham's calendar for conflicts - if Sham has any lesson, he's not available
+    var shamCalendar = CalendarApp.getCalendarById(SHAM_CALENDAR_ID);
+    if (shamCalendar) {
+      // Check for existing events in Sham's calendar during the requested time
+      var events = shamCalendar.getEvents(startTime, endTime);
+      
+      // Filter out events that are cancelled or rescheduled
+      var conflictingEvents = events.filter(function(event) {
+        var title = event.getTitle() || '';
+        // Ignore cancelled or rescheduled events
+        if (/\[CANCELLED\]/i.test(title) || /\[RESCHEDULED\]/i.test(title)) {
+          return false;
+        }
+        return true;
+      });
+      
+      if (conflictingEvents.length > 0) {
+        Logger.log('Sham has ' + conflictingEvents.length + ' conflicting event(s) in Sham calendar at this time');
+        return false; // Sham is not available - he already has a lesson
+      }
+    }
+    
+    // Also check regular lesson calendar for conflicts - if Sham has a lesson there, he's not available
+    var regularCalendar = CalendarApp.getCalendarById(LESSON_CALENDAR_ID);
+    if (regularCalendar) {
+      var regularEvents = regularCalendar.getEvents(startTime, endTime);
+      // Filter for events with Sham as teacher (check description)
+      var shamConflicts = regularEvents.filter(function(event) {
+        var title = event.getTitle() || '';
+        var description = event.getDescription() || '';
+        // Ignore cancelled or rescheduled events
+        if (/\[CANCELLED\]/i.test(title) || /\[RESCHEDULED\]/i.test(title)) {
+          return false;
+        }
+        // Check if this event is assigned to Sham
+        return /Teacher:\s*Sham/i.test(description) || /Teacher:\s*sham/i.test(description);
+      });
+      
+      if (shamConflicts.length > 0) {
+        Logger.log('Sham has ' + shamConflicts.length + ' conflicting regular lesson(s) at this time');
+        return false; // Sham is not available - he already has a lesson
+      }
+    }
+    
+    return true;
+    
+  } catch (error) {
+    Logger.log('Error checking teacher availability: ' + error.toString());
+    return false;
   }
 }
 
@@ -4230,12 +4382,19 @@ function getLatestRecordData(studentName) {
   var currentMonthShort = shortMonthNames[now.getMonth()];
   var nextMonthShort = shortMonthNames[(now.getMonth() + 1) % 12];
   
-  // Ensure cache exists for both months
+  // Ensure cache exists and is populated for both months
   var ss = SpreadsheetApp.openById(SS_ID);
   var cacheSheet = ss.getSheetByName('MonthlySchedule');
   if (!cacheSheet) {
     Logger.log('MonthlySchedule sheet not found, creating cache for current month...');
     cacheMonthlyEvents(currentMonth);
+  } else {
+    // Check if cache needs to be refreshed (if sheet is empty or has no data for current month)
+    var data = cacheSheet.getDataRange().getValues();
+    if (data.length < 2) {
+      Logger.log('MonthlySchedule sheet is empty, populating cache for current month...');
+      cacheMonthlyEvents(currentMonth);
+    }
   }
   
   // Get events for both months
@@ -4392,6 +4551,23 @@ function getLatestRecordData(studentName) {
   }
   
   Logger.log('Final latestByMonth object: ' + JSON.stringify(latestByMonth));
+  
+  // Debug: log what we're sending back per month, including first lesson eventID
+  try {
+    Object.keys(latestByMonth || {}).forEach(function(monthKey) {
+      var lessonsArr = latestByMonth[monthKey] && latestByMonth[monthKey].lessons ? latestByMonth[monthKey].lessons : [];
+      var first = lessonsArr.length ? lessonsArr[0] : null;
+      var firstSummary = first ? {
+        day: first.day,
+        time: first.time,
+        status: first.status,
+        eventID: first.eventID || first.eventId || 'MISSING'
+      } : 'none';
+      Logger.log('[LATEST OUT] month=%s lessons=%s firstLesson=%s', monthKey, lessonsArr.length, JSON.stringify(firstSummary));
+    });
+  } catch (e) {
+    Logger.log('Error logging latestByMonth outbound: ' + e);
+  }
   
   return {
     latestByMonth: latestByMonth
@@ -5295,6 +5471,9 @@ function cancelLesson(eventId, reason, studentId) {
       return { success: false, error: 'Event not found' };
     }
     
+    // Capture start time for cache updates
+    var startTime = event.getStartTime();
+
     // Update event title to show cancelled status
     var originalTitle = event.getTitle();
     var cancelledTitle = '[CANCELLED] ' + originalTitle;
@@ -5316,7 +5495,16 @@ function cancelLesson(eventId, reason, studentId) {
     }
     
     // Update availability cache
-    updateAvailabilityForTimeSlot(event.getStartTime(), false, isKidsLesson);
+    updateAvailabilityForTimeSlot(startTime, false, isKidsLesson);
+    
+    // Refresh MonthlySchedule cache for the affected month
+    try {
+      var eventMonth = Utilities.formatDate(startTime, Session.getScriptTimeZone(), 'MMMM yyyy');
+      cacheMonthlyEvents(eventMonth);
+      Logger.log('Cache refreshed for month: ' + eventMonth);
+    } catch (cacheError) {
+      Logger.log('Error refreshing cache after cancellation: ' + cacheError.toString());
+    }
     
     Logger.log('Lesson cancelled successfully: ' + eventId);
     return { success: true, message: 'Lesson cancelled successfully' };
@@ -5395,6 +5583,19 @@ function rescheduleLesson(eventId, newDateTime, reason, studentId) {
     logLessonAction(studentId, eventId, 'reschedule', oldStartTime.toISOString(), newStartTime.toISOString(), reason);
     logLessonAction(studentId, newEvent.getId(), 'reschedule_new', oldStartTime.toISOString(), newStartTime.toISOString(), 'New event created from reschedule');
     
+    // Refresh MonthlySchedule cache for both old and new months
+    try {
+      var oldMonth = Utilities.formatDate(oldStartTime, Session.getScriptTimeZone(), 'MMMM yyyy');
+      var newMonth = Utilities.formatDate(newStartTime, Session.getScriptTimeZone(), 'MMMM yyyy');
+      cacheMonthlyEvents(oldMonth);
+      if (oldMonth !== newMonth) {
+        cacheMonthlyEvents(newMonth);
+      }
+      Logger.log('Cache refreshed for months: ' + oldMonth + (oldMonth !== newMonth ? ', ' + newMonth : ''));
+    } catch (cacheError) {
+      Logger.log('Error refreshing cache after reschedule: ' + cacheError.toString());
+    }
+    
     Logger.log('Lesson rescheduled successfully. Original event: ' + eventId + ', New event: ' + newEvent.getId());
     return { 
       success: true, 
@@ -5434,11 +5635,23 @@ function removeLesson(eventId, reason, studentId) {
       return { success: false, error: 'Event not found' };
     }
     
+    // Capture start time before deletion for logging/cache updates
+    var startTime = event.getStartTime();
+    
     // Log the action before deletion
-    logLessonAction(studentId, eventId, 'remove', event.getStartTime().toISOString(), null, reason);
+    logLessonAction(studentId, eventId, 'remove', startTime.toISOString(), null, reason);
     
     // Delete the event
     event.deleteEvent();
+
+    // Refresh MonthlySchedule cache for the affected month
+    try {
+      var eventMonth = Utilities.formatDate(startTime, Session.getScriptTimeZone(), 'MMMM yyyy');
+      cacheMonthlyEvents(eventMonth);
+      Logger.log('Cache refreshed for month: ' + eventMonth);
+    } catch (cacheError) {
+      Logger.log('Error refreshing cache after removal: ' + cacheError.toString());
+    }
     
     Logger.log('Lesson removed successfully: ' + eventId);
     return { success: true, message: 'Lesson removed successfully' };
@@ -5541,7 +5754,7 @@ function getLessonEventDetails(eventId) {
  * @param {string} notes - Additional notes
  * @returns {Object} Success/failure status
  */
-function bookLesson(studentId, dateTime, duration, lessonType, notes) {
+function bookLesson(studentId, dateTime, duration, lessonType, notes, teacherName) {
   try {
     Logger.log('Booking lesson for student: ' + studentId);
     
@@ -5610,7 +5823,24 @@ function bookLesson(studentId, dateTime, duration, lessonType, notes) {
       }
     }
     
-    var calendar = CalendarApp.getCalendarById(LESSON_CALENDAR_ID);
+    // Determine which calendar to use based on teacher
+    // Sham can be available for regular lessons (uses regular calendar) or Sham-only lessons (uses Sham's calendar)
+    // For regular lessons with Sham, use regular calendar
+    var calendarId = LESSON_CALENDAR_ID;
+    
+    // Check if teacher is selected and available
+    if (teacherName && teacherName.trim()) {
+      var teacherAvailable = checkTeacherAvailability(teacherName.trim(), startTime, endTime, false); // false = regular lesson
+      if (!teacherAvailable) {
+        Logger.log('BLOCKED: ' + teacherName + ' is not available at this time');
+        return { 
+          success: false, 
+          error: teacherName + ' is not available at the selected time. Please choose a different time slot.' 
+        };
+      }
+    }
+    
+    var calendar = CalendarApp.getCalendarById(calendarId);
     
     // Create event title (add 子 marker if child)
     var studentName = student.Name || student.name || 'Unknown Student';
@@ -5623,6 +5853,9 @@ function bookLesson(studentId, dateTime, duration, lessonType, notes) {
     // Create event description
     var description = 'Booked by: ' + getCurrentStaffName() + '\n';
     description += 'Booked on: ' + new Date().toLocaleString() + '\n';
+    if (teacherName && teacherName.trim()) {
+      description += 'Teacher: ' + teacherName.trim() + '\n';
+    }
     if (notes) {
       description += '\nNotes: ' + notes;
     }
@@ -5639,6 +5872,15 @@ function bookLesson(studentId, dateTime, duration, lessonType, notes) {
     
     // Update availability cache
     updateAvailabilityForTimeSlot(startTime, true, isChildStudent);
+    
+    // Refresh MonthlySchedule cache for the affected month
+    try {
+      var eventMonth = Utilities.formatDate(startTime, Session.getScriptTimeZone(), 'MMMM yyyy');
+      cacheMonthlyEvents(eventMonth);
+      Logger.log('Cache refreshed for month: ' + eventMonth);
+    } catch (cacheError) {
+      Logger.log('Error refreshing cache after booking: ' + cacheError.toString());
+    }
     
     return { 
       success: true, 
@@ -5666,7 +5908,7 @@ function bookLesson(studentId, dateTime, duration, lessonType, notes) {
  * @param {number} totalLessons - Total lessons for the month
  * @returns {Object} Success/failure status
  */
-function bookReservedLesson(studentId, dateTime, duration, lessonType, notes, totalLessons) {
+function bookReservedLesson(studentId, dateTime, duration, lessonType, notes, totalLessons, teacherName) {
   try {
     Logger.log('Booking reserved lesson for student: ' + studentId);
     
@@ -5735,7 +5977,24 @@ function bookReservedLesson(studentId, dateTime, duration, lessonType, notes, to
       }
     }
     
-    var calendar = CalendarApp.getCalendarById(LESSON_CALENDAR_ID);
+    // Determine which calendar to use based on teacher
+    // Sham can be available for regular lessons (uses regular calendar) or Sham-only lessons (uses Sham's calendar)
+    // For regular lessons with Sham, use regular calendar
+    var calendarId = LESSON_CALENDAR_ID;
+    
+    // Check if teacher is selected and available
+    if (teacherName && teacherName.trim()) {
+      var teacherAvailable = checkTeacherAvailability(teacherName.trim(), startTime, endTime, false); // false = regular lesson
+      if (!teacherAvailable) {
+        Logger.log('BLOCKED: ' + teacherName + ' is not available at this time');
+        return { 
+          success: false, 
+          error: teacherName + ' is not available at the selected time. Please choose a different time slot.' 
+        };
+      }
+    }
+    
+    var calendar = CalendarApp.getCalendarById(calendarId);
     
     // Create event title (add 子 marker if child, and "placeholder" for reserved)
     var studentName = student.Name || student.name || 'Unknown Student';
@@ -5749,6 +6008,9 @@ function bookReservedLesson(studentId, dateTime, duration, lessonType, notes, to
     var description = 'Reserved booking\n';
     description += 'Booked by: ' + getCurrentStaffName() + '\n';
     description += 'Booked on: ' + new Date().toLocaleString() + '\n';
+    if (teacherName && teacherName.trim()) {
+      description += 'Teacher: ' + teacherName.trim() + '\n';
+    }
     if (totalLessons) {
       description += 'Total lessons for month: ' + totalLessons + '\n';
     }
@@ -5771,6 +6033,15 @@ function bookReservedLesson(studentId, dateTime, duration, lessonType, notes, to
     
     // Update availability cache
     updateAvailabilityForTimeSlot(startTime, true, isChildStudent);
+    
+    // Refresh MonthlySchedule cache for the affected month
+    try {
+      var eventMonth = Utilities.formatDate(startTime, Session.getScriptTimeZone(), 'MMMM yyyy');
+      cacheMonthlyEvents(eventMonth);
+      Logger.log('Cache refreshed for month: ' + eventMonth);
+    } catch (cacheError) {
+      Logger.log('Error refreshing cache after reserved booking: ' + cacheError.toString());
+    }
     
     return { 
       success: true, 

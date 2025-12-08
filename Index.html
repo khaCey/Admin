@@ -1625,6 +1625,14 @@
           </div>
           
           <div class="mb-4">
+            <label class="block text-sm font-medium text-gray-700 mb-2">Teacher (Optional)</label>
+            <select id="slotTeacherNew" class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm">
+              <option value="">Any Available Teacher</option>
+              <!-- Teacher options will be populated by JavaScript -->
+            </select>
+          </div>
+          
+          <div class="mb-4">
             <label class="block text-sm font-medium text-gray-700 mb-2">Lesson Type</label>
             <select id="slotTypeNew" class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm">
               <option value="Online">Online</option>
@@ -2069,6 +2077,23 @@
     // ---------- Utilities ----------
     const $$ = (sel, root=document) => Array.from(root.querySelectorAll(sel));
     const $  = (sel, root=document) => root.querySelector(sel);
+
+    // Simple button loading helper
+    function setButtonLoading(btn, isLoading, text='Processing...') {
+      if (!btn) return;
+      if (isLoading) {
+        if (!btn.dataset.originalText) btn.dataset.originalText = btn.textContent;
+        btn.disabled = true;
+        btn.setAttribute('aria-busy', 'true');
+        btn.innerHTML = `<span class="inline-flex items-center gap-2 button-spinner"><svg class="animate-spin h-4 w-4 text-current" viewBox="0 0 24 24" fill="none"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path></svg><span>${text}</span></span>`;
+      } else {
+        btn.disabled = false;
+        btn.removeAttribute('aria-busy');
+        if (btn.dataset.originalText) {
+          btn.textContent = btn.dataset.originalText;
+        }
+      }
+    }
     const show = (el) => el && el.classList.remove('hidden');
     const hide = (el) => el && el.classList.add('hidden');
 
@@ -2491,8 +2516,11 @@
           
           const studentId = student?.id || student?.ID || 'unknown';
           
+          setButtonLoading(lessonDetailsEls.cancelBtn, true, 'Cancelling...');
+          
           google.script.run
             .withSuccessHandler(function(result) {
+              setButtonLoading(lessonDetailsEls.cancelBtn, false);
               if (result.success) {
                 showToast('Lesson cancelled successfully!', 'success');
                 
@@ -2550,6 +2578,7 @@
               }
             })
             .withFailureHandler(function(error) {
+              setButtonLoading(lessonDetailsEls.cancelBtn, false);
               console.error('Error cancelling lesson:', error);
               showToast('Error cancelling lesson. Please try again.', 'error');
             })
@@ -2582,8 +2611,11 @@
           
           const studentId = student?.id || student?.ID || 'unknown';
           
+          setButtonLoading(lessonDetailsEls.rescheduleBtn, true, 'Rescheduling...');
+          
           google.script.run
             .withSuccessHandler(function(result) {
+              setButtonLoading(lessonDetailsEls.rescheduleBtn, false);
               if (result.success) {
                 showToast('Lesson rescheduled successfully!', 'success');
                 
@@ -2641,6 +2673,7 @@
               }
             })
             .withFailureHandler(function(error) {
+              setButtonLoading(lessonDetailsEls.rescheduleBtn, false);
               console.error('Error rescheduling lesson:', error);
               showToast('Error rescheduling lesson. Please try again.', 'error');
             })
@@ -2685,6 +2718,7 @@
           }
           
           console.log('Proceeding with removal, eventId:', eventId);
+          setButtonLoading(lessonDetailsEls.removeBtn, true, 'Removing...');
           
           // Immediately remove the lesson card from UI (optimistic update)
           let cardRemoved = false;
@@ -2784,6 +2818,7 @@
           
           google.script.run
             .withSuccessHandler(function(result) {
+              setButtonLoading(lessonDetailsEls.removeBtn, false);
               if (result.success) {
                 showToast('Lesson removed successfully!', 'success');
                 
@@ -2872,6 +2907,7 @@
               }
             })
             .withFailureHandler(function(error) {
+              setButtonLoading(lessonDetailsEls.removeBtn, false);
               console.error('Error removing lesson:', error);
               showToast('Error removing lesson. Please try again.', 'error');
             })
@@ -3076,8 +3112,12 @@
     
     function bookLessonWithTotal(lessonData, dateTime, totalLessons) {
       // Book the lesson
+      const bookingButtons = [timeSlotEls?.confirm, timeSlotElsNew?.confirm].filter(Boolean);
+      bookingButtons.forEach(btn => setButtonLoading(btn, true, lessonData?.isReserved ? 'Reserving...' : 'Booking...'));
+
       google.script.run
         .withSuccessHandler(function(result) {
+          bookingButtons.forEach(btn => setButtonLoading(btn, false));
           if (result.success) {
             // Show warning if count exceeds total
             if (result.warning) {
@@ -3183,10 +3223,11 @@
           }
         })
         .withFailureHandler(function(error) {
+          bookingButtons.forEach(btn => setButtonLoading(btn, false));
           console.error('Error booking lesson:', error);
           showToast('Error booking lesson. Please try again.', 'error');
         })
-        .bookLesson(lessonData.studentId, dateTime.toISOString(), lessonData.duration, lessonData.type, lessonData.notes, totalLessons);
+        .bookLesson(lessonData.studentId, dateTime.toISOString(), lessonData.duration, lessonData.type, lessonData.notes, ''); // teacherName - empty for old modal (no teacher selection)
     }
 
     function openBookLessonModal({ student=null, onClose=()=>{} }={}){
@@ -4320,6 +4361,7 @@
       root: $('#timeSlotModalNew'), title: $('#timeSlotTitleNew'), info: $('#timeSlotInfoNew'),
       close: $('#timeSlotCloseNew'), cancel: $('#timeSlotCancelNew'), confirm: $('#timeSlotConfirmNew'),
       selectedTimeDisplay: $('#selectedTimeDisplayNew'), 
+      teacher: $('#slotTeacherNew'),
       type: $('#slotTypeNew'), notes: $('#slotNotesNew'), totalLessons: $('#slotTotalLessonsNew'),
       totalLessonsContainer: $('#totalLessonsContainerNew')
     };
@@ -4884,7 +4926,36 @@
       timeSlotElsNew.selectedTimeDisplay.textContent = timeStr;
       timeSlotElsNew.type.value = 'Cafe';
       timeSlotElsNew.notes.value = '';
+      timeSlotElsNew.teacher.value = '';
       timeSlotElsNew.totalLessons.value = '';
+      
+      // Load teacher names and populate dropdown
+      if (window.google && google.script && google.script.run) {
+        google.script.run
+          .withSuccessHandler(function(teachers) {
+            const teacherSelect = timeSlotElsNew.teacher;
+            if (teacherSelect && teacherSelect.length > 0) {
+              // Clear existing options except the first "Any Available Teacher"
+              while (teacherSelect[0].options.length > 1) {
+                teacherSelect[0].remove(1);
+              }
+              
+              // Add teacher options
+              if (teachers && teachers.length > 0) {
+                teachers.forEach(function(teacher) {
+                  const option = document.createElement('option');
+                  option.value = teacher;
+                  option.textContent = teacher;
+                  teacherSelect[0].appendChild(option);
+                });
+              }
+            }
+          })
+          .withFailureHandler(function(error) {
+            console.error('Error loading teachers:', error);
+          })
+          .getTeacherNames();
+      }
 
       const lessonMonth = date.toLocaleString('en-US', { month: 'long', year: 'numeric' });
       const studentId = student.ID || student.id;
@@ -4965,6 +5036,7 @@
           duration: 50,
           type: timeSlotElsNew.type.value,
           notes: timeSlotElsNew.notes.value,
+          teacherName: timeSlotElsNew.teacher && timeSlotElsNew.teacher.length > 0 ? timeSlotElsNew.teacher[0].value : '',
           totalLessons: totalLessons
         };
 
@@ -5022,7 +5094,7 @@
           console.error('Error creating reserved booking:', error);
           showToast('Error creating reserved booking. Please try again.', 'error');
         })
-        .bookReservedLesson(lessonData.studentId, lessonData.dateTime, lessonData.duration, lessonData.type, lessonData.notes, lessonData.totalLessons);
+        .bookReservedLesson(lessonData.studentId, lessonData.dateTime, lessonData.duration, lessonData.type, lessonData.notes, lessonData.totalLessons, lessonData.teacherName || '');
     }
     // ===== END NEW Booking Calendar Functions =====
 
@@ -6988,8 +7060,15 @@
             el.cards.querySelectorAll('.lr-card').forEach((card, index) => {
               // Store eventID as data attribute for easy matching
               const lesson = lessons[index];
+              console.log('🔍 Card binding', index + 1, {
+                eventID: lesson?.eventID,
+                eventId: lesson?.eventId,
+                keys: lesson ? Object.keys(lesson) : []
+              });
               if (lesson && (lesson.eventID || lesson.eventId)) {
                 card.setAttribute('data-event-id', lesson.eventID || lesson.eventId);
+              } else {
+                console.warn('⚠️ No eventID on lesson for card', index + 1, lesson);
               }
               
               card.addEventListener('click', () => {
