@@ -3981,19 +3981,30 @@
               availableSlots = result;
             }
             
-            if (availableSlots.error) {
-              bookLessonEls.calendarGrid.innerHTML = 
-                `<div class="col-span-8 p-4 text-red-600">Error: ${availableSlots.error}</div>`;
-              return;
-            }
-            
-            // Generate calendar with availability
-            generateAvailabilityCalendar(weekStart, availableSlots);
+          const dates = Object.keys(availableSlots || {});
+          console.log('📅 Availability result:', { dates: dates.length, sampleDate: dates[0], slots: dates[0] ? availableSlots[dates[0]] : null });
+          
+          if (availableSlots.error) {
+            bookLessonEls.calendarGrid.innerHTML = 
+              `<div class="col-span-8 p-4 text-red-600">Error: ${availableSlots.error}</div>`;
+            return;
+          }
+          
+          if (!dates.length) {
+            console.warn('⚠️ No availability data returned, falling back to open grid');
+            generateFallbackCalendar(weekStart);
+            return;
+          }
+          
+          // Generate calendar with availability
+          generateAvailabilityCalendar(weekStart, availableSlots);
           })
           .withFailureHandler(function(error) {
             console.error('Error fetching available slots:', error);
-            bookLessonEls.calendarGrid.innerHTML = 
-              `<div class="col-span-8 p-4 text-red-600">Error loading availability: ${error}</div>`;
+          bookLessonEls.calendarGrid.innerHTML = 
+            `<div class="col-span-8 p-4 text-red-600">Error loading availability: ${error}</div>`;
+          // Fall back to an open grid so booking is still possible
+          generateFallbackCalendar(weekStart);
           })
           .getAvailableSlotsForWeek(weekStart.toISOString(), studentId || null, teacherFilter || null);
       }
