@@ -5478,6 +5478,8 @@ function cancelLesson(eventId, reason, studentId) {
     var originalTitle = event.getTitle();
     var cancelledTitle = '[CANCELLED] ' + originalTitle;
     event.setTitle(cancelledTitle);
+    // Graphite color (8) for cancelled lessons
+    event.setColor('8');
     
     // Add cancellation note to description
     var originalDescription = event.getDescription() || '';
@@ -5562,8 +5564,10 @@ function rescheduleLesson(eventId, newDateTime, reason, studentId) {
     var movedNote = '\n\n--- RESCHEDULED ---\nMoved to: ' + newTimeStr + '\nReason: ' + reason + '\nRescheduled by: ' + getCurrentStaffName() + '\nDate: ' + new Date().toLocaleString();
     originalEvent.setDescription(originalDescription + movedNote);
     
-    // Grey out the original event (use Graphite color 8)
+    // Grey out the original event (use Graphite color 8) and label moved-to date
     originalEvent.setColor('8');
+    var movedTitle = '[MOVED TO ' + newTimeStr + '] ' + originalTitle;
+    originalEvent.setTitle(movedTitle);
     
     // Create new event at the new time
     var newEvent = calendar.createEvent(originalTitle, newStartTime, newEndTime, {
@@ -5844,11 +5848,8 @@ function bookLesson(studentId, dateTime, duration, lessonType, notes, teacherNam
     
     // Create event title (add 子 marker if child)
     var studentName = student.Name || student.name || 'Unknown Student';
-    var title = studentName;
-    if (isChildStudent) {
-      title = title + '子';
-    }
-    title = title + ' (' + lessonType + ')';
+    // Build title: child marker as prefix, lesson type suffix
+    var title = (isChildStudent ? '子 ' : '') + studentName + ' (' + lessonType + ')';
     
     // Create event description
     var description = 'Booked by: ' + getCurrentStaffName() + '\n';
@@ -5998,11 +5999,8 @@ function bookReservedLesson(studentId, dateTime, duration, lessonType, notes, to
     
     // Create event title (add 子 marker if child, and "placeholder" for reserved)
     var studentName = student.Name || student.name || 'Unknown Student';
-    var title = studentName;
-    if (isChildStudent) {
-      title = title + '子';
-    }
-    title = title + ' (' + lessonType + ') [placeholder]';
+    // Build title: child marker as prefix, lesson type suffix
+    var title = (isChildStudent ? '子 ' : '') + studentName + ' (' + lessonType + ') [placeholder]';
     
     // Create event description
     var description = 'Reserved booking\n';
