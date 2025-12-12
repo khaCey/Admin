@@ -1,8 +1,9 @@
 <style>
   /* Loader overlay - Tailwind compatible */
   #loader {
-    /* Let Tailwind handle positioning and display */
-    z-index: 2000;
+    /* Ensure the page loader sits above all modals */
+    z-index: 12000;
+    pointer-events: auto;
   }
   /* Ensure hidden state works with Tailwind */
   #loader.hidden { 
@@ -558,7 +559,7 @@
 
 .lr-card:focus {
   outline: none;
-  ring: 2px;
+  outline: 2px solid #10b981; /* match Tailwind ring intent */
 }
 
 .lr-card .accent-bar {

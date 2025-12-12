@@ -1688,10 +1688,13 @@ function getLessonsForWeek(weekStart) {
           status = 'demo';
         }
         
+        // Clean title (strip any trailing time that may be embedded in title)
+        var cleanTitle = title.replace(/,?\s*\d{1,2}:\d{2}(\s*-\s*\d{1,2}:\d{2})?$/,'').trim();
+        
         // Add lesson to the time slot
         lessonsByDay[eventDate][eventTime].push({
-          title: title,
-          studentName: title, // Use title as student name for now
+          title: cleanTitle,
+          studentName: cleanTitle, // Use title as student name for now
           status: status,
           startTime: startTime,
           endTime: endTime,
@@ -1972,6 +1975,102 @@ function cacheMonthlyEvents(monthStr) {
   }
   
   return cacheEventsToSheet(monthStr, 'MonthlySchedule');
+}
+
+// ===== MonthlySchedule write-through helpers =====
+function getMonthlyScheduleSheet_() {
+  var ss = SpreadsheetApp.openById(SS_ID);
+  var sheet = ss.getSheetByName('MonthlySchedule');
+  if (!sheet) {
+    sheet = ss.insertSheet('MonthlySchedule');
+  }
+  // Ensure headers
+  var headers = ['EventID', 'Title', 'Start', 'End', 'Status', 'StudentName', 'IsKidsLesson', 'TeacherName'];
+  if (sheet.getLastRow() === 0) {
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  }
+  return sheet;
+}
+
+function upsertMonthlyScheduleRow_(payload) {
+  if (!payload || !payload.eventId) return;
+  var sheet = getMonthlyScheduleSheet_();
+  var data = sheet.getDataRange().getValues();
+  var headers = data[0] || [];
+  var eventIdx = headers.indexOf('EventID');
+  var titleIdx = headers.indexOf('Title');
+  var startIdx = headers.indexOf('Start');
+  var endIdx = headers.indexOf('End');
+  var statusIdx = headers.indexOf('Status');
+  var nameIdx = headers.indexOf('StudentName');
+  var kidsIdx = headers.indexOf('IsKidsLesson');
+  var teacherIdx = headers.indexOf('TeacherName');
+  var foundRow = -1;
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][eventIdx] || '') === String(payload.eventId)) {
+      foundRow = i + 1; // 1-based for sheet
+      break;
+    }
+  }
+  var rowValues = [
+    payload.eventId,
+    payload.title || '',
+    payload.startTime || '',
+    payload.endTime || '',
+    payload.status || 'scheduled',
+    payload.studentName || '',
+    payload.isKidsLesson ? '子' : '',
+    payload.teacherName || ''
+  ];
+  if (foundRow > 0) {
+    sheet.getRange(foundRow, 1, 1, rowValues.length).setValues([rowValues]);
+  } else {
+    sheet.appendRow(rowValues);
+  }
+}
+
+function updateMonthlyScheduleStatus_(eventId, status, title, startTime, endTime) {
+  if (!eventId) return;
+  var sheet = getMonthlyScheduleSheet_();
+  var data = sheet.getDataRange().getValues();
+  var headers = data[0] || [];
+  var eventIdx = headers.indexOf('EventID');
+  var statusIdx = headers.indexOf('Status');
+  var titleIdx = headers.indexOf('Title');
+  var startIdx = headers.indexOf('Start');
+  var endIdx = headers.indexOf('End');
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][eventIdx] || '') === String(eventId)) {
+      if (statusIdx >= 0) data[i][statusIdx] = status;
+      if (titleIdx >= 0 && title) data[i][titleIdx] = title;
+      if (startIdx >= 0 && startTime) data[i][startIdx] = startTime;
+      if (endIdx >= 0 && endTime) data[i][endIdx] = endTime;
+      sheet.getRange(i + 1, 1, 1, data[i].length).setValues([data[i]]);
+      return;
+    }
+  }
+  // If not found, insert new row
+  upsertMonthlyScheduleRow_({
+    eventId: eventId,
+    title: title,
+    startTime: startTime,
+    endTime: endTime,
+    status: status
+  });
+}
+
+function removeMonthlyScheduleRow_(eventId) {
+  if (!eventId) return;
+  var sheet = getMonthlyScheduleSheet_();
+  var data = sheet.getDataRange().getValues();
+  var headers = data[0] || [];
+  var eventIdx = headers.indexOf('EventID');
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][eventIdx] || '') === String(eventId)) {
+      sheet.deleteRow(i + 1);
+      return;
+    }
+  }
 }
 
 /**
@@ -5475,8 +5574,11 @@ function cancelLesson(eventId, reason, studentId) {
     var startTime = event.getStartTime();
 
     // Update event title to show cancelled status
-    var originalTitle = event.getTitle();
-    var cancelledTitle = '[CANCELLED] ' + originalTitle;
+    var originalTitle = event.getTitle() || '';
+    // Strip any existing cancellation/move prefixes
+    var baseTitle = originalTitle.replace(/^\[(CANCELLED|MOVED TO[^\]]*)\]\s*/i, '').trim();
+    // Append cancelled suffix to preserve original ordering (incl. 子 marker)
+    var cancelledTitle = `${baseTitle} [Cancelled]`;
     event.setTitle(cancelledTitle);
     // Graphite color (8) for cancelled lessons
     event.setColor('8');
@@ -5492,21 +5594,15 @@ function cancelLesson(eventId, reason, studentId) {
     // Get lesson details to determine if it was a kids lesson
     var isKidsLesson = false;
     if (event) {
-      var title = event.getTitle() || '';
-      isKidsLesson = title.indexOf('子') !== -1;
+      var titleForKids = event.getTitle() || '';
+      isKidsLesson = titleForKids.indexOf('子') !== -1;
     }
     
     // Update availability cache
     updateAvailabilityForTimeSlot(startTime, false, isKidsLesson);
     
-    // Refresh MonthlySchedule cache for the affected month
-    try {
-      var eventMonth = Utilities.formatDate(startTime, Session.getScriptTimeZone(), 'MMMM yyyy');
-      cacheMonthlyEvents(eventMonth);
-      Logger.log('Cache refreshed for month: ' + eventMonth);
-    } catch (cacheError) {
-      Logger.log('Error refreshing cache after cancellation: ' + cacheError.toString());
-    }
+    // Write-through to MonthlySchedule
+    updateMonthlyScheduleStatus_(eventId, 'cancelled', cancelledTitle, startTime, event.getEndTime());
     
     Logger.log('Lesson cancelled successfully: ' + eventId);
     return { success: true, message: 'Lesson cancelled successfully' };
@@ -5587,18 +5683,18 @@ function rescheduleLesson(eventId, newDateTime, reason, studentId) {
     logLessonAction(studentId, eventId, 'reschedule', oldStartTime.toISOString(), newStartTime.toISOString(), reason);
     logLessonAction(studentId, newEvent.getId(), 'reschedule_new', oldStartTime.toISOString(), newStartTime.toISOString(), 'New event created from reschedule');
     
-    // Refresh MonthlySchedule cache for both old and new months
-    try {
-      var oldMonth = Utilities.formatDate(oldStartTime, Session.getScriptTimeZone(), 'MMMM yyyy');
-      var newMonth = Utilities.formatDate(newStartTime, Session.getScriptTimeZone(), 'MMMM yyyy');
-      cacheMonthlyEvents(oldMonth);
-      if (oldMonth !== newMonth) {
-        cacheMonthlyEvents(newMonth);
-      }
-      Logger.log('Cache refreshed for months: ' + oldMonth + (oldMonth !== newMonth ? ', ' + newMonth : ''));
-    } catch (cacheError) {
-      Logger.log('Error refreshing cache after reschedule: ' + cacheError.toString());
-    }
+    // Write-through updates to MonthlySchedule
+    updateMonthlyScheduleStatus_(eventId, 'rescheduled', rescheduledTitle, oldStartTime, oldEndTime);
+    upsertMonthlyScheduleRow_({
+      eventId: newEvent.getId(),
+      title: originalTitle,
+      startTime: newStartTime,
+      endTime: newEndTime,
+      status: 'scheduled',
+      studentName: originalTitle, // fallback
+      isKidsLesson: isKidsLesson,
+      teacherName: ''
+    });
     
     Logger.log('Lesson rescheduled successfully. Original event: ' + eventId + ', New event: ' + newEvent.getId());
     return { 
@@ -5645,17 +5741,18 @@ function removeLesson(eventId, reason, studentId) {
     // Log the action before deletion
     logLessonAction(studentId, eventId, 'remove', startTime.toISOString(), null, reason);
     
+    // Determine if it's a kids lesson before deletion (title may contain 子)
+    var originalTitle = event.getTitle() || '';
+    var isKidsLesson = originalTitle.indexOf('子') !== -1;
+    
     // Delete the event
     event.deleteEvent();
 
-    // Refresh MonthlySchedule cache for the affected month
-    try {
-      var eventMonth = Utilities.formatDate(startTime, Session.getScriptTimeZone(), 'MMMM yyyy');
-      cacheMonthlyEvents(eventMonth);
-      Logger.log('Cache refreshed for month: ' + eventMonth);
-    } catch (cacheError) {
-      Logger.log('Error refreshing cache after removal: ' + cacheError.toString());
-    }
+    // Update availability cache (decrement the slot for the removed lesson)
+    updateAvailabilityForTimeSlot(startTime, false, isKidsLesson);
+
+    // Write-through to MonthlySchedule
+    removeMonthlyScheduleRow_(eventId);
     
     Logger.log('Lesson removed successfully: ' + eventId);
     return { success: true, message: 'Lesson removed successfully' };
@@ -5874,14 +5971,17 @@ function bookLesson(studentId, dateTime, duration, lessonType, notes, teacherNam
     // Update availability cache
     updateAvailabilityForTimeSlot(startTime, true, isChildStudent);
     
-    // Refresh MonthlySchedule cache for the affected month
-    try {
-      var eventMonth = Utilities.formatDate(startTime, Session.getScriptTimeZone(), 'MMMM yyyy');
-      cacheMonthlyEvents(eventMonth);
-      Logger.log('Cache refreshed for month: ' + eventMonth);
-    } catch (cacheError) {
-      Logger.log('Error refreshing cache after booking: ' + cacheError.toString());
-    }
+    // Write-through to MonthlySchedule (avoid full refresh)
+    upsertMonthlyScheduleRow_({
+      eventId: event.getId(),
+      title: title,
+      startTime: startTime,
+      endTime: endTime,
+      status: 'scheduled',
+      studentName: studentName,
+      isKidsLesson: isChildStudent,
+      teacherName: teacherName && teacherName.trim() ? teacherName.trim() : ''
+    });
     
     return { 
       success: true, 
@@ -6032,14 +6132,17 @@ function bookReservedLesson(studentId, dateTime, duration, lessonType, notes, to
     // Update availability cache
     updateAvailabilityForTimeSlot(startTime, true, isChildStudent);
     
-    // Refresh MonthlySchedule cache for the affected month
-    try {
-      var eventMonth = Utilities.formatDate(startTime, Session.getScriptTimeZone(), 'MMMM yyyy');
-      cacheMonthlyEvents(eventMonth);
-      Logger.log('Cache refreshed for month: ' + eventMonth);
-    } catch (cacheError) {
-      Logger.log('Error refreshing cache after reserved booking: ' + cacheError.toString());
-    }
+    // Write-through to MonthlySchedule (avoid full refresh)
+    upsertMonthlyScheduleRow_({
+      eventId: event.getId(),
+      title: title,
+      startTime: startTime,
+      endTime: endTime,
+      status: 'scheduled',
+      studentName: studentName,
+      isKidsLesson: isChildStudent,
+      teacherName: teacherName && teacherName.trim() ? teacherName.trim() : ''
+    });
     
     return { 
       success: true, 

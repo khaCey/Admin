@@ -814,6 +814,8 @@ window.openStudentDetails = function(id){
         });
         
         console.log(`💾 Successfully cached data for ${cachedCount} students in memory and localStorage`);
+        // Bulk cache finished successfully; allow cached data to be used immediately
+        window.__forceRefreshOnLoad = false;
         
         // Show cache statistics
         const stats = cacheManager.getStats();
@@ -939,18 +941,9 @@ window.openStudentDetails = function(id){
           
           console.log('✅ Preloaded and cached data for student:', studentId);
           
-          // If this student's modal is currently open, update it with cached data
-          const currentModal = document.getElementById('detailsModalRoot');
-          if (currentModal && !currentModal.classList.contains('hidden')) {
-            // Check if this is the same student
-            const modalStudentId = document.querySelector('[data-student-id]');
-            if (modalStudentId && modalStudentId.getAttribute('data-student-id') === String(studentId)) {
-              console.log('🔄 Updating currently open modal with preloaded data');
-              if (typeof loadStudent === 'function') {
-                loadStudent(studentData);
-              }
-            }
-          }
+          // Do NOT re-render the open modal from the preload response to avoid flicker.
+          // The preload shape is raw (not normalised) and can blank fields briefly.
+          // UI will be updated by the main fetch path; preload only warms the cache here.
         } else {
           console.warn('⚠️ No data returned for preload of student:', studentId);
         }

@@ -777,8 +777,8 @@
   </div>
 
   <!-- Loader overlay -->
-  <div id="loader" class="fixed inset-0 bg-black/50 hidden items-center justify-center">
-    <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-white"></div>
+  <div id="loader" class="fixed inset-0 bg-black/60 hidden items-center justify-center">
+    <div class="animate-spin rounded-full h-16 w-16 border-4 border-white border-t-transparent"></div>
   </div>
 
   <?!= include('HelperFunctions'); ?>
@@ -1320,20 +1320,23 @@
           </div>
           <div>
             <label class="block text-gray-600 mb-1">Month</label>
-            <select id="p_month" name="month" class="w-full rounded-md border border-gray-300 px-3 py-2">
-              <option value="January">January</option>
-              <option value="February">February</option>
-              <option value="March">March</option>
-              <option value="April">April</option>
-              <option value="May">May</option>
-              <option value="June">June</option>
-              <option value="July">July</option>
-              <option value="August">August</option>
-              <option value="September">September</option>
-              <option value="October">October</option>
-              <option value="November">November</option>
-              <option value="December">December</option>
-            </select>
+            <div class="grid grid-cols-2 gap-2">
+              <select id="p_month" name="month" class="w-full rounded-md border border-gray-300 px-3 py-2">
+                <option value="January">January</option>
+                <option value="February">February</option>
+                <option value="March">March</option>
+                <option value="April">April</option>
+                <option value="May">May</option>
+                <option value="June">June</option>
+                <option value="July">July</option>
+                <option value="August">August</option>
+                <option value="September">September</option>
+                <option value="October">October</option>
+                <option value="November">November</option>
+                <option value="December">December</option>
+              </select>
+              <select id="p_year" name="year" class="w-full rounded-md border border-gray-300 px-3 py-2"></select>
+            </div>
           </div>
           <div>
             <label class="block text-gray-600 mb-1">Lessons</label>
@@ -1428,7 +1431,7 @@
   </div>
 
   <!-- ===== Book Lesson Modal (ORIGINAL - RESTORED) ===== -->
-  <div id="bookLessonModal" class="fixed inset-0 z-[9999] hidden">
+  <div id="bookLessonModal" class="fixed inset-0 z-[1500] hidden">
     <div class="absolute inset-0 bg-black/50"></div>
     <div class="absolute inset-0 flex items-center justify-center p-4 sm:p-8 overflow-auto">
       <div class="w-full max-w-6xl rounded-2xl bg-white modal-card ring-1 ring-black/5">
@@ -1522,7 +1525,7 @@
   <!-- ===== BACKUP: Original Booking Calendar Component (Removed - see BookingCalendar-BACKUP.html) ===== -->
 
   <!-- ===== NEW Booking Calendar Modal (Availability-Based - HIDDEN) ===== -->
-  <div id="bookLessonModalNew" class="fixed inset-0 z-[9999] hidden" style="display: none !important;">
+  <div id="bookLessonModalNew" class="fixed inset-0 z-[1500] hidden" style="display: none !important;">
     <div class="absolute inset-0 bg-black/50"></div>
     <div class="absolute inset-0 flex items-center justify-center p-4 sm:p-8 overflow-auto">
       <div class="w-full max-w-6xl rounded-2xl bg-white modal-card ring-1 ring-black/5">
@@ -1604,7 +1607,7 @@
   </div>
 
   <!-- ===== Time Slot Selection Modal (NEW - For Reserved Bookings - HIDDEN) ===== -->
-  <div id="timeSlotModalNew" class="fixed inset-0 z-[9999] hidden" style="display: none !important;">
+  <div id="timeSlotModalNew" class="fixed inset-0 z-[1500] hidden" style="display: none !important;">
     <div class="absolute inset-0 bg-black/50"></div>
     <div class="absolute inset-0 flex items-center justify-center p-4 sm:p-8 overflow-auto">
       <div class="w-full max-w-md rounded-2xl bg-white modal-card ring-1 ring-black/5">
@@ -1660,7 +1663,7 @@
   </div>
 
   <!-- ===== Time Slot Selection Modal (ORIGINAL - RESTORED) ===== -->
-  <div id="timeSlotModal" class="fixed inset-0 z-[9999] hidden">
+  <div id="timeSlotModal" class="fixed inset-0 z-[1500] hidden">
     <div class="absolute inset-0 bg-black/50"></div>
     <div class="absolute inset-0 flex items-center justify-center p-4 sm:p-8 overflow-auto">
       <div class="w-full max-w-md rounded-2xl bg-white modal-card ring-1 ring-black/5">
@@ -2078,6 +2081,22 @@
     const $$ = (sel, root=document) => Array.from(root.querySelectorAll(sel));
     const $  = (sel, root=document) => root.querySelector(sel);
 
+    // Page-wide loader helpers (uses #loader overlay)
+    function showPageLoader() {
+      const loader = document.getElementById('loader');
+      if (loader) {
+        loader.classList.remove('hidden');
+        loader.style.display = 'flex';
+      }
+    }
+    function hidePageLoader() {
+      const loader = document.getElementById('loader');
+      if (loader) {
+        loader.classList.add('hidden');
+        loader.style.display = 'none';
+      }
+    }
+
     // Simple button loading helper
     function setButtonLoading(btn, isLoading, text='Processing...') {
       if (!btn) return;
@@ -2414,7 +2433,7 @@
     const payEls = {
       root: $('#paymentModal'), form: $('#paymentForm'), title: $('#paymentModalTitle'),
       close: $('#paymentClose'), del: $('#paymentDelete'),
-      txn: $('#p_txn'), date: $('#p_date'), lessons: $('#p_lessons'), month: $('#p_month'), 
+      txn: $('#p_txn'), date: $('#p_date'), lessons: $('#p_lessons'), month: $('#p_month'), year: $('#p_year'),
       price: $('#p_price'), discount: $('#p_discount'), total: $('#p_total'), 
       method: $('#p_method'), staff: $('#p_staff')
     };
@@ -2470,6 +2489,26 @@
       lessonDetailsEls.statusDot.className = `w-3 h-3 rounded-full ${style.color}`;
       lessonDetailsEls.statusText.textContent = style.text;
 
+      // Disable cancel/reschedule when cancelled; keep remove enabled
+      const isCancelled = status === 'cancelled';
+      [lessonDetailsEls.cancelBtn, lessonDetailsEls.rescheduleBtn].forEach(btn => {
+        if (btn) {
+          btn.disabled = isCancelled;
+          btn.classList.toggle('opacity-50', isCancelled);
+          btn.classList.toggle('cursor-not-allowed', isCancelled);
+          if (isCancelled) {
+            btn.setAttribute('title', 'Actions disabled for cancelled lessons');
+          } else {
+            btn.removeAttribute('title');
+          }
+        }
+      });
+      if (lessonDetailsEls.removeBtn) {
+        lessonDetailsEls.removeBtn.disabled = false;
+        lessonDetailsEls.removeBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+        lessonDetailsEls.removeBtn.removeAttribute('title');
+      }
+
       // Format date and time in Japanese style
       let day = lesson.day || '';
       let time = lesson.time || '';
@@ -2501,6 +2540,10 @@
 
       // Handle lesson actions
       function handleCancelLesson() {
+        if (lesson.status === 'cancelled') {
+          showToast('This lesson is already cancelled.', 'info');
+          return;
+        }
         console.log('Cancel lesson clicked', lesson);
         
         // Define proceedWithCancellation function first
@@ -2516,10 +2559,12 @@
           
           const studentId = student?.id || student?.ID || 'unknown';
           
+          showPageLoader();
           setButtonLoading(lessonDetailsEls.cancelBtn, true, 'Cancelling...');
           
           google.script.run
             .withSuccessHandler(function(result) {
+              hidePageLoader();
               setButtonLoading(lessonDetailsEls.cancelBtn, false);
               if (result.success) {
                 showToast('Lesson cancelled successfully!', 'success');
@@ -2578,6 +2623,7 @@
               }
             })
             .withFailureHandler(function(error) {
+              hidePageLoader();
               setButtonLoading(lessonDetailsEls.cancelBtn, false);
               console.error('Error cancelling lesson:', error);
               showToast('Error cancelling lesson. Please try again.', 'error');
@@ -2596,6 +2642,10 @@
       }
 
       function handleRescheduleLesson() {
+        if (lesson.status === 'cancelled') {
+          showToast('Cannot reschedule a cancelled lesson.', 'info');
+          return;
+        }
         console.log('Reschedule lesson clicked', lesson);
         
         // Define proceedWithReschedule function first
@@ -2611,10 +2661,12 @@
           
           const studentId = student?.id || student?.ID || 'unknown';
           
+          showPageLoader();
           setButtonLoading(lessonDetailsEls.rescheduleBtn, true, 'Rescheduling...');
           
           google.script.run
             .withSuccessHandler(function(result) {
+              hidePageLoader();
               setButtonLoading(lessonDetailsEls.rescheduleBtn, false);
               if (result.success) {
                 showToast('Lesson rescheduled successfully!', 'success');
@@ -2673,6 +2725,7 @@
               }
             })
             .withFailureHandler(function(error) {
+              hidePageLoader();
               setButtonLoading(lessonDetailsEls.rescheduleBtn, false);
               console.error('Error rescheduling lesson:', error);
               showToast('Error rescheduling lesson. Please try again.', 'error');
@@ -2719,6 +2772,7 @@
           
           console.log('Proceeding with removal, eventId:', eventId);
           setButtonLoading(lessonDetailsEls.removeBtn, true, 'Removing...');
+          showPageLoader();
           
           // Immediately remove the lesson card from UI (optimistic update)
           let cardRemoved = false;
@@ -2818,6 +2872,7 @@
           
           google.script.run
             .withSuccessHandler(function(result) {
+              hidePageLoader();
               setButtonLoading(lessonDetailsEls.removeBtn, false);
               if (result.success) {
                 showToast('Lesson removed successfully!', 'success');
@@ -2907,6 +2962,7 @@
               }
             })
             .withFailureHandler(function(error) {
+              hidePageLoader();
               setButtonLoading(lessonDetailsEls.removeBtn, false);
               console.error('Error removing lesson:', error);
               showToast('Error removing lesson. Please try again.', 'error');
@@ -2940,10 +2996,10 @@
         return;
       }
 
-      // Format the selected time for display
-      const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+      // Format the selected time for display (UK format, correct weekday)
+      const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
       const dayName = dayNames[date.getDay()];
-      const dateStr = date.toLocaleDateString();
+      const dateStr = date.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
       const timeStr = `${dayName}, ${dateStr} at ${time}`;
       
       // Update modal content
@@ -3114,9 +3170,11 @@
       // Book the lesson
       const bookingButtons = [timeSlotEls?.confirm, timeSlotElsNew?.confirm].filter(Boolean);
       bookingButtons.forEach(btn => setButtonLoading(btn, true, lessonData?.isReserved ? 'Reserving...' : 'Booking...'));
+      showPageLoader();
 
       google.script.run
         .withSuccessHandler(function(result) {
+          hidePageLoader();
           bookingButtons.forEach(btn => setButtonLoading(btn, false));
           if (result.success) {
             // Show warning if count exceeds total
@@ -3211,18 +3269,28 @@
               }
             }, 500); // Wait 500ms for backend cache refresh to complete
             
-            // Close the booking modal
-            const doClose = () => { 
-              bookLessonEls.close.removeEventListener('click', doClose);
-              bookLessonEls.cancel.removeEventListener('click', doClose);
+            // Close the booking modal (old flow)
+            if (bookLessonEls && bookLessonEls.root) {
               hide(bookLessonEls.root);
-            };
-            doClose();
+            }
+            // Close the time slot modal (old flow)
+            if (timeSlotEls && timeSlotEls.root) {
+              hide(timeSlotEls.root);
+            }
+            // Close the new booking modal, if used
+            if (bookLessonElsNew && bookLessonElsNew.root) {
+              hide(bookLessonElsNew.root);
+            }
+            // Close the new time slot modal, if used
+            if (timeSlotElsNew && timeSlotElsNew.root) {
+              hide(timeSlotElsNew.root);
+            }
           } else {
             showToast('Error booking lesson: ' + result.error, 'error');
           }
         })
         .withFailureHandler(function(error) {
+          hidePageLoader();
           bookingButtons.forEach(btn => setButtonLoading(btn, false));
           console.error('Error booking lesson:', error);
           showToast('Error booking lesson. Please try again.', 'error');
@@ -3462,7 +3530,8 @@
                   
                   const title = document.createElement('div');
                   title.className = 'font-semibold text-white truncate mb-1';
-                  title.textContent = lesson.title || 'Group Lesson';
+                  const cleanTitle = (lesson.title || 'Group Lesson').replace(/,?\s*\d{1,2}:\d{2}(\s*-\s*\d{1,2}:\d{2})?$/, '');
+                  title.textContent = cleanTitle;
                   lessonCard.appendChild(title);
                   
                   
@@ -3783,7 +3852,8 @@
 
                   const title = document.createElement('div');
                   title.className = 'font-semibold text-white truncate mb-1';
-                  title.textContent = lesson.title || 'Group Lesson';
+                  const cleanTitle = (lesson.title || 'Group Lesson').replace(/,?\s*\d{1,2}:\d{2}(\s*-\s*\d{1,2}:\d{2})?$/, '');
+                  title.textContent = cleanTitle;
                   lessonCard.appendChild(title);
                   
 
@@ -4929,9 +4999,9 @@
         return;
       }
 
-      const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+      const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
       const dayName = dayNames[date.getDay()];
-      const dateStr = date.toLocaleDateString();
+      const dateStr = date.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
       const timeStr = `${dayName}, ${dateStr} at ${time}`;
       
       timeSlotElsNew.selectedTimeDisplay.textContent = timeStr;
@@ -5081,6 +5151,15 @@
           if (result && result.success) {
             showToast('Reserved booking created successfully!', 'success');
             
+            // Close time slot modal (new)
+            if (timeSlotElsNew && timeSlotElsNew.root) {
+              hide(timeSlotElsNew.root);
+            }
+            // Close booking modal (new)
+            if (bookLessonElsNew && bookLessonElsNew.root) {
+              hide(bookLessonElsNew.root);
+            }
+            
             // Refresh student details
             setTimeout(function() {
               if (lessonData.studentId && typeof google !== 'undefined' && google.script && google.script.run) {
@@ -5146,8 +5225,42 @@
         payEls.date.value = payment?.Date ? new Date(payment.Date).toISOString().slice(0,10) : (payment?.date || '').slice(0,10);
       }
       
+      // Helpers for month/year handling
+      const monthYearFromValue = (val) => {
+        if (!val) return { month: '', year: '' };
+        const parts = String(val).trim().split(/\s+/);
+        if (parts.length >= 2 && /^\d{4}$/.test(parts[parts.length - 1])) {
+          const year = parts.pop();
+          return { month: parts.join(' '), year };
+        }
+        return { month: val, year: '' };
+      };
+      const ensureYearOptions = (selectEl, targetYear) => {
+        if (!selectEl) return;
+        const currentYear = new Date().getFullYear();
+        const baseYears = [currentYear - 1, currentYear, currentYear + 1, currentYear + 2];
+        baseYears.concat(targetYear ? [Number(targetYear)] : []).forEach(y => {
+          const yStr = String(y);
+          const exists = Array.from(selectEl.options).some(opt => opt.value === yStr);
+          if (!exists) {
+            const opt = document.createElement('option');
+            opt.value = yStr;
+            opt.textContent = yStr;
+            selectEl.appendChild(opt);
+          }
+        });
+      };
+      
+      // Prefill lessons/month/year
       payEls.lessons.value = payment?.Amount ?? payment?.lessons ?? '';
-      payEls.month.value = payment?.Month || payment?.month || new Date().toLocaleString('en-US', { month: 'long' });
+      const parsedMonthYear = monthYearFromValue(payment?.Month || payment?.month);
+      const defaultMonth = parsedMonthYear.month || new Date().toLocaleString('en-US', { month: 'long' });
+      const defaultYear = parsedMonthYear.year || payment?.Year || payment?.year || String(new Date().getFullYear());
+      payEls.month.value = defaultMonth;
+      if (payEls.year) {
+        ensureYearOptions(payEls.year, defaultYear);
+        payEls.year.value = defaultYear;
+      }
       const rawTotal = payment?.Total ?? (payment?.price ? String(payment.price).replace(/[^0-9]/g,'') : '');
       payEls.price.value   = rawTotal;
       payEls.discount.value = payment?.Discount || payment?.discount || '0';
@@ -5203,12 +5316,15 @@
         
         const iso = payEls.date.value;
         const d   = new Date(iso);
+        const selectedYear = payEls.year ? (payEls.year.value || String(d.getFullYear())) : String(d.getFullYear());
+        const selectedMonth = payEls.month.value;
+        const monthWithYear = `${selectedMonth} ${selectedYear}`;
         const payload = {
           'Student ID': student?.id || student?.ID || '', // Add Student ID
           'Transaction ID': txnValue,
           Date: iso,
-          Year: String(d.getFullYear()),
-          Month: payEls.month.value,
+          Year: selectedYear,
+          Month: monthWithYear,
           Price: String(payEls.price.value || ''), // Original price before discount
           Discount: String(payEls.discount.value || '0'), // Discount percentage
           Total: String(payEls.total.value || payEls.price.value || ''), // Final total after discount
@@ -6149,6 +6265,51 @@
                 if (index !== -1) {
                   student.payments[index] = normalizedResult;
                   renderPaymentsTable();
+                }
+
+                // Auto-add a note confirming payment for the month (add-mode only)
+                if (mode === 'add') {
+                  const today = new Date();
+                  const isoDate = today.toISOString().slice(0,10);
+                  const staffName = payEls.staff.value || '';
+                  const noteObj = {
+                    // Sheet-aligned keys
+                    StudentID: student.id || student.ID || '',
+                    'StudentID': student.id || student.ID || '',
+                    Date: isoDate,
+                    Note: '今月お支払いはお済みです。',
+                    Staff: staffName,
+                    // UI-friendly keys
+                    date: isoDate,
+                    staff: staffName,
+                    text: '今月お支払いはお済みです。'
+                  };
+                  // Optimistically update UI
+                  if (!student.notes) student.notes = [];
+                  student.notes.push(noteObj);
+                  renderNotes();
+                  updateStudentCache(student.id, 'note', noteObj);
+                  // Persist to backend
+                  if (window.google && google.script && google.script.run) {
+                    google.script.run
+                      .withSuccessHandler(function(savedNote) {
+                        if (savedNote) {
+                          updateStudentCache(student.id, 'note', savedNote);
+                        }
+                      })
+                      .withFailureHandler(function(err) {
+                        console.error('Failed to add auto payment note:', err);
+                        // Queue for retry
+                        OfflineQueue.addOperation({
+                          type: 'note',
+                          method: 'addNote',
+                          params: [noteObj],
+                          studentId: student.id,
+                          data: noteObj
+                        });
+                      })
+                      .addNote(noteObj);
+                  }
                 }
               })
               .withFailureHandler(function(error) {
