@@ -2648,109 +2648,26 @@
         }
         console.log('Reschedule lesson clicked', lesson);
         
-        // Define proceedWithReschedule function first
-        function proceedWithReschedule(newDateTime, reason) {
-          // Get event ID from lesson data
-          const eventId = lesson.eventId || lesson.eventID || null;
-          
-          if (!eventId) {
-            showToast('Error: Event ID not found. Cannot reschedule this lesson.', 'error');
-            console.error('No event ID in lesson data:', lesson);
-            return;
-          }
-          
-          const studentId = student?.id || student?.ID || 'unknown';
-          
-          showPageLoader();
-          setButtonLoading(lessonDetailsEls.rescheduleBtn, true, 'Rescheduling...');
-          
-          google.script.run
-            .withSuccessHandler(function(result) {
-              hidePageLoader();
-              setButtonLoading(lessonDetailsEls.rescheduleBtn, false);
-              if (result.success) {
-                showToast('Lesson rescheduled successfully!', 'success');
-                
-                // Refresh student details from server to get updated cache
-                if (studentId && typeof google !== 'undefined' && google.script && google.script.run) {
-                  google.script.run
-                    .withSuccessHandler(function(baseResp) {
-                      google.script.run
-                        .withSuccessHandler(function(latest) {
-                          try {
-                            // Normalize and load the updated student data
-                            var model = (typeof normaliseForModal === 'function')
-                              ? normaliseForModal(baseResp, latest)
-                              : (baseResp || {});
-                            if (typeof loadStudent === 'function') {
-                              loadStudent(model);
-                              // loadStudent already calls initLatestRecord() which updates the Latest Record
-                              // No need to call updateLatestRecord() again to avoid duplicate renders
-                            }
-                          } catch(e) {
-                            console.error('Error refreshing student data after rescheduling', e);
-                            // Fallback: just update Latest Record with existing data
-                            if (typeof updateLatestRecord === 'function') {
-                              updateLatestRecord();
-                            }
-                          }
-                        })
-                        .withFailureHandler(function(err) {
-                          console.error('getLatestByMonth failed after rescheduling', err);
-                          // Fallback: just update Latest Record with existing data
-                          if (typeof updateLatestRecord === 'function') {
-                            updateLatestRecord();
-                          }
-                        })
-                        .getLatestByMonth(studentId);
-                    })
-                    .withFailureHandler(function(err) {
-                      console.error('getStudentDetails failed after rescheduling', err);
-                      // Fallback: just update Latest Record with existing data
-                      if (typeof updateLatestRecord === 'function') {
-                        updateLatestRecord();
-                      }
-                    })
-                    .getStudentDetails(studentId);
-                } else {
-                  // Fallback: just update Latest Record with existing data
-                  if (typeof updateLatestRecord === 'function') {
-                    updateLatestRecord();
-                  }
-                }
-                
-                doClose();
-              } else {
-                showToast('Error rescheduling lesson: ' + result.error, 'error');
-              }
-            })
-            .withFailureHandler(function(error) {
-              hidePageLoader();
-              setButtonLoading(lessonDetailsEls.rescheduleBtn, false);
-              console.error('Error rescheduling lesson:', error);
-              showToast('Error rescheduling lesson. Please try again.', 'error');
-            })
-            .rescheduleLesson(eventId, newDateTime, reason, studentId);
+        // Kick off reschedule via booking calendar
+        const eventId = lesson.eventId || lesson.eventID || null;
+        if (!eventId) {
+          showToast('Error: Event ID not found. Cannot reschedule this lesson.', 'error');
+          console.error('No event ID in lesson data:', lesson);
+          return;
         }
-        
-        // Use custom prompt modals for rescheduling
-        customPrompt('Please enter the new date and time (YYYY-MM-DD HH:MM):', '', 'Reschedule Lesson')
-          .then(function(newDateTime) {
-            if (!newDateTime) return;
-            
-            // Get reason for rescheduling
-            return customPrompt('Please enter the reason for rescheduling:', '', 'Reschedule Lesson')
-              .then(function(reason) {
-                if (!reason) return null;
-                return { newDateTime: newDateTime, reason: reason };
-              });
-          })
-          .then(function(data) {
-            if (!data) return;
-            
-            // Continue with rescheduling
-            proceedWithReschedule(data.newDateTime, data.reason);
-          });
+        const studentId = student?.id || student?.ID || 'unknown';
+        // Set context so booking flow knows this is a reschedule
+        window.rescheduleContext = {
+          eventId,
+          studentId,
+          lesson
+        };
+        // Open booking calendar for this student; confirmation will perform reschedule
+        if (typeof openBookLessonModal === 'function') {
+          openBookLessonModal({ student });
+        } else {
+          showToast('Booking calendar not available for reschedule.', 'error');
+        }
       }
 
       function handleRemoveLesson() {
@@ -3160,6 +3077,90 @@
       
       if (!totalLessons || totalLessons <= 0) {
         showToast('Total lessons is required. Please try again.', 'error');
+        return;
+      }
+      
+      // If we're in reschedule mode, perform reschedule instead of booking
+      if (window.rescheduleContext && window.rescheduleContext.eventId) {
+        const ctx = window.rescheduleContext;
+        const eventId = ctx.eventId;
+        const studentId = ctx.studentId || lessonData.studentId;
+        const newDateTimeISO = dateTime.toISOString();
+        
+        const doReschedule = (reason) => {
+          showPageLoader();
+          google.script.run
+            .withSuccessHandler(function(result) {
+              hidePageLoader();
+              window.rescheduleContext = null;
+              if (result.success) {
+                showToast('Lesson rescheduled successfully!', 'success');
+                
+                // Refresh student details from server to get updated cache
+                if (studentId && typeof google !== 'undefined' && google.script && google.script.run) {
+                  google.script.run
+                    .withSuccessHandler(function(baseResp) {
+                      google.script.run
+                        .withSuccessHandler(function(latest) {
+                          try {
+                            var model = (typeof normaliseForModal === 'function')
+                              ? normaliseForModal(baseResp, latest)
+                              : (baseResp || {});
+                            if (typeof loadStudent === 'function') {
+                              loadStudent(model);
+                            }
+                          } catch(e) {
+                            console.error('Error refreshing student data after rescheduling', e);
+                            if (typeof updateLatestRecord === 'function') {
+                              updateLatestRecord();
+                            }
+                          }
+                        })
+                        .withFailureHandler(function(err) {
+                          console.error('getLatestByMonth failed after rescheduling', err);
+                          if (typeof updateLatestRecord === 'function') {
+                            updateLatestRecord();
+                          }
+                        })
+                        .getLatestByMonth(studentId);
+                    })
+                    .withFailureHandler(function(err) {
+                      console.error('getStudentDetails failed after rescheduling', err);
+                      if (typeof updateLatestRecord === 'function') {
+                        updateLatestRecord();
+                      }
+                    })
+                    .getStudentDetails(studentId);
+                } else {
+                  if (typeof updateLatestRecord === 'function') {
+                    updateLatestRecord();
+                  }
+                }
+                
+                // Close booking/time-slot modals if open
+                if (bookLessonEls && bookLessonEls.root) hide(bookLessonEls.root);
+                if (bookLessonElsNew && bookLessonElsNew.root) hide(bookLessonElsNew.root);
+                if (timeSlotEls && timeSlotEls.root) hide(timeSlotEls.root);
+                if (timeSlotElsNew && timeSlotElsNew.root) hide(timeSlotElsNew.root);
+              } else {
+                showToast('Error rescheduling lesson: ' + result.error, 'error');
+              }
+            })
+            .withFailureHandler(function(error) {
+              hidePageLoader();
+              window.rescheduleContext = null;
+              console.error('Error rescheduling lesson:', error);
+              showToast('Error rescheduling lesson. Please try again.', 'error');
+            })
+            .rescheduleLesson(eventId, newDateTimeISO, reason || '', studentId);
+        };
+        
+        // Prompt for reason, then reschedule
+        customPrompt('Please enter the reason for rescheduling:', '', 'Reschedule Lesson')
+          .then(function(reason) {
+            if (!reason) return;
+            doReschedule(reason);
+          });
         return;
       }
       
