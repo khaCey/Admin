@@ -42,6 +42,22 @@
       }
     }
     
+    // Helper: determine if a given date/time slot is in the past
+    function isPastSlot(dayDate, slotTime) {
+      try {
+        const slot = new Date(dayDate);
+        const parts = String(slotTime || '').split(':');
+        const hh = Number(parts[0]) || 0;
+        const mm = Number(parts[1]) || 0;
+        slot.setHours(hh, mm, 0, 0);
+        const now = new Date();
+        return slot.getTime() < now.getTime();
+      } catch (e) {
+        console.error('isPastSlot error:', e);
+        return false;
+      }
+    }
+
     // Check if a feature is enabled
     function isFeatureEnabled(featureName) {
       if (!window.featureFlags || !window.featureFlags[featureName]) {
@@ -3997,6 +4013,11 @@
             const dayDate = new Date(weekStart);
             dayDate.setDate(weekStart.getDate() + day);
             
+            if (isPastSlot(dayDate, slotTime)) {
+              // Skip rendering past slots entirely
+              continue;
+            }
+            
             const slotCell = document.createElement('div');
             slotCell.className = 'px-1 text-sm border-r border-gray-200 transition-colors flex flex-col justify-start relative bg-gray-50 p-0 cursor-pointer hover:bg-gray-100';
             slotCell.style.height = `${cellHeight}px`;
@@ -4575,6 +4596,11 @@
             const month = String(dayDate.getMonth() + 1).padStart(2, '0');
             const dayOfMonth = String(dayDate.getDate()).padStart(2, '0');
             const dateStr = `${year}-${month}-${dayOfMonth}`;
+            
+            if (isPastSlot(dayDate, slotTime)) {
+              // Skip rendering past slots entirely
+              continue;
+            }
 
             const slotCell = document.createElement('div');
             slotCell.className = 'px-1 text-sm border-r border-gray-200 transition-colors flex flex-col justify-start relative';
