@@ -3031,34 +3031,35 @@
       } else {
         // Fetch it for this specific month
         if (window.google && google.script && google.script.run) {
-          // Show input by default while loading
-          if (totalLessonsContainer) {
-            totalLessonsContainer.style.display = 'block';
-          }
-          
-          google.script.run
-            .withSuccessHandler(function(total) {
-              if (total && total > 0) {
-                modalState.totalLessonsValue = total;
-                // Hide the input field
-                if (totalLessonsContainer) {
-                  totalLessonsContainer.style.display = 'none';
-                }
-              } else {
-                // Show the input field
-                if (totalLessonsContainer) {
-                  totalLessonsContainer.style.display = 'block';
-                }
+        // Show input by default while loading
+        if (totalLessonsContainer) {
+          totalLessonsContainer.style.display = 'block';
+        }
+        
+        google.script.run
+          .withSuccessHandler(function(resp) {
+            const total = (resp && typeof resp === 'object') ? resp.total : resp;
+            if (total && total > 0) {
+              modalState.totalLessonsValue = total;
+              // Hide the input field
+              if (totalLessonsContainer) {
+                totalLessonsContainer.style.display = 'none';
               }
-            })
-            .withFailureHandler(function(error) {
-              console.error('Error checking lesson total:', error);
-              // Show the input field on error
+            } else {
+              // Show the input field
               if (totalLessonsContainer) {
                 totalLessonsContainer.style.display = 'block';
               }
-            })
-            .getStudentLessonTotal(studentId, lessonMonth);
+            }
+          })
+          .withFailureHandler(function(error) {
+            console.error('Error checking lesson total:', error);
+            // Show the input field on error
+            if (totalLessonsContainer) {
+              totalLessonsContainer.style.display = 'block';
+            }
+          })
+          .getStudentLessonTotal(studentId, lessonMonth);
         } else {
           // Show input if no Google Script available
           if (totalLessonsContainer) {
@@ -3330,10 +3331,11 @@
       // Store total lessons in a variable accessible to time slot modal
       window.currentStudentTotalLessons = null;
       
-      // Try to get total lessons, but don't block if function doesn't exist
+      // Try to get total lessons (desired or paid), but don't block if function doesn't exist
       if (window.google && google.script && google.script.run) {
         google.script.run
-          .withSuccessHandler(function(total) {
+          .withSuccessHandler(function(resp) {
+            const total = (resp && typeof resp === 'object') ? resp.total : resp;
             if (total && total > 0) {
               window.currentStudentTotalLessons = total;
             } else {
@@ -3341,7 +3343,6 @@
             }
           })
           .withFailureHandler(function(error) {
-            // Function doesn't exist or error occurred - continue without it
             console.log('getStudentLessonTotal not available:', error);
             window.currentStudentTotalLessons = null;
           })

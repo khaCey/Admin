@@ -4306,23 +4306,33 @@ function getStudentLessonTotal(studentId, monthText) {
     
     if (!studentName) {
       Logger.log('Student not found for ID: ' + studentId);
-      return 0;
+      return { total: 0, source: 'none' };
     }
     
-    // Get payment info for the month
+    // Get declared/desired lessons from Lessons sheet
+    var desiredCount = 0;
+    try {
+      desiredCount = getScheduledLessonsForMonth(studentId, monthText);
+    } catch (e) {
+      Logger.log('Error getting desired lessons: ' + e.toString());
+    }
+    
+    // Get payment info for the month (paid lessons)
     var paymentInfo = getPaymentInfoForMonth(studentName, monthText);
+    var paidCount = paymentInfo && paymentInfo.lessons ? Number(paymentInfo.lessons) || 0 : 0;
     
-    if (paymentInfo && paymentInfo.lessons) {
-      Logger.log('Total lessons for ' + studentName + ' in ' + monthText + ': ' + paymentInfo.lessons);
-      return paymentInfo.lessons;
-    }
+    var total = Math.max(desiredCount, paidCount);
+    var source = (desiredCount >= paidCount && desiredCount > 0) ? 'desired'
+               : (paidCount > 0 ? 'paid' : 'none');
     
-    Logger.log('No payment info found for ' + studentName + ' in ' + monthText);
-    return 0;
+    Logger.log('Total lessons for ' + studentName + ' in ' + monthText + ': ' + total + ' (desired=' + desiredCount + ', paid=' + paidCount + ', source=' + source + ')');
+    
+    // Return both total and source for richer front-end handling
+    return { total: total, source: source, desired: desiredCount, paid: paidCount };
     
   } catch (error) {
     Logger.log('Error in getStudentLessonTotal: ' + error.toString());
-    return 0;
+    return { total: 0, source: 'none' };
   }
 }
 
