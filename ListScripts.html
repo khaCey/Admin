@@ -398,7 +398,8 @@ window.openStudentDetails = function(id){
         if (addNoteBtn) addNoteBtn.disabled = false;
         
         console.log('Student details modal populated from cache for:', cachedData.student ? (cachedData.student.Name || cachedData.student.name || 'Unknown') : 'Unknown');
-        return;
+        // Continue to server fetch to refresh latest record (missing lessons, etc.)
+        // Do not return here.
       }
       
       // Check if bulk loading is still in progress
@@ -473,7 +474,7 @@ window.openStudentDetails = function(id){
             })
             .withFailureHandler(function(err) {
               console.error('getStudentDetails failed', err);
-            // Clear force-refresh flag even on failure to avoid repeated skips
+                // Clear force-refresh flag even on failure to avoid repeated skips
             window.__forceRefreshOnLoad = false;
             })
             .getStudentDetails(id);
