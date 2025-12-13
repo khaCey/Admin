@@ -4506,6 +4506,46 @@ function getLatestRecordData(studentName) {
     }
   }
   
+  // Helper: get desired lessons (declared) from Lessons sheet for a month
+  function getDesiredLessonsForMonth(studentName, monthText) {
+    try {
+      var ss = SpreadsheetApp.openById(SS_ID);
+      var lessonsSheet = ss.getSheetByName('Lessons');
+      if (!lessonsSheet) return 0;
+      var data = lessonsSheet.getDataRange().getValues();
+      if (data.length < 2) return 0;
+      var headers = data[0];
+      var idIdx = headers.indexOf('Student ID');
+      var nameIdx = headers.indexOf('Name');
+      var monthIdx = headers.indexOf('Month');
+      var scheduledCountIdx = headers.indexOf('ScheduledCount');
+      var scheduledIdx = headers.indexOf('Scheduled');
+      var scheduleIdx = headers.indexOf('Schedule');
+      var tz = Session.getScriptTimeZone();
+      
+      for (var i = 1; i < data.length; i++) {
+        var row = data[i];
+        var rowName = nameIdx >= 0 ? String(row[nameIdx] || '').trim() : '';
+        var rowId   = idIdx   >= 0 ? String(row[idIdx]   || '').trim() : '';
+        var monthCell = row[monthIdx];
+        var monthStr = monthCell instanceof Date
+          ? Utilities.formatDate(monthCell, tz, 'MMMM yyyy')
+          : String(monthCell || '').trim();
+        if (!monthStr || monthStr.toLowerCase() !== monthText.toLowerCase()) continue;
+        if (rowName && rowName === studentName) {
+          var val = 0;
+          if (scheduledCountIdx >= 0) val = Number(row[scheduledCountIdx]) || 0;
+          if (!val && scheduledIdx >= 0) val = Number(row[scheduledIdx]) || 0;
+          if (!val && scheduleIdx >= 0) val = Number(row[scheduleIdx]) || 0;
+          return val || 0;
+        }
+      }
+    } catch (e) {
+      Logger.log('Error in getDesiredLessonsForMonth: ' + e.toString());
+    }
+    return 0;
+  }
+
   // Get events for both months
   var currentMonthEvents = getStudentEventsForMonth(studentName, currentMonth);
   var nextMonthEvents = getStudentEventsForMonth(studentName, nextMonth);
@@ -4516,6 +4556,10 @@ function getLatestRecordData(studentName) {
   // Get payment information for both months
   var currentMonthPaymentInfo = getPaymentInfoForMonth(studentName, currentMonth);
   var nextMonthPaymentInfo = getPaymentInfoForMonth(studentName, nextMonth);
+  
+  // Get desired lessons (declared) from Lessons sheet
+  var currentMonthDesired = getDesiredLessonsForMonth(studentName, currentMonth);
+  var nextMonthDesired = getDesiredLessonsForMonth(studentName, nextMonth);
   
   Logger.log('Current month payment info: ' + JSON.stringify(currentMonthPaymentInfo));
   Logger.log('Next month payment info: ' + JSON.stringify(nextMonthPaymentInfo));
@@ -4533,17 +4577,20 @@ function getLatestRecordData(studentName) {
   
   // Add current month data with unscheduled lessons
   if (currentMonthEvents.length > 0 || currentMonthPaymentInfo !== null) {
+    var currentScheduledCount = currentMonthEvents.length;
+    var currentPaidCount = currentMonthPaymentInfo ? (currentMonthPaymentInfo.lessons || 0) : 0;
+    var currentTarget = Math.max(currentMonthDesired || 0, currentPaidCount || 0);
+    var currentMissing = Math.max(0, currentTarget - currentScheduledCount);
+    
     var currentMonthData = {
       Payment: currentMonthPaymentInfo ? currentMonthPaymentInfo.status : '未',
       lessons: currentMonthEvents
     };
     
-    // Add unscheduled lessons if payment info exists and there are more paid lessons than scheduled
-    if (currentMonthPaymentInfo && currentMonthPaymentInfo.lessons > currentMonthEvents.length) {
-      var unscheduledCount = currentMonthPaymentInfo.lessons - currentMonthEvents.length;
-      Logger.log('Adding ' + unscheduledCount + ' unscheduled lessons for ' + studentName + ' in ' + currentMonth);
-      
-      for (var i = 0; i < unscheduledCount; i++) {
+    // Add unscheduled lessons based on target (desired vs paid) minus scheduled
+    if (currentMissing > 0) {
+      Logger.log('Adding ' + currentMissing + ' unscheduled lessons (target=' + currentTarget + ', scheduled=' + currentScheduledCount + ') for ' + studentName + ' in ' + currentMonth);
+      for (var i = 0; i < currentMissing; i++) {
         currentMonthData.lessons.push({
           day: '--',
           time: '--',
@@ -4554,18 +4601,20 @@ function getLatestRecordData(studentName) {
     
     latestByMonth[currentMonthShort] = currentMonthData;
   } else {
-    // Even if no events found, show payment status and unscheduled lessons if payment exists
-    if (currentMonthPaymentInfo !== null) {
+    // Even if no events found, show payment/desired status and unscheduled lessons if target exists
+    var currentPaidCount2 = currentMonthPaymentInfo ? (currentMonthPaymentInfo.lessons || 0) : 0;
+    var currentTarget2 = Math.max(currentMonthDesired || 0, currentPaidCount2 || 0);
+    if (currentMonthPaymentInfo !== null || currentTarget2 > 0) {
       var currentMonthData = {
         Payment: currentMonthPaymentInfo.status,
         lessons: []
       };
       
-      // If payment exists but no events, all lessons are unscheduled
-      if (currentMonthPaymentInfo.lessons > 0) {
-        Logger.log('No events found but payment exists. Adding ' + currentMonthPaymentInfo.lessons + ' unscheduled lessons for ' + studentName + ' in ' + currentMonth);
+      // If target exists but no events, all lessons are unscheduled
+      if (currentTarget2 > 0) {
+        Logger.log('No events found but target exists. Adding ' + currentTarget2 + ' unscheduled lessons for ' + studentName + ' in ' + currentMonth);
         
-        for (var i = 0; i < currentMonthPaymentInfo.lessons; i++) {
+        for (var i = 0; i < currentTarget2; i++) {
           currentMonthData.lessons.push({
             day: '--',
             time: '--',
@@ -4580,17 +4629,20 @@ function getLatestRecordData(studentName) {
   
   // Add next month data with unscheduled lessons
   if (nextMonthEvents.length > 0 || nextMonthPaymentInfo !== null) {
+    var nextScheduledCount = nextMonthEvents.length;
+    var nextPaidCount = nextMonthPaymentInfo ? (nextMonthPaymentInfo.lessons || 0) : 0;
+    var nextTarget = Math.max(nextMonthDesired || 0, nextPaidCount || 0);
+    var nextMissing = Math.max(0, nextTarget - nextScheduledCount);
+    
     var nextMonthData = {
       Payment: nextMonthPaymentInfo ? nextMonthPaymentInfo.status : '未',
       lessons: nextMonthEvents
     };
     
-    // Add unscheduled lessons if payment info exists and there are more paid lessons than scheduled
-    if (nextMonthPaymentInfo && nextMonthPaymentInfo.lessons > nextMonthEvents.length) {
-      var unscheduledCount = nextMonthPaymentInfo.lessons - nextMonthEvents.length;
-      Logger.log('Adding ' + unscheduledCount + ' unscheduled lessons for ' + studentName + ' in ' + nextMonth);
-      
-      for (var i = 0; i < unscheduledCount; i++) {
+    // Add unscheduled lessons based on target (desired vs paid) minus scheduled
+    if (nextMissing > 0) {
+      Logger.log('Adding ' + nextMissing + ' unscheduled lessons (target=' + nextTarget + ', scheduled=' + nextScheduledCount + ') for ' + studentName + ' in ' + nextMonth);
+      for (var i = 0; i < nextMissing; i++) {
         nextMonthData.lessons.push({
           day: '--',
           time: '--',
@@ -4601,18 +4653,20 @@ function getLatestRecordData(studentName) {
     
     latestByMonth[nextMonthShort] = nextMonthData;
   } else {
-    // Even if no events found, show payment status and unscheduled lessons if payment exists
-    if (nextMonthPaymentInfo !== null) {
+    var nextPaidCount2 = nextMonthPaymentInfo ? (nextMonthPaymentInfo.lessons || 0) : 0;
+    var nextTarget2 = Math.max(nextMonthDesired || 0, nextPaidCount2 || 0);
+    // Even if no events found, show payment/desired status and unscheduled lessons if target exists
+    if (nextMonthPaymentInfo !== null || nextTarget2 > 0) {
       var nextMonthData = {
         Payment: nextMonthPaymentInfo.status,
         lessons: []
       };
       
-      // If payment exists but no events, all lessons are unscheduled
-      if (nextMonthPaymentInfo.lessons > 0) {
-        Logger.log('No events found but payment exists. Adding ' + nextMonthPaymentInfo.lessons + ' unscheduled lessons for ' + studentName + ' in ' + nextMonth);
+      // If target exists but no events, all lessons are unscheduled
+      if (nextTarget2 > 0) {
+        Logger.log('No events found but target exists. Adding ' + nextTarget2 + ' unscheduled lessons for ' + studentName + ' in ' + nextMonth);
         
-        for (var i = 0; i < nextMonthPaymentInfo.lessons; i++) {
+        for (var i = 0; i < nextTarget2; i++) {
           nextMonthData.lessons.push({
             day: '--',
             time: '--',
