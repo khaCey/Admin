@@ -42,22 +42,6 @@
       }
     }
     
-    // Helper: determine if a given date/time slot is in the past
-    function isPastSlot(dayDate, slotTime) {
-      try {
-        const slot = new Date(dayDate);
-        const parts = String(slotTime || '').split(':');
-        const hh = Number(parts[0]) || 0;
-        const mm = Number(parts[1]) || 0;
-        slot.setHours(hh, mm, 0, 0);
-        const now = new Date();
-        return slot.getTime() < now.getTime();
-      } catch (e) {
-        console.error('isPastSlot error:', e);
-        return false;
-      }
-    }
-
     // Check if a feature is enabled
     function isFeatureEnabled(featureName) {
       if (!window.featureFlags || !window.featureFlags[featureName]) {
@@ -1450,19 +1434,19 @@
   <div id="bookLessonModal" class="fixed inset-0 z-[1500] hidden">
     <div class="absolute inset-0 bg-black/50"></div>
     <div class="absolute inset-0 flex items-center justify-center p-4 sm:p-8 overflow-auto">
-      <div class="w-full max-w-6xl rounded-2xl bg-white modal-card ring-1 ring-black/5">
-        <header class="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+      <div class="w-full max-w-6xl max-h-[90vh] rounded-2xl bg-white modal-card ring-1 ring-black/5 flex flex-col overflow-hidden">
+        <header class="flex items-center justify-between px-5 py-3 border-b border-gray-200">
           <div>
-            <h3 id="bookLessonTitle" class="text-xl font-semibold text-gray-900">Book a New Lesson</h3>
-            <p id="bookLessonStudentInfo" class="text-sm text-gray-600 mt-1">Loading student information...</p>
+            <h3 id="bookLessonTitle" class="text-lg font-semibold text-gray-900 leading-tight">Book a New Lesson</h3>
+            <p id="bookLessonStudentInfo" class="text-xs text-gray-600 mt-0.5">Loading student information...</p>
           </div>
-          <button type="button" id="bookLessonClose" class="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium hover:bg-gray-50">Close</button>
+          <button type="button" id="bookLessonClose" class="rounded-md border border-gray-300 bg-white px-3 py-1 text-sm font-medium hover:bg-gray-50">Close</button>
         </header>
         
-        <div class="p-6">
+        <div class="px-5 pt-4 pb-5 flex-1 overflow-hidden">
           <!-- Teacher Filter -->
-          <div class="mb-4">
-            <label for="teacherFilterSelect" class="block text-sm font-medium text-gray-700 mb-2">Filter by Teacher (Optional)</label>
+          <div class="mb-3">
+            <label for="teacherFilterSelect" class="block text-xs font-medium text-gray-700 mb-1">Filter by Teacher (Optional)</label>
             <select id="teacherFilterSelect" class="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
               <option value="">All Teachers</option>
               <!-- Teacher options will be populated by JavaScript -->
@@ -1470,14 +1454,14 @@
           </div>
           
           <!-- Week Navigation -->
-          <div class="flex items-center justify-between mb-6">
+          <div class="flex items-center justify-between mb-4">
             <button type="button" id="prevWeekBtn" class="flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
               <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
               </svg>
               Previous Week
             </button>
-            <h4 id="currentWeekDisplay" class="text-lg font-semibold text-gray-900">Week of [Date]</h4>
+            <h4 id="currentWeekDisplay" class="text-base font-semibold text-gray-900">Week of [Date]</h4>
             <button type="button" id="nextWeekBtn" class="flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
               Next Week
               <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1489,41 +1473,41 @@
           <!-- Calendar Grid -->
           <div class="bg-white overflow-hidden">
             <!-- Calendar Body - Scrollable (with sticky header inside) -->
-            <div class="overflow-y-auto" style="max-height: 70vh; min-height: 400px;">
+            <div class="overflow-y-auto" style="max-height: 60vh; min-height: 320px; padding-bottom: 64px;">
               <!-- Calendar Header - Sticky -->
               <div class="sticky top-0 z-20 grid grid-cols-8 bg-green-600 text-white shadow-md">
-                <div class="px-4 py-3 text-sm font-semibold text-center">Time</div>
-                <div class="px-4 py-3 text-sm font-semibold text-center" data-day="0">
+                <div class="px-3 py-2.5 text-sm font-semibold text-center">Time</div>
+                <div class="px-3 py-2.5 text-sm font-semibold text-center" data-day="0">
                   <div>MON</div>
-                  <div id="date-0" class="text-xs font-normal mt-1">--</div>
+                  <div id="date-0" class="text-xs font-normal mt-0.5">--</div>
                 </div>
-                <div class="px-4 py-3 text-sm font-semibold text-center" data-day="1">
+                <div class="px-3 py-2.5 text-sm font-semibold text-center" data-day="1">
                   <div>TUE</div>
-                  <div id="date-1" class="text-xs font-normal mt-1">--</div>
+                  <div id="date-1" class="text-xs font-normal mt-0.5">--</div>
                 </div>
-                <div class="px-4 py-3 text-sm font-semibold text-center" data-day="2">
+                <div class="px-3 py-2.5 text-sm font-semibold text-center" data-day="2">
                   <div>WED</div>
-                  <div id="date-2" class="text-xs font-normal mt-1">--</div>
+                  <div id="date-2" class="text-xs font-normal mt-0.5">--</div>
                 </div>
-                <div class="px-4 py-3 text-sm font-semibold text-center" data-day="3">
+                <div class="px-3 py-2.5 text-sm font-semibold text-center" data-day="3">
                   <div>THU</div>
-                  <div id="date-3" class="text-xs font-normal mt-1">--</div>
+                  <div id="date-3" class="text-xs font-normal mt-0.5">--</div>
                 </div>
-                <div class="px-4 py-3 text-sm font-semibold text-center" data-day="4">
+                <div class="px-3 py-2.5 text-sm font-semibold text-center" data-day="4">
                   <div>FRI</div>
-                  <div id="date-4" class="text-xs font-normal mt-1">--</div>
+                  <div id="date-4" class="text-xs font-normal mt-0.5">--</div>
                 </div>
-                <div class="px-4 py-3 text-sm font-semibold text-center" data-day="5">
+                <div class="px-3 py-2.5 text-sm font-semibold text-center" data-day="5">
                   <div>SAT</div>
-                  <div id="date-5" class="text-xs font-normal mt-1">--</div>
+                  <div id="date-5" class="text-xs font-normal mt-0.5">--</div>
                 </div>
-                <div class="px-4 py-3 text-sm font-semibold text-center" data-day="6">
+                <div class="px-3 py-2.5 text-sm font-semibold text-center" data-day="6">
                   <div>SUN</div>
-                  <div id="date-6" class="text-xs font-normal mt-1">--</div>
+                  <div id="date-6" class="text-xs font-normal mt-0.5">--</div>
                 </div>
               </div>
               
-              <div id="calendarGrid" class="grid grid-cols-8" style="grid-auto-rows: 60px; min-height: 660px; margin: 0; padding-top: 2px;">
+              <div id="calendarGrid" class="grid grid-cols-8" style="grid-auto-rows: 48px; min-height: 528px; margin: 0; padding-top: 2px; padding-bottom: 8px;">
                 <!-- Time slots will be generated by JavaScript -->
               </div>
             </div>
@@ -1544,7 +1528,7 @@
   <div id="bookLessonModalNew" class="fixed inset-0 z-[1500] hidden" style="display: none !important;">
     <div class="absolute inset-0 bg-black/50"></div>
     <div class="absolute inset-0 flex items-center justify-center p-4 sm:p-8 overflow-auto">
-      <div class="w-full max-w-6xl rounded-2xl bg-white modal-card ring-1 ring-black/5">
+      <div class="w-full max-w-6xl max-h-[90vh] rounded-2xl bg-white modal-card ring-1 ring-black/5 flex flex-col overflow-hidden">
         <header class="flex items-center justify-between px-6 py-4 border-b border-gray-200">
           <div>
             <h3 id="bookLessonTitleNew" class="text-xl font-semibold text-gray-900">Book a New Lesson</h3>
@@ -1553,7 +1537,7 @@
           <button type="button" id="bookLessonCloseNew" class="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium hover:bg-gray-50">Close</button>
         </header>
         
-        <div class="p-6">
+        <div class="p-6 flex-1 overflow-hidden">
           <!-- Week Navigation -->
           <div class="flex items-center justify-between mb-6">
             <button type="button" id="prevWeekBtnNew" class="flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
@@ -1573,7 +1557,7 @@
 
           <!-- Calendar Grid -->
           <div class="bg-white overflow-hidden">
-            <div class="overflow-y-auto" style="max-height: 70vh; min-height: 400px;">
+            <div class="overflow-y-auto" style="max-height: 60vh; min-height: 320px; padding-bottom: 64px;">
               <!-- Calendar Header - Sticky -->
               <div class="sticky top-0 z-20 grid grid-cols-8 bg-green-600 text-white shadow-md">
                 <div class="px-4 py-3 text-sm font-semibold text-center">Time</div>
@@ -1607,7 +1591,7 @@
                 </div>
               </div>
               
-              <div id="calendarGridNew" class="grid grid-cols-8" style="grid-auto-rows: 60px; min-height: 660px; margin: 0; padding-top: 2px;">
+              <div id="calendarGridNew" class="grid grid-cols-8" style="grid-auto-rows: 48px; min-height: 528px; margin: 0; padding-top: 2px; padding-bottom: 8px;">
                 <!-- Availability slots will be generated by JavaScript -->
               </div>
             </div>
@@ -2040,6 +2024,7 @@
                   <option>NEO</option>
                   <option>OLD</option>
                   <option>Owner's Lesson</option>
+                  <option>SHAM</option>
                 </select>
               </div>
               <div class="sm:col-span-1">
@@ -2664,26 +2649,109 @@
         }
         console.log('Reschedule lesson clicked', lesson);
         
-        // Kick off reschedule via booking calendar
-        const eventId = lesson.eventId || lesson.eventID || null;
-        if (!eventId) {
-          showToast('Error: Event ID not found. Cannot reschedule this lesson.', 'error');
-          console.error('No event ID in lesson data:', lesson);
-          return;
+        // Define proceedWithReschedule function first
+        function proceedWithReschedule(newDateTime, reason) {
+          // Get event ID from lesson data
+          const eventId = lesson.eventId || lesson.eventID || null;
+          
+          if (!eventId) {
+            showToast('Error: Event ID not found. Cannot reschedule this lesson.', 'error');
+            console.error('No event ID in lesson data:', lesson);
+            return;
+          }
+          
+          const studentId = student?.id || student?.ID || 'unknown';
+          
+          showPageLoader();
+          setButtonLoading(lessonDetailsEls.rescheduleBtn, true, 'Rescheduling...');
+          
+          google.script.run
+            .withSuccessHandler(function(result) {
+              hidePageLoader();
+              setButtonLoading(lessonDetailsEls.rescheduleBtn, false);
+              if (result.success) {
+                showToast('Lesson rescheduled successfully!', 'success');
+                
+                // Refresh student details from server to get updated cache
+                if (studentId && typeof google !== 'undefined' && google.script && google.script.run) {
+                  google.script.run
+                    .withSuccessHandler(function(baseResp) {
+                      google.script.run
+                        .withSuccessHandler(function(latest) {
+                          try {
+                            // Normalize and load the updated student data
+                            var model = (typeof normaliseForModal === 'function')
+                              ? normaliseForModal(baseResp, latest)
+                              : (baseResp || {});
+                            if (typeof loadStudent === 'function') {
+                              loadStudent(model);
+                              // loadStudent already calls initLatestRecord() which updates the Latest Record
+                              // No need to call updateLatestRecord() again to avoid duplicate renders
+                            }
+                          } catch(e) {
+                            console.error('Error refreshing student data after rescheduling', e);
+                            // Fallback: just update Latest Record with existing data
+                            if (typeof updateLatestRecord === 'function') {
+                              updateLatestRecord();
+                            }
+                          }
+                        })
+                        .withFailureHandler(function(err) {
+                          console.error('getLatestByMonth failed after rescheduling', err);
+                          // Fallback: just update Latest Record with existing data
+                          if (typeof updateLatestRecord === 'function') {
+                            updateLatestRecord();
+                          }
+                        })
+                        .getLatestByMonth(studentId);
+                    })
+                    .withFailureHandler(function(err) {
+                      console.error('getStudentDetails failed after rescheduling', err);
+                      // Fallback: just update Latest Record with existing data
+                      if (typeof updateLatestRecord === 'function') {
+                        updateLatestRecord();
+                      }
+                    })
+                    .getStudentDetails(studentId);
+                } else {
+                  // Fallback: just update Latest Record with existing data
+                  if (typeof updateLatestRecord === 'function') {
+                    updateLatestRecord();
+                  }
+                }
+                
+                doClose();
+              } else {
+                showToast('Error rescheduling lesson: ' + result.error, 'error');
+              }
+            })
+            .withFailureHandler(function(error) {
+              hidePageLoader();
+              setButtonLoading(lessonDetailsEls.rescheduleBtn, false);
+              console.error('Error rescheduling lesson:', error);
+              showToast('Error rescheduling lesson. Please try again.', 'error');
+            })
+            .rescheduleLesson(eventId, newDateTime, reason, studentId);
         }
-        const studentId = student?.id || student?.ID || 'unknown';
-        // Set context so booking flow knows this is a reschedule
-        window.rescheduleContext = {
-          eventId,
-          studentId,
-          lesson
-        };
-        // Open booking calendar for this student; confirmation will perform reschedule
-        if (typeof openBookLessonModal === 'function') {
-          openBookLessonModal({ student });
-        } else {
-          showToast('Booking calendar not available for reschedule.', 'error');
-        }
+        
+        // Use custom prompt modals for rescheduling
+        customPrompt('Please enter the new date and time (YYYY-MM-DD HH:MM):', '', 'Reschedule Lesson')
+          .then(function(newDateTime) {
+            if (!newDateTime) return;
+            
+            // Get reason for rescheduling
+            return customPrompt('Please enter the reason for rescheduling:', '', 'Reschedule Lesson')
+              .then(function(reason) {
+                if (!reason) return null;
+                return { newDateTime: newDateTime, reason: reason };
+              });
+          })
+          .then(function(data) {
+            if (!data) return;
+            
+            // Continue with rescheduling
+            proceedWithReschedule(data.newDateTime, data.reason);
+          });
       }
 
       function handleRemoveLesson() {
@@ -2947,52 +3015,57 @@
       
       // Store total lessons value for this modal instance (accessible in closures)
       const modalState = { totalLessonsValue: null };
+      // Per-student/month cache so we only ask once
+      window.totalLessonsCache = window.totalLessonsCache || {};
+      const lessonsCacheKey = `${studentId || 'unknown'}:${lessonMonth}`;
 
       // Ensure we have the container element
       const totalLessonsContainer = timeSlotEls.totalLessonsContainer || document.getElementById('totalLessonsContainer');
       
       // Check if student has a total for this month
-      // First check if we already loaded it from the booking modal (for current month)
+      // First check cache (per student/month), then current-month cache
       const currentMonth = new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' });
-      if (lessonMonth === currentMonth && window.currentStudentTotalLessons) {
-        // Use cached value from booking modal
+      if (window.totalLessonsCache[lessonsCacheKey]) {
+        modalState.totalLessonsValue = window.totalLessonsCache[lessonsCacheKey];
+        if (totalLessonsContainer) totalLessonsContainer.style.display = 'none';
+      } else if (lessonMonth === currentMonth && window.currentStudentTotalLessons) {
         modalState.totalLessonsValue = window.currentStudentTotalLessons;
-        // Hide the input field
-        if (totalLessonsContainer) {
-          totalLessonsContainer.style.display = 'none';
-        }
+        if (totalLessonsContainer) totalLessonsContainer.style.display = 'none';
       } else {
         // Fetch it for this specific month
         if (window.google && google.script && google.script.run) {
-        // Show input by default while loading
-        if (totalLessonsContainer) {
-          totalLessonsContainer.style.display = 'block';
-        }
-        
-        google.script.run
-          .withSuccessHandler(function(resp) {
-            const total = (resp && typeof resp === 'object') ? resp.total : resp;
-            if (total && total > 0) {
-              modalState.totalLessonsValue = total;
-              // Hide the input field
-              if (totalLessonsContainer) {
-                totalLessonsContainer.style.display = 'none';
+          // Show input by default while loading
+          if (totalLessonsContainer) {
+            totalLessonsContainer.style.display = 'block';
+          }
+          
+          google.script.run
+            .withSuccessHandler(function(total) {
+              if (total && total > 0) {
+                modalState.totalLessonsValue = total;
+                window.totalLessonsCache[lessonsCacheKey] = total;
+                if (lessonMonth === currentMonth) {
+                  window.currentStudentTotalLessons = total;
+                }
+                // Hide the input field
+                if (totalLessonsContainer) {
+                  totalLessonsContainer.style.display = 'none';
+                }
+              } else {
+                // Show the input field
+                if (totalLessonsContainer) {
+                  totalLessonsContainer.style.display = 'block';
+                }
               }
-            } else {
-              // Show the input field
+            })
+            .withFailureHandler(function(error) {
+              console.error('Error checking lesson total:', error);
+              // Show the input field on error
               if (totalLessonsContainer) {
                 totalLessonsContainer.style.display = 'block';
               }
-            }
-          })
-          .withFailureHandler(function(error) {
-            console.error('Error checking lesson total:', error);
-            // Show the input field on error
-            if (totalLessonsContainer) {
-              totalLessonsContainer.style.display = 'block';
-            }
-          })
-          .getStudentLessonTotal(studentId, lessonMonth);
+            })
+            .getStudentLessonTotal(studentId, lessonMonth);
         } else {
           // Show input if no Google Script available
           if (totalLessonsContainer) {
@@ -3023,7 +3096,7 @@
             return;
           }
           
-          totalLessons = parseInt(totalLessonsInput);
+          totalLessons = parseInt(totalLessonsInput, 10);
           if (isNaN(totalLessons) || totalLessons <= 0) {
             showToast('Invalid number of lessons. Please enter a positive number.', 'error');
             timeSlotEls.totalLessons.focus();
@@ -3052,6 +3125,13 @@
           studentName: student.Name || student.name || 'Unknown Student',
           totalLessons: totalLessons
         };
+        // Persist in cache so we don't ask again for this month
+        if (studentId && totalLessons > 0) {
+          window.totalLessonsCache[lessonsCacheKey] = totalLessons;
+          if (lessonMonth === currentMonth) {
+            window.currentStudentTotalLessons = totalLessons;
+          }
+        }
         onConfirm(lessonData);
         cleanup();
       };
@@ -3093,90 +3173,6 @@
       
       if (!totalLessons || totalLessons <= 0) {
         showToast('Total lessons is required. Please try again.', 'error');
-        return;
-      }
-      
-      // If we're in reschedule mode, perform reschedule instead of booking
-      if (window.rescheduleContext && window.rescheduleContext.eventId) {
-        const ctx = window.rescheduleContext;
-        const eventId = ctx.eventId;
-        const studentId = ctx.studentId || lessonData.studentId;
-        const newDateTimeISO = dateTime.toISOString();
-        
-        const doReschedule = (reason) => {
-          showPageLoader();
-          google.script.run
-            .withSuccessHandler(function(result) {
-              hidePageLoader();
-              window.rescheduleContext = null;
-              if (result.success) {
-                showToast('Lesson rescheduled successfully!', 'success');
-                
-                // Refresh student details from server to get updated cache
-                if (studentId && typeof google !== 'undefined' && google.script && google.script.run) {
-                  google.script.run
-                    .withSuccessHandler(function(baseResp) {
-                      google.script.run
-                        .withSuccessHandler(function(latest) {
-                          try {
-                            var model = (typeof normaliseForModal === 'function')
-                              ? normaliseForModal(baseResp, latest)
-                              : (baseResp || {});
-                            if (typeof loadStudent === 'function') {
-                              loadStudent(model);
-                            }
-                          } catch(e) {
-                            console.error('Error refreshing student data after rescheduling', e);
-                            if (typeof updateLatestRecord === 'function') {
-                              updateLatestRecord();
-                            }
-                          }
-                        })
-                        .withFailureHandler(function(err) {
-                          console.error('getLatestByMonth failed after rescheduling', err);
-                          if (typeof updateLatestRecord === 'function') {
-                            updateLatestRecord();
-                          }
-                        })
-                        .getLatestByMonth(studentId);
-                    })
-                    .withFailureHandler(function(err) {
-                      console.error('getStudentDetails failed after rescheduling', err);
-                      if (typeof updateLatestRecord === 'function') {
-                        updateLatestRecord();
-                      }
-                    })
-                    .getStudentDetails(studentId);
-                } else {
-                  if (typeof updateLatestRecord === 'function') {
-                    updateLatestRecord();
-                  }
-                }
-                
-                // Close booking/time-slot modals if open
-                if (bookLessonEls && bookLessonEls.root) hide(bookLessonEls.root);
-                if (bookLessonElsNew && bookLessonElsNew.root) hide(bookLessonElsNew.root);
-                if (timeSlotEls && timeSlotEls.root) hide(timeSlotEls.root);
-                if (timeSlotElsNew && timeSlotElsNew.root) hide(timeSlotElsNew.root);
-              } else {
-                showToast('Error rescheduling lesson: ' + result.error, 'error');
-              }
-            })
-            .withFailureHandler(function(error) {
-              hidePageLoader();
-              window.rescheduleContext = null;
-              console.error('Error rescheduling lesson:', error);
-              showToast('Error rescheduling lesson. Please try again.', 'error');
-            })
-            .rescheduleLesson(eventId, newDateTimeISO, reason || '', studentId);
-        };
-        
-        // Prompt for reason, then reschedule
-        customPrompt('Please enter the reason for rescheduling:', '', 'Reschedule Lesson')
-          .then(function(reason) {
-            if (!reason) return;
-            doReschedule(reason);
-          });
         return;
       }
       
@@ -3348,11 +3344,10 @@
       // Store total lessons in a variable accessible to time slot modal
       window.currentStudentTotalLessons = null;
       
-      // Try to get total lessons (desired or paid), but don't block if function doesn't exist
+      // Try to get total lessons, but don't block if function doesn't exist
       if (window.google && google.script && google.script.run) {
         google.script.run
-          .withSuccessHandler(function(resp) {
-            const total = (resp && typeof resp === 'object') ? resp.total : resp;
+          .withSuccessHandler(function(total) {
             if (total && total > 0) {
               window.currentStudentTotalLessons = total;
             } else {
@@ -3360,6 +3355,7 @@
             }
           })
           .withFailureHandler(function(error) {
+            // Function doesn't exist or error occurred - continue without it
             console.log('getStudentLessonTotal not available:', error);
             window.currentStudentTotalLessons = null;
           })
@@ -4013,11 +4009,6 @@
             const dayDate = new Date(weekStart);
             dayDate.setDate(weekStart.getDate() + day);
             
-            if (isPastSlot(dayDate, slotTime)) {
-              // Skip rendering past slots entirely
-              continue;
-            }
-            
             const slotCell = document.createElement('div');
             slotCell.className = 'px-1 text-sm border-r border-gray-200 transition-colors flex flex-col justify-start relative bg-gray-50 p-0 cursor-pointer hover:bg-gray-100';
             slotCell.style.height = `${cellHeight}px`;
@@ -4596,11 +4587,6 @@
             const month = String(dayDate.getMonth() + 1).padStart(2, '0');
             const dayOfMonth = String(dayDate.getDate()).padStart(2, '0');
             const dateStr = `${year}-${month}-${dayOfMonth}`;
-            
-            if (isPastSlot(dayDate, slotTime)) {
-              // Skip rendering past slots entirely
-              continue;
-            }
 
             const slotCell = document.createElement('div');
             slotCell.className = 'px-1 text-sm border-r border-gray-200 transition-colors flex flex-col justify-start relative';
@@ -5346,13 +5332,12 @@
         const d   = new Date(iso);
         const selectedYear = payEls.year ? (payEls.year.value || String(d.getFullYear())) : String(d.getFullYear());
         const selectedMonth = payEls.month.value;
-        const monthWithYear = `${selectedMonth} ${selectedYear}`;
         const payload = {
           'Student ID': student?.id || student?.ID || '', // Add Student ID
           'Transaction ID': txnValue,
           Date: iso,
           Year: selectedYear,
-          Month: monthWithYear,
+          Month: selectedMonth,
           Price: String(payEls.price.value || ''), // Original price before discount
           Discount: String(payEls.discount.value || '0'), // Discount percentage
           Total: String(payEls.total.value || payEls.price.value || ''), // Final total after discount

@@ -1,44 +1,50 @@
 {
-    "workflows": [
-      {
-        "name":    "Draft Patch (create)",
-        "trigger": "create",
-        "steps": [
-          {
-            "run": "cursor apply --diff-format --prompt \"{{input}}\" > .git/ai.patch"
-          },
-          {
-            "say": "✅ Draft ready. Reply `implement` to apply & commit."
-          }
-        ]
-      },
-      {
-        "name":    "Draft Patch (troubleshoot)",
-        "trigger": "troubleshoot",
-        "steps": [
-          {
-            "run": "cursor apply --diff-format --prompt \"{{input}}\" > .git/ai.patch"
-          },
-          {
-            "say": "✅ Draft ready. Reply `implement` to apply & commit."
-          }
-        ]
-      },
-      {
-        "name":    "Implement Patch",
-        "trigger": "implement",
-        "steps": [
-          { "run": "git apply .git/ai.patch" },
-          { "run": "git add -A" },
-          {
-            "run": "git diff --cached > .git/ai.diff && cursor chat --prompt \"Summarize this git diff in one or two sentences:\\n$(cat .git/ai.diff)\" --stream > .git/ai.msg"
-          },
-          { "run": "git commit -F .git/ai.msg" },
-          { "run": "git push origin HEAD" },
-          { "run": "rm .git/ai.patch .git/ai.diff .git/ai.msg" },
-          { "say": "🎉 Done – patch applied, committed & pushed!" }
-        ]
-      }
-    ]
-  }
+  "prompt": [
+    "Maintain docs/function-directory.md and docs/schema.md: update when functions or schema change; consult them at session start.",
+    "After code changes (non-doc-only), run `clasp push`. Skip for doc-only updates.",
+    "Use canonical month key YYYY-MM and Student ID for joins; avoid name-based matching.",
+    "Booking modal: only prompt for total lessons if not already stored; remember per-student per-month once provided."
+  ],
+  "workflows": [
+    {
+      "name":    "Draft Patch (create)",
+      "trigger": "create",
+      "steps": [
+        {
+          "run": "cursor apply --diff-format --prompt \"{{input}}\" > .git/ai.patch"
+        },
+        {
+          "say": "✅ Draft ready. Reply `implement` to apply & commit."
+        }
+      ]
+    },
+    {
+      "name":    "Draft Patch (troubleshoot)",
+      "trigger": "troubleshoot",
+      "steps": [
+        {
+          "run": "cursor apply --diff-format --prompt \"{{input}}\" > .git/ai.patch"
+        },
+        {
+          "say": "✅ Draft ready. Reply `implement` to apply & commit."
+        }
+      ]
+    },
+    {
+      "name":    "Implement Patch",
+      "trigger": "implement",
+      "steps": [
+        { "run": "git apply .git/ai.patch" },
+        { "run": "git add -A" },
+        {
+          "run": "git diff --cached > .git/ai.diff && cursor chat --prompt \"Summarize this git diff in one or two sentences:\\n$(cat .git/ai.diff)\" --stream > .git/ai.msg"
+        },
+        { "run": "git commit -F .git/ai.msg" },
+        { "run": "git push origin HEAD" },
+        { "run": "rm .git/ai.patch .git/ai.diff .git/ai.msg" },
+        { "say": "🎉 Done – patch applied, committed & pushed!" }
+      ]
+    }
+  ]
+}
   

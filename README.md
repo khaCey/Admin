@@ -29,6 +29,11 @@ A comprehensive web-based student management system built with Google Apps Scrip
 - **Calendar Integration**: Google Calendar API
 - **Contact Management**: Google People API
 
+## 📘 Working with this repo (Cursor/Agent)
+- Consult and keep in sync: `docs/function-directory.md` and `docs/schema.md`.
+- Update those docs whenever functions or schema change.
+- After code changes (non-doc-only), run `clasp push` to deploy.
+
 ### Project Structure
 
 ```

@@ -416,69 +416,56 @@ window.openStudentDetails = function(id){
       // Fall back to server calls for immediate display
       console.log('🔄 Fetching from server for immediate display...');
       
-      // Now load the actual data using the original working flow
+      // Now load the actual data using parallel calls for speed
       if (window.google && google.script && google.script.run) {
-        // Add a small delay to prevent rapid successive calls
+        var baseResp = null;
+        var latestResp = null;
+
+        function applyModelIfReady() {
+          if (!baseResp) return;
+          var model = (typeof normaliseForModal === 'function')
+            ? normaliseForModal(baseResp, latestResp || {})
+            : (baseResp || {});
+          if (typeof loadStudent === 'function') {
+            loadStudent(model);
+          }
+          window.__forceRefreshOnLoad = false;
+          
+          // Re-enable buttons
+          var editBtn = document.getElementById('editBtn');
+          var deleteBtn = document.getElementById('deleteBtn');
+          if (editBtn) editBtn.disabled = false;
+          if (deleteBtn) deleteBtn.disabled = false;
+          var addPaymentBtn = document.getElementById('addPaymentBtn');
+          var addNoteBtn = document.getElementById('addNoteBtn');
+          if (addPaymentBtn) addPaymentBtn.disabled = false;
+          if (addNoteBtn) addNoteBtn.disabled = false;
+        }
+
+        // Kick off latest record fetch immediately (studentName available)
+        google.script.run
+          .withSuccessHandler(function(latest) {
+            latestResp = latest && latest.latestByMonth ? latest.latestByMonth : latest;
+            applyModelIfReady();
+          })
+          .withFailureHandler(function(err) {
+            console.error('getLatestRecordForStudent failed', err);
+          })
+          .getLatestRecordForStudent(studentName, id);
+
+        // Fetch student details
         setTimeout(function() {
           google.script.run
-            .withSuccessHandler(function(baseResp) {
-              google.script.run
-                .withSuccessHandler(function(latest) {
-                  try {
-                    var model = (typeof normaliseForModal === 'function')
-                      ? normaliseForModal(baseResp, latest)
-                      : (baseResp || {});
-                    if (typeof loadStudent === 'function') {
-                      loadStudent(model);
-                    }
-                // Clear force-refresh flag after successful fetch
-                window.__forceRefreshOnLoad = false;
-                    
-                    // Re-enable edit/delete buttons after data is loaded
-                    var editBtn = document.getElementById('editBtn');
-                    var deleteBtn = document.getElementById('deleteBtn');
-                    if (editBtn) editBtn.disabled = false;
-                    if (deleteBtn) deleteBtn.disabled = false;
-                    
-                    // Re-enable add buttons after data is loaded
-                    var addPaymentBtn = document.getElementById('addPaymentBtn');
-                    var addNoteBtn = document.getElementById('addNoteBtn');
-                    if (addPaymentBtn) addPaymentBtn.disabled = false;
-                    if (addNoteBtn) addNoteBtn.disabled = false;
-                  } catch(e) {
-                    console.error('Error normalising/loading student model', e);
-                  }
-                })
-                .withFailureHandler(function(err) {
-                  console.error('getLatestByMonth failed', err);
-                  try {
-                    var model = (typeof normaliseForModal === 'function') ? normaliseForModal(baseResp, {}) : (baseResp || {});
-                    if (typeof loadStudent === 'function') loadStudent(model);
-                    
-                    // Re-enable edit/delete buttons after data is loaded
-                    var editBtn = document.getElementById('editBtn');
-                    var deleteBtn = document.getElementById('editBtn');
-                    if (editBtn) editBtn.disabled = false;
-                    if (deleteBtn) deleteBtn.disabled = false;
-                    
-                    // Re-enable add buttons after data is loaded
-                    var addPaymentBtn = document.getElementById('addPaymentBtn');
-                    var addNoteBtn = document.getElementById('addNoteBtn');
-                    if (addPaymentBtn) addPaymentBtn.disabled = false;
-                    if (addNoteBtn) addNoteBtn.disabled = false;
-                  } catch(e) {
-                    console.error('Error loading student model', e);
-                  }
-                })
-                .getLatestByMonth(id);
+            .withSuccessHandler(function(resp) {
+              baseResp = resp;
+              applyModelIfReady();
             })
             .withFailureHandler(function(err) {
               console.error('getStudentDetails failed', err);
-                // Clear force-refresh flag even on failure to avoid repeated skips
-            window.__forceRefreshOnLoad = false;
+              window.__forceRefreshOnLoad = false;
             })
             .getStudentDetails(id);
-        }, 100); // Small delay to prevent rapid calls
+        }, 50);
       }
       
       console.log('Student details modal populated for:', studentName);
