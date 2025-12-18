@@ -3640,14 +3640,14 @@ function refreshBookingAvailabilityCache() {
     currentWeekStart.setDate(currentWeekStart.getDate() + daysToMonday);
     currentWeekStart.setHours(0, 0, 0, 0);
     
-    // Refresh current week and next 5 weeks
-    for (var week = 0; week < 6; week++) {
+    // Refresh current week and next 7 weeks (cover current + next month)
+    for (var week = 0; week < 8; week++) {
       var weekStart = new Date(currentWeekStart);
       weekStart.setDate(currentWeekStart.getDate() + (week * 7));
       calculateAndStoreWeekAvailability(weekStart, false);
     }
     
-    Logger.log('Refreshed booking availability cache for 6 weeks');
+    Logger.log('Refreshed booking availability cache for 8 weeks');
   } catch (error) {
     Logger.log('Error refreshing availability cache: ' + error.toString());
   }
