@@ -4470,11 +4470,13 @@
       currentWeek.setDate(currentWeek.getDate() + daysToMonday);
       currentWeek.setHours(0, 0, 0, 0);
       
-      // Calculate next week
-      let nextWeek = new Date(currentWeek);
-      nextWeek.setDate(currentWeek.getDate() + 7);
-      
-      const weeksToLoad = [currentWeek, nextWeek];
+      // Preload current week + next 7 weeks (covers current & next month)
+      const weeksToLoad = [];
+      for (let i = 0; i < 8; i++) {
+        const wk = new Date(currentWeek);
+        wk.setDate(currentWeek.getDate() + (i * 7));
+        weeksToLoad.push(wk);
+      }
       
       weeksToLoad.forEach((weekStart) => {
         const weekKey = weekStart.toISOString();
