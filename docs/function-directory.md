@@ -19,6 +19,7 @@ Curated list of major functions with purpose and location. Keep this file update
 | `openBookLessonModal(opts)` | Index.html | Legacy booking calendar modal setup and rendering. |
 | `createLatestRecord({...})` | Index.html | Renders latestByMonth (paid/unpaid + lessons cards) in student details. |
 | `loadUnpaidStudents()` | Index.html | Fetches unpaid students via `getUnpaidStudentsThisMonth` and renders modal. |
+| `syncTeacherSchedulesFromCalendars()` | Code.js | Pulls teacher calendar events (from TeacherCalendars sheet) into TeacherSchedules for current + next month. |
 
 Notes:
 - Month handling: backend uses separate Month (name) + Year columns; canonical key is `YYYY-MM`.

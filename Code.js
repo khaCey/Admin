@@ -3006,6 +3006,106 @@ function getCachedTeacherSchedule(dateStr) {
 }
 
 /**
+ * Sync teacher schedules from calendar IDs listed in TeacherCalendars sheet into TeacherSchedules.
+ * TeacherCalendars columns: [CalendarID, TeacherName].
+ * Writes rows into TeacherSchedules with columns: Date, TeacherName, StartTime, EndTime.
+ * Window: current month + next month.
+ */
+function syncTeacherSchedulesFromCalendars() {
+  try {
+    var ss = SpreadsheetApp.openById(SS_ID);
+    var calSheet = ss.getSheetByName('TeacherCalendars');
+    if (!calSheet) {
+      Logger.log('❌ TeacherCalendars sheet not found');
+      return 0;
+    }
+    var calData = calSheet.getDataRange().getValues();
+    if (calData.length < 2) {
+      Logger.log('⚠️ TeacherCalendars sheet has no calendar rows');
+      return 0;
+    }
+    var calendars = [];
+    for (var i = 1; i < calData.length; i++) {
+      var calId = String(calData[i][0] || '').trim();
+      var teacherName = String(calData[i][1] || '').trim();
+      if (calId && teacherName) {
+        calendars.push({ id: calId, teacherName: teacherName });
+      }
+    }
+    if (!calendars.length) {
+      Logger.log('⚠️ No valid calendar rows found in TeacherCalendars');
+      return 0;
+    }
+    
+    var tz = Session.getScriptTimeZone();
+    var now = new Date();
+    var windowStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    var windowEnd = new Date(now.getFullYear(), now.getMonth() + 2, 1); // current + next month
+    
+    var rows = [];
+    calendars.forEach(function(calEntry) {
+      var cal = CalendarApp.getCalendarById(calEntry.id);
+      if (!cal) {
+        Logger.log('⚠️ Calendar not found: ' + calEntry.id);
+        return;
+      }
+      var events = cal.getEvents(windowStart, windowEnd);
+      Logger.log('Found ' + events.length + ' events for calendar ' + calEntry.id);
+      events.forEach(function(ev) {
+        if (ev.isAllDayEvent()) return;
+        var st = ev.getStartTime();
+        var et = ev.getEndTime();
+        rows.push([
+          Utilities.formatDate(st, tz, 'yyyy-MM-dd'),
+          calEntry.teacherName,
+          Utilities.formatDate(st, tz, 'HH:mm'),
+          Utilities.formatDate(et, tz, 'HH:mm')
+        ]);
+      });
+    });
+    
+    var schedSheet = ss.getSheetByName('TeacherSchedules');
+    if (!schedSheet) {
+      schedSheet = ss.insertSheet('TeacherSchedules');
+    }
+    var headers = ['Date', 'TeacherName', 'StartTime', 'EndTime'];
+    var existing = schedSheet.getDataRange().getValues();
+    var keepRows = [];
+    if (existing.length > 1) {
+      var h = existing[0];
+      var dIdx = h.indexOf('Date');
+      var tIdx = h.indexOf('TeacherName');
+      var sIdx = h.indexOf('StartTime');
+      var eIdx = h.indexOf('EndTime');
+      if (dIdx !== -1 && tIdx !== -1 && sIdx !== -1 && eIdx !== -1) {
+        for (var r = 1; r < existing.length; r++) {
+          var row = existing[r];
+          var dCell = row[dIdx];
+          var dStr = dCell instanceof Date ? Utilities.formatDate(dCell, tz, 'yyyy-MM-dd') : String(dCell || '').trim();
+          var dDate = new Date(dStr + 'T00:00:00');
+          if (isNaN(dDate.getTime())) continue;
+          if (dDate < windowStart || dDate >= windowEnd) {
+            keepRows.push(row);
+          }
+        }
+      }
+    }
+    
+    schedSheet.clear();
+    schedSheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    var out = keepRows.concat(rows);
+    if (out.length > 0) {
+      schedSheet.getRange(2, 1, out.length, headers.length).setValues(out);
+    }
+    Logger.log('✅ Synced teacher schedules from calendars. New rows: ' + rows.length + ', kept rows: ' + keepRows.length);
+    return rows.length;
+  } catch (e) {
+    Logger.log('❌ Error in syncTeacherSchedulesFromCalendars: ' + e.toString());
+    return 0;
+  }
+}
+
+/**
  * Get available teachers for a specific date and time
  * @param {Date} dateTime - Date and time object
  * @param {number} durationMinutes - Duration of lesson in minutes (default 50)
@@ -3633,6 +3733,13 @@ function updateAvailabilityForTimeSlot(lessonDateTime, isBooking, isKidsLesson) 
  */
 function refreshBookingAvailabilityCache() {
   try {
+    // Sync teacher schedules from calendar IDs before calculating availability
+    try {
+      syncTeacherSchedulesFromCalendars();
+    } catch (e) {
+      Logger.log('Warning: syncTeacherSchedulesFromCalendars failed: ' + e.toString());
+    }
+
     var now = new Date();
     var currentWeekStart = new Date(now);
     var dayOfWeek = currentWeekStart.getDay();

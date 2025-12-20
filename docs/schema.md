@@ -55,7 +55,21 @@ Key: `EventID`. Student linkage currently by `StudentName` (string match).
 - Note
 Key: `ID`; also scoped by `Student ID`.
 
+## TeacherSchedules
+- Date (yyyy-MM-dd)
+- TeacherName
+- StartTime (HH:mm)
+- EndTime (HH:mm)
+Key: Date + TeacherName + StartTime.
+
+## TeacherCalendars
+- CalendarID (Google Calendar ID)
+- TeacherName
+Used to import teacher availability into `TeacherSchedules`.
+
 ### Canonical month key
 - `YYYY-MM` (e.g., `2025-11`), derived from Year + month number.
 - Frontend stores Month as name; backend should normalize to `YYYY-MM` for joins.
+
+
 
