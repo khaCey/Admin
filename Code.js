@@ -6,7 +6,6 @@ var NOTES_SHEET         = 'Notes';
 var LESSON_SHEET        = 'Lessons';
 var OWNERS_COURSE_CAL_ID = 'c_403306dccf2039f61a620a4cfc22424c5a6f79e945054e57f30ecc50c90b9207@group.calendar.google.com';
 var LESSON_CALENDAR_ID  = 'greensquare.jp_h8u0oufn8feana384v67o46o78@group.calendar.google.com';
-var SHAM_CALENDAR_ID    = 'c_403306dccf2039f61a620a4cfc22424c5a6f79e945054e57f30ecc50c90b9207@group.calendar.google.com';
 
 // Fee table definition
 var feeTable = {
@@ -1854,7 +1853,7 @@ function processEventsForMonth(events) {
     var teacherName = '';
     try {
       var calendarId = event.getOriginalCalendarId();
-      if (calendarId === SHAM_CALENDAR_ID) {
+      if (calendarId === OWNERS_COURSE_CAL_ID) {
         teacherName = 'Sham';
       }
       // Add more teacher calendar checks here if needed
@@ -3976,7 +3975,7 @@ function checkTeacherAvailability(teacherName, startTime, endTime, checkShamCale
     }
     
     // Check Sham's calendar for conflicts - if Sham has any lesson, he's not available
-    var shamCalendar = CalendarApp.getCalendarById(SHAM_CALENDAR_ID);
+    var shamCalendar = CalendarApp.getCalendarById(OWNERS_COURSE_CAL_ID);
     if (shamCalendar) {
       // Check for existing events in Sham's calendar during the requested time
       var events = shamCalendar.getEvents(startTime, endTime);
