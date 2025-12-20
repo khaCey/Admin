@@ -3006,34 +3006,69 @@ function getCachedTeacherSchedule(dateStr) {
 }
 
 /**
- * Sync teacher schedules from calendar IDs listed in TeacherCalendars sheet into TeacherSchedules.
- * TeacherCalendars columns: [CalendarID, TeacherName].
+ * Sync teacher schedules from calendar IDs into TeacherSchedules.
+ * Sources:
+ * 1) Sheet "TeacherCalendars" with columns [CalendarID, TeacherName], if present.
+ * 2) Fallback: Students sheet columns "Teacher Calendar ID" and "Name"/"TeacherName".
  * Writes rows into TeacherSchedules with columns: Date, TeacherName, StartTime, EndTime.
  * Window: current month + next month.
  */
 function syncTeacherSchedulesFromCalendars() {
   try {
     var ss = SpreadsheetApp.openById(SS_ID);
-    var calSheet = ss.getSheetByName('TeacherCalendars');
-    if (!calSheet) {
-      Logger.log('❌ TeacherCalendars sheet not found');
-      return 0;
-    }
-    var calData = calSheet.getDataRange().getValues();
-    if (calData.length < 2) {
-      Logger.log('⚠️ TeacherCalendars sheet has no calendar rows');
-      return 0;
-    }
     var calendars = [];
-    for (var i = 1; i < calData.length; i++) {
-      var calId = String(calData[i][0] || '').trim();
-      var teacherName = String(calData[i][1] || '').trim();
-      if (calId && teacherName) {
-        calendars.push({ id: calId, teacherName: teacherName });
+
+    // Helper to read calendar mappings from a sheet
+    function readMappings(sheet) {
+      var out = [];
+      if (!sheet) return out;
+      var data = sheet.getDataRange().getValues();
+      if (data.length < 2) return out;
+      for (var i = 1; i < data.length; i++) {
+        var calId = String(data[i][0] || '').trim();
+        var teacherName = String(data[i][1] || '').trim();
+        if (calId && teacherName) out.push({ id: calId, teacherName: teacherName });
+      }
+      return out;
+    }
+
+    // 1) Try TeacherCalendars sheet (CalendarID, TeacherName)
+    calendars = readMappings(ss.getSheetByName('TeacherCalendars'));
+
+    // 2) Fallback to Students sheet: columns "Teacher Calendar ID" + "Name"/"TeacherName"
+    if (!calendars.length) {
+      var studentSheet = ss.getSheetByName(STUDENT_SHEET);
+      if (studentSheet) {
+        var sData = studentSheet.getDataRange().getDisplayValues();
+        if (sData.length > 1) {
+          var headers = sData[0] || [];
+          var calIdx = headers.indexOf('Teacher Calendar ID');
+          var nameIdx = headers.indexOf('TeacherName');
+          if (nameIdx === -1) nameIdx = headers.indexOf('Name');
+          if (calIdx !== -1 && nameIdx !== -1) {
+            for (var r = 1; r < sData.length; r++) {
+              var calId = String(sData[r][calIdx] || '').trim();
+              var teacherName = String(sData[r][nameIdx] || '').trim();
+              if (calId && teacherName) calendars.push({ id: calId, teacherName: teacherName });
+            }
+          }
+        }
       }
     }
+
+    // Deduplicate
+    if (calendars.length) {
+      var seen = {};
+      calendars = calendars.filter(function(entry){
+        var key = entry.id + '|' + entry.teacherName;
+        if (seen[key]) return false;
+        seen[key] = true;
+        return true;
+      });
+    }
+
     if (!calendars.length) {
-      Logger.log('⚠️ No valid calendar rows found in TeacherCalendars');
+      Logger.log('⚠️ No valid teacher calendars found (TeacherCalendars sheet missing/empty and no Teacher Calendar ID in Students).');
       return 0;
     }
     
