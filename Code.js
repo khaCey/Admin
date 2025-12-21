@@ -3783,6 +3783,7 @@ function prunePastAvailability() {
 
   var tz = Session.getScriptTimeZone();
   var now = new Date();
+  var cutoff = new Date(now.getTime() + 60 * 60 * 1000); // 1 hour from now
   var rowsToDelete = [];
 
   for (var i = 1; i < data.length; i++) {
@@ -3800,7 +3801,7 @@ function prunePastAvailability() {
     if (!timeStr) continue;
     var dateTime = new Date(dateStr + 'T' + timeStr + ':00');
     if (isNaN(dateTime.getTime())) continue;
-    if (dateTime < now) {
+    if (dateTime < cutoff) {
       rowsToDelete.push(i + 1); // sheet is 1-indexed and has header row
     }
   }
