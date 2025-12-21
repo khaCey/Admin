@@ -3772,6 +3772,56 @@ function refreshBookingAvailabilityCache() {
 }
 
 /**
+ * Remove availability rows that are in the past (Date+Time earlier than now).
+ * Intended to be run hourly to keep BookingAvailability clean.
+ * @returns {number} count of rows removed
+ */
+function prunePastAvailability() {
+  var sheet = getBookingAvailabilitySheet();
+  var data = sheet.getDataRange().getValues();
+  if (data.length <= 1) return 0;
+
+  var tz = Session.getScriptTimeZone();
+  var now = new Date();
+  var rowsToDelete = [];
+
+  for (var i = 1; i < data.length; i++) {
+    var row = data[i];
+    var dateCell = row[0];
+    var timeCell = row[1];
+    if (!(dateCell instanceof Date)) continue;
+    var dateStr = Utilities.formatDate(dateCell, tz, 'yyyy-MM-dd');
+    var timeStr = '';
+    if (timeCell instanceof Date) {
+      timeStr = Utilities.formatDate(timeCell, tz, 'HH:mm');
+    } else {
+      timeStr = String(timeCell || '').trim().substring(0, 5);
+    }
+    if (!timeStr) continue;
+    var dateTime = new Date(dateStr + 'T' + timeStr + ':00');
+    if (isNaN(dateTime.getTime())) continue;
+    if (dateTime < now) {
+      rowsToDelete.push(i + 1); // sheet is 1-indexed and has header row
+    }
+  }
+
+  for (var d = rowsToDelete.length - 1; d >= 0; d--) {
+    sheet.deleteRow(rowsToDelete[d]);
+  }
+  Logger.log('Pruned ' + rowsToDelete.length + ' past availability rows');
+  return rowsToDelete.length;
+}
+
+/**
+ * Hourly maintenance: prune past availability and refresh future availability.
+ * Set an Apps Script time-based trigger to call this hourly.
+ */
+function hourlyAvailabilityMaintenance() {
+  prunePastAvailability();
+  refreshBookingAvailabilityCache();
+}
+
+/**
  * Check availability for a time slot (teachers vs lessons)
  * @param {string} dateStr - Date in format 'YYYY-MM-DD'
  * @param {string} timeStr - Time in format 'HH:mm'
