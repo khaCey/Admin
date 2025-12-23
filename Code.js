@@ -3171,35 +3171,31 @@ function getBookingAvailabilitySheet() {
   if (!sheet) {
     // Create the sheet
     sheet = ss.insertSheet('BookingAvailability');
-    
-    // Set headers
-    var headers = [
-      'Date',           // YYYY-MM-DD
-      'Time',           // HH:mm
-      'TeacherCount',   // Number of teachers available
-      'LessonCount',    // Number of scheduled lessons
-      'AvailableSlots', // TeacherCount - LessonCount
-      'Teachers',       // Comma-separated list of teacher names
-      'HasKidsLesson',  // Boolean: true if any lesson is kids lesson
-      'HasAdultLesson', // Boolean: true if any lesson is adult lesson
-      'Reason',         // no-teachers | fully-booked | '' when available
-      'LastUpdated'     // Timestamp of last update
-    ];
-    
-    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
-    sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold');
-    sheet.setFrozenRows(1);
-    
-    // Set data validation and formatting
-    var dateRange = sheet.getRange('A:A');
-    dateRange.setNumberFormat('yyyy-mm-dd');
-    
-    var timeRange = sheet.getRange('B:B');
-    timeRange.setNumberFormat('hh:mm');
-    
-  var lastUpdatedRange = sheet.getRange('J:J');
-    lastUpdatedRange.setNumberFormat('yyyy-mm-dd hh:mm:ss');
   }
+
+  // Ensure headers/formatting exist and include the Reason column
+  var headers = [
+    'Date',           // YYYY-MM-DD
+    'Time',           // HH:mm
+    'TeacherCount',   // Number of teachers available
+    'LessonCount',    // Number of scheduled lessons
+    'AvailableSlots', // TeacherCount - LessonCount
+    'Teachers',       // Comma-separated list of teacher names
+    'HasKidsLesson',  // Boolean: true if any lesson is kids lesson
+    'HasAdultLesson', // Boolean: true if any lesson is adult lesson
+    'Reason',         // no-teachers | fully-booked | '' when available
+    'LastUpdated'     // Timestamp of last update
+  ];
+
+  var headerRange = sheet.getRange(1, 1, 1, headers.length);
+  headerRange.setValues([headers]);
+  headerRange.setFontWeight('bold');
+  sheet.setFrozenRows(1);
+
+  // Set data validation and formatting
+  sheet.getRange('A:A').setNumberFormat('yyyy-mm-dd');
+  sheet.getRange('B:B').setNumberFormat('hh:mm');
+  sheet.getRange('J:J').setNumberFormat('yyyy-mm-dd hh:mm:ss');
   
   return sheet;
 }
@@ -3272,12 +3268,16 @@ function calculateAndStoreWeekAvailability(weekStart, forceRecalculate) {
     
     var data = sheet.getDataRange().getValues();
     var rowsToDelete = [];
+    var lastRow = sheet.getLastRow();
     for (var i = data.length - 1; i >= 1; i--) {
       var rowDate = data[i][0];
       if (rowDate instanceof Date) {
         var rowDateStr = Utilities.formatDate(rowDate, tz, 'yyyy-MM-dd');
         if (rowDateStr >= weekStartStr && rowDateStr < weekEndStr) {
-          rowsToDelete.push(i + 1); // +1 because sheet rows are 1-indexed
+          var rowNum = i + 1; // +1 because sheet rows are 1-indexed
+          if (rowNum <= lastRow && rowNum > 1) {
+            rowsToDelete.push(rowNum);
+          }
         }
       }
     }
