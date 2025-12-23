@@ -22,6 +22,7 @@ Curated list of major functions with purpose and location. Keep this file update
 | `syncTeacherSchedulesFromCalendars()` | Code.js | Pulls teacher calendar events (from Code sheet) into TeacherSchedules for current + next month. |
 | `prunePastAvailability()` | Code.js | Deletes past rows from BookingAvailability where Date+Time is earlier than now. |
 | `hourlyAvailabilityMaintenance()` | Code.js | Runs prunePastAvailability then refreshBookingAvailabilityCache; intended for hourly trigger. |
+| `calculateAndStoreWeekAvailability(weekStart, forceRecalculate)` | Code.js | Builds BookingAvailability rows (with Reason: no-teachers/fully-booked when slots=0). |
 
 Notes:
 - Month handling: backend uses separate Month (name) + Year columns; canonical key is `YYYY-MM`.

@@ -3182,6 +3182,7 @@ function getBookingAvailabilitySheet() {
       'Teachers',       // Comma-separated list of teacher names
       'HasKidsLesson',  // Boolean: true if any lesson is kids lesson
       'HasAdultLesson', // Boolean: true if any lesson is adult lesson
+      'Reason',         // no-teachers | fully-booked | '' when available
       'LastUpdated'     // Timestamp of last update
     ];
     
@@ -3196,7 +3197,7 @@ function getBookingAvailabilitySheet() {
     var timeRange = sheet.getRange('B:B');
     timeRange.setNumberFormat('hh:mm');
     
-    var lastUpdatedRange = sheet.getRange('I:I');
+  var lastUpdatedRange = sheet.getRange('J:J');
     lastUpdatedRange.setNumberFormat('yyyy-mm-dd hh:mm:ss');
   }
   
@@ -3426,6 +3427,7 @@ function calculateAndStoreWeekAvailability(weekStart, forceRecalculate) {
         var lessonCount = lessons.length;
         var hasKidsLesson = false;
         var hasAdultLesson = false;
+        var reason = '';
         
         lessons.forEach(function(lesson) {
           if (lesson.isKidsLesson) {
@@ -3436,6 +3438,13 @@ function calculateAndStoreWeekAvailability(weekStart, forceRecalculate) {
         });
         
         var availableSlots = Math.max(0, teacherCount - lessonCount);
+        if (availableSlots === 0) {
+          if (teacherCount === 0) {
+            reason = 'no-teachers';
+          } else if (lessonCount >= teacherCount) {
+            reason = 'fully-booked';
+          }
+        }
         
         // Create time value for the row
         var timeValue = new Date(dayDate);
@@ -3451,6 +3460,7 @@ function calculateAndStoreWeekAvailability(weekStart, forceRecalculate) {
           availableTeachers.join(','),                 // Teachers
           hasKidsLesson,                              // HasKidsLesson
           hasAdultLesson,                             // HasAdultLesson
+          reason,                                     // Reason
           now                                         // LastUpdated
         ]);
       }
