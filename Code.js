@@ -3623,6 +3623,33 @@ function getAvailableSlotsForWeekFromCache(weekStartISO, studentId, teacherFilte
         reason: reason
       };
     }
+
+    // Fill missing slots with explicit "no availability" entries so frontend never sees gaps
+    var fillerTimeSlots = [];
+    for (var h = 10; h <= 20; h++) {
+      fillerTimeSlots.push((h < 10 ? '0' : '') + h + ':00');
+    }
+    for (var dayOffset = 0; dayOffset < 7; dayOffset++) {
+      var d = new Date(weekStart);
+      d.setDate(weekStart.getDate() + dayOffset);
+      var dStr = Utilities.formatDate(d, tz, 'yyyy-MM-dd');
+      if (dStr < weekStartStr || dStr >= weekEndStr) continue;
+      if (!availableSlots[dStr]) {
+        availableSlots[dStr] = {};
+      }
+      fillerTimeSlots.forEach(function(tStr) {
+        if (!availableSlots[dStr][tStr]) {
+          availableSlots[dStr][tStr] = {
+            available: false,
+            teacherCount: 0,
+            lessonCount: 0,
+            availableSlots: 0,
+            teachers: [],
+            reason: 'No availability data'
+          };
+        }
+      });
+    }
     
     return JSON.stringify(availableSlots);
     
@@ -4402,6 +4429,80 @@ function getWeekAvailability(weekStartISO, studentId) {
     
   } catch (error) {
     Logger.log('Error in getWeekAvailability: ' + error.toString());
+    Logger.log('Stack trace: ' + error.stack);
+    return JSON.stringify({ error: error.toString() });
+  }
+}
+
+/**
+ * Get availability for a date range (current + next month) with child/adult filtering.
+ * Merges week availability and removes past slots.
+ * @param {string} startISO - range start (inclusive)
+ * @param {string} endISO   - range end (inclusive)
+ * @param {string} studentId - optional, used for child/adult filtering
+ * @returns {string} JSON map { 'YYYY-MM-DD': { 'HH:mm': availabilityObj } }
+ */
+function getAvailabilityForRange(startISO, endISO, studentId) {
+  try {
+    var start = new Date(startISO);
+    var end = new Date(endISO);
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+      return JSON.stringify({ error: 'Invalid start or end date' });
+    }
+    if (end < start) {
+      return JSON.stringify({ error: 'End date before start date' });
+    }
+
+    var tz = Session.getScriptTimeZone();
+    var now = new Date();
+    var result = {};
+
+    // Align to Monday of the start week
+    var weekStart = new Date(start);
+    var dayOfWeek = weekStart.getDay();
+    var daysToMonday = dayOfWeek === 0 ? -6 : -(dayOfWeek - 1);
+    weekStart.setDate(weekStart.getDate() + daysToMonday);
+    weekStart.setHours(0, 0, 0, 0);
+
+    while (weekStart <= end) {
+      var weekAvailabilityStr = getWeekAvailability(weekStart.toISOString(), studentId);
+      var weekAvailability = {};
+      try {
+        weekAvailability = JSON.parse(weekAvailabilityStr) || {};
+      } catch (e) {
+        weekAvailability = {};
+      }
+
+      // Merge week data into result
+      for (var dateStr in weekAvailability) {
+        if (!dateStr) continue;
+        var dateObj = new Date(dateStr + 'T00:00:00');
+        if (isNaN(dateObj.getTime())) continue;
+        if (dateObj < start || dateObj > end) continue;
+
+        if (!result[dateStr]) {
+          result[dateStr] = {};
+        }
+
+        var slots = weekAvailability[dateStr] || {};
+        for (var timeStr in slots) {
+          var slot = slots[timeStr];
+          // Skip past slots
+          var slotDateTime = new Date(dateStr + 'T' + timeStr + ':00');
+          if (!isNaN(slotDateTime.getTime()) && slotDateTime < now) {
+            continue;
+          }
+          result[dateStr][timeStr] = slot;
+        }
+      }
+
+      // Next week
+      weekStart.setDate(weekStart.getDate() + 7);
+    }
+
+    return JSON.stringify(result);
+  } catch (error) {
+    Logger.log('Error in getAvailabilityForRange: ' + error.toString());
     Logger.log('Stack trace: ' + error.stack);
     return JSON.stringify({ error: error.toString() });
   }
