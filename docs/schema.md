@@ -39,13 +39,16 @@ Key: `Student ID` + `Month` (YYYY-MM).
 ## MonthlySchedule (events) (sheet: `MonthlySchedule`)
 - EventID
 - Title
-- Start
-- End
+- Date (yyyy-MM-dd format)
+- StartTime (HH:mm format)
+- EndTime (HH:mm format)
 - Status
 - StudentName
 - IsKidsLesson
 - TeacherName
 Key: `EventID`. Student linkage currently by `StudentName` (string match).
+
+**Note**: Schema updated from Start/End (Date/Time) to Date/StartTime/EndTime for clearer date/time separation.
 
 ## Notes (sheet: `Notes`)
 - Student ID

@@ -2535,11 +2535,23 @@
       let day = lesson.day || '';
       let time = lesson.time || '';
       
-      if (day && day !== '--') {
+      // Handle Date objects - extract just the day number
+      if (day instanceof Date) {
+        day = day.getDate().toString() + '日';
+        // Get day of week in Japanese
+        const dayNames = ['日', '月', '火', '水', '木', '金', '土'];
+        const dayOfWeek = dayNames[day.getDay()];
+        day = day + ' （' + dayOfWeek + '）';
+      } else if (day && day !== '--' && typeof day === 'string') {
         day = parseInt(day).toString() + '日';
       }
       
-      if (time && time !== '--') {
+      // Handle Date objects - extract just HH:MM
+      if (time instanceof Date) {
+        const hours = String(time.getHours()).padStart(2, '0');
+        const minutes = String(time.getMinutes()).padStart(2, '0');
+        time = hours + '：' + minutes;
+      } else if (time && time !== '--' && typeof time === 'string') {
         time = time.replace(':', '：');
       }
 
@@ -3018,11 +3030,8 @@
         return;
       }
 
-      // Format the selected time for display (UK format, correct weekday)
-      const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-      const dayName = dayNames[date.getDay()];
-      const dateStr = date.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
-      const timeStr = `${dayName}, ${dateStr} at ${time}`;
+      // Format the selected time for display (just HH:MM)
+      const timeStr = time;
       
       // Update modal content
       timeSlotEls.selectedTimeDisplay.textContent = timeStr;
@@ -4591,7 +4600,21 @@
       const preloadPromise = preloadStudentBookingAvailabilityRange(studentId);
 
       function generateAvailabilityCalendar(weekStart, availabilityData, existingLessons) {
-        bookLessonElsNew.calendarGrid.innerHTML = '';
+        // Show loading spinner while generating calendar (if not already showing)
+        if (!bookLessonElsNew.calendarGrid.querySelector('.animate-spin')) {
+          bookLessonElsNew.calendarGrid.innerHTML = `
+            <div class="col-span-8 flex flex-col items-center justify-center min-h-[400px] w-full bg-gray-50 rounded-lg p-8">
+              <div class="relative">
+                <div class="animate-spin rounded-full h-12 w-12 border-4 border-gray-200"></div>
+                <div class="animate-spin rounded-full h-12 w-12 border-4 border-green-600 border-t-transparent absolute top-0 left-0"></div>
+              </div>
+              <div class="mt-4 text-center">
+                <p class="text-lg font-medium text-gray-900">Loading Calendar</p>
+                <p class="text-sm text-gray-500 mt-1">Rendering availability...</p>
+              </div>
+            </div>
+          `;
+        }
 
         const timeSlots = [];
         for (let hour = 10; hour <= 20; hour++) {
@@ -4601,8 +4624,12 @@
         const cellHeight = 60;
         const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
         const isChildStudent = window.currentBookingStudent && window.currentBookingStudent.isChild;
+        
+        // Use requestAnimationFrame to ensure spinner renders before clearing
+        requestAnimationFrame(() => {
+          bookLessonElsNew.calendarGrid.innerHTML = '';
 
-        timeSlots.forEach((slotTime) => {
+          timeSlots.forEach((slotTime) => {
           // Time column
           const timeCell = document.createElement('div');
           timeCell.className = 'px-2 text-sm text-gray-600 border-r border-gray-200 bg-gray-50 flex items-center relative';
@@ -4659,16 +4686,13 @@
             
             console.log(`Checking ${dateStr} ${slotTime}:`, availability, 'hasAdultLesson:', hasAdultLesson, 'isTooSoon:', isTooSoon);
             
-            if (!availability) {
-              // No data - show as unknown/loading
-              slotCell.className += ' bg-yellow-50 text-yellow-700 cursor-help';
-              slotCell.textContent = '?';
-              slotCell.title = 'Availability data not available - teacher schedules may need to be cached';
-            } else if (!availability.available || hasAdultLesson || isTooSoon) {
-              // Not available - gray out (either no availability OR has adult lessons for child student OR too soon)
+            if (!availability || !availability.available || hasAdultLesson || isTooSoon) {
+              // No data or not available - show as unavailable (no question marks)
               slotCell.className += ' bg-gray-100 text-gray-400 cursor-not-allowed';
               slotCell.textContent = '';
-              if (isTooSoon) {
+              if (!availability) {
+                slotCell.title = 'Availability data not available - teacher schedules may need to be cached';
+              } else if (isTooSoon) {
                 slotCell.title = 'Lessons must be booked at least 1 hour in advance';
               } else if (hasAdultLesson) {
                 slotCell.title = 'Slot contains adult lessons - kids cannot be booked here';
@@ -4707,6 +4731,7 @@
             bookLessonElsNew.calendarGrid.appendChild(slotCell);
           }
         });
+        }); // End requestAnimationFrame
       }
 
       function generateCalendarGridNew(weekStart) {
@@ -5062,10 +5087,8 @@
         return;
       }
 
-      const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-      const dayName = dayNames[date.getDay()];
-      const dateStr = date.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
-      const timeStr = `${dayName}, ${dateStr} at ${time}`;
+      // Format the selected time for display (just HH:MM)
+      const timeStr = time;
       
       timeSlotElsNew.selectedTimeDisplay.textContent = timeStr;
       timeSlotElsNew.type.value = 'Cafe';
@@ -7097,12 +7120,68 @@
         let day = l.day || '';
         let time = l.time || '';
         
+        // Handle Date objects - extract just the day number and day of week
+        if (day instanceof Date) {
+          const dayNames = ['日', '月', '火', '水', '木', '金', '土'];
+          const dayNum = day.getDate();
+          const dayOfWeekIndex = day.getDay();
+          day = dayNum.toString() + '日 （' + dayNames[dayOfWeekIndex] + '）';
+        } else if (day && typeof day === 'string') {
+          // Handle ISO date strings (e.g., "2026-01-29T00:00:00.000Z" or "2026-01-29")
+          if (day.match(/^\d{4}-\d{2}-\d{2}/)) {
+            try {
+              const dateObj = new Date(day);
+              if (!isNaN(dateObj.getTime())) {
+                const dayNames = ['日', '月', '火', '水', '木', '金', '土'];
+                const dayNum = dateObj.getDate();
+                const dayOfWeekIndex = dateObj.getDay();
+                day = dayNum.toString() + '日 （' + dayNames[dayOfWeekIndex] + '）';
+              }
+            } catch (e) {
+              // If parsing fails, continue with string processing
+            }
+          }
+          // Continue with existing logic for other string days
+          if (day !== '--' && !day.includes('日')) {
+            // Only process if not already formatted
+          }
+        } else {
+          day = '';
+        }
+        
+        // Handle Date objects - extract just HH:MM
+        if (time instanceof Date) {
+          const hours = String(time.getHours()).padStart(2, '0');
+          const minutes = String(time.getMinutes()).padStart(2, '0');
+          time = hours + '：' + minutes;
+        } else if (time && typeof time === 'string') {
+          // Handle ISO time strings (e.g., "2026-01-29T11:00:00.000Z")
+          if (time.match(/T\d{2}:\d{2}/)) {
+            try {
+              const dateObj = new Date(time);
+              if (!isNaN(dateObj.getTime())) {
+                const hours = String(dateObj.getHours()).padStart(2, '0');
+                const minutes = String(dateObj.getMinutes()).padStart(2, '0');
+                time = hours + '：' + minutes;
+              }
+            } catch (e) {
+              // If parsing fails, continue with string processing
+            }
+          }
+          // Continue with existing logic for other string times
+          if (time !== '--' && !time.includes('：')) {
+            // Only process if not already formatted
+          }
+        } else {
+          time = '';
+        }
+        
         // Japanese day of week abbreviations
         const dayNames = ['日', '月', '火', '水', '木', '金', '土']; // Sun, Mon, Tue, Wed, Thu, Fri, Sat
         
-        // Calculate day of week if we have day and month
+        // Calculate day of week if we have day and month (only if day is a string, not already processed Date)
         let dayOfWeek = '';
-        if (day && day !== '--' && month) {
+        if (day && day !== '--' && typeof day === 'string' && month && !(l.day instanceof Date)) {
           try {
             // Parse month - could be "Nov 2025", "November 2025", "Nov", or other formats
             const monthParts = month.trim().split(/\s+/);
@@ -7177,8 +7256,8 @@
           console.log('🔍 Skipping day of week - day:', day, 'month:', month);
         }
         
-        // Convert day to Japanese format (e.g., "02" -> "8日")
-        if (day && day !== '--') {
+        // Convert day to Japanese format (e.g., "02" -> "8日") - only if not already processed as Date
+        if (day && day !== '--' && typeof day === 'string' && !(l.day instanceof Date)) {
           // Remove leading zero and add 日
           day = parseInt(day).toString() + '日';
           // Add day of week if available
@@ -7187,8 +7266,8 @@
           }
         }
         
-        // Convert time to Japanese format (e.g., "15:00" -> "15：00")
-        if (time && time !== '--') {
+        // Convert time to Japanese format (e.g., "15:00" -> "15：00") - only if not already processed as Date
+        if (time && time !== '--' && typeof time === 'string' && !(l.time instanceof Date)) {
           // Replace colon with Japanese full-width colon
           time = time.replace(':', '：');
         }

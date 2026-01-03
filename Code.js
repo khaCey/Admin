@@ -1177,9 +1177,16 @@ function getStudentEventsForMonth(studentName, monthText) {
   
   var studentNameIdx = headers.indexOf('StudentName');
   var statusIdx = headers.indexOf('Status');
-  var startIdx = headers.indexOf('Start');
-  var endIdx = headers.indexOf('End');
+  var dateIdx = headers.indexOf('Date');
+  var startTimeIdx = headers.indexOf('StartTime');
+  var endTimeIdx = headers.indexOf('EndTime');
   var eventIdIdx = headers.indexOf('EventID');
+  
+  // Backward compatibility: check for old schema
+  var oldStartIdx = headers.indexOf('Start');
+  var oldEndIdx = headers.indexOf('End');
+  var useOldSchema = (dateIdx === -1 || startTimeIdx === -1) && (oldStartIdx !== -1);
+  
   // Fallback if header row was misaligned (e.g., month written into A1 previously)
   if (eventIdIdx === -1) {
     Logger.log('EventID column not found in headers, falling back to column 0');
@@ -1187,8 +1194,8 @@ function getStudentEventsForMonth(studentName, monthText) {
   }
   var titleIdx = headers.indexOf('Title');
   
-  Logger.log('Column indices - StudentName: ' + studentNameIdx + ', Status: ' + statusIdx + ', Start: ' + startIdx + ', EventID: ' + eventIdIdx);
-  Logger.log('Indices - EventID: ' + eventIdIdx + ', Title: ' + titleIdx + ', Start: ' + startIdx + ', Status: ' + statusIdx);
+  Logger.log('Column indices - StudentName: ' + studentNameIdx + ', Status: ' + statusIdx + ', Schema: ' + (useOldSchema ? 'OLD' : 'NEW'));
+  Logger.log('Indices - EventID: ' + eventIdIdx + ', Title: ' + titleIdx);
   
   var studentEvents = [];
   
@@ -1215,47 +1222,123 @@ function getStudentEventsForMonth(studentName, monthText) {
   for (var i = 1; i < data.length; i++) {
     var row = data[i];
     var rowStudentName = String(row[studentNameIdx] || '').trim();
-    var startTime = row[startIdx];
     
     // Check if this row is for the target student
     if (rowStudentName === studentName) {
-      // Check if the event is in the target month
-      if (startTime instanceof Date) {
-        var eventYear = startTime.getFullYear();
-        var eventMonth = startTime.getMonth();
+      var eventDate = null;
+      var day = '';
+      var time = '';
+      
+      if (useOldSchema) {
+        // Old schema: parse from Start column
+        var startTime = row[oldStartIdx];
+        if (startTime instanceof Date) {
+          eventDate = startTime;
+        } else if (startTime) {
+          try {
+            eventDate = new Date(startTime);
+            if (isNaN(eventDate.getTime())) {
+              var parts = String(startTime).split('/');
+              if (parts.length === 3) {
+                eventDate = new Date(parts[2], parts[0] - 1, parts[1]);
+              }
+            }
+          } catch (e) {
+            continue;
+          }
+        }
         
-        Logger.log('Row ' + i + ' - Event date: ' + startTime + ' (Year: ' + eventYear + ', Month: ' + eventMonth + ')');
+        if (!eventDate || isNaN(eventDate.getTime())) continue;
+        
+        var eventYear = eventDate.getFullYear();
+        var eventMonth = eventDate.getMonth();
         
         if (eventYear === targetYear && eventMonth === targetMonth) {
-          Logger.log('Found matching student and month in row ' + i);
-          var status = String(row[statusIdx] || 'scheduled');
-          
-          // Extract day and time
-          var day = Utilities.formatDate(startTime, Session.getScriptTimeZone(), 'dd');
-          var time = Utilities.formatDate(startTime, Session.getScriptTimeZone(), 'HH:mm');
-          
-          // Get eventID if available
-          var eventID = eventIdIdx >= 0 ? String(row[eventIdIdx] || '').trim() : '';
-          
-          Logger.log('Matched row ' + i + ': eventID=' + eventID + ', day=' + day + ', time=' + time + ', status=' + status + ', title=' + row[titleIdx]);
-          
-          var eventObj = {
-            day: day,
-            time: time,
-            status: status
-          };
-          
-          // Add eventID if available (support both eventID and eventId for compatibility)
-          if (eventID) {
-            eventObj.eventID = eventID;
-            eventObj.eventId = eventID;
-          } else {
-            Logger.log('⚠️ No EventID for row ' + i + ' (' + day + ' ' + time + ') despite match');
+          day = Utilities.formatDate(eventDate, Session.getScriptTimeZone(), 'dd');
+          time = Utilities.formatDate(eventDate, Session.getScriptTimeZone(), 'HH:mm');
+        } else {
+          continue;
+        }
+      } else {
+        // New schema: use Date and StartTime columns
+        var rowDate = row[dateIdx];
+        var rowStartTime = row[startTimeIdx];
+        
+        // Handle Date column
+        if (rowDate instanceof Date) {
+          eventDate = rowDate;
+        } else if (rowDate) {
+          // Parse date string (yyyy-MM-dd format)
+          try {
+            eventDate = new Date(rowDate + 'T00:00:00');
+            if (isNaN(eventDate.getTime())) {
+              continue;
+            }
+          } catch (e) {
+            continue;
           }
-          
-          studentEvents.push(eventObj);
+        } else {
+          continue;
+        }
+        
+        var eventYear = eventDate.getFullYear();
+        var eventMonth = eventDate.getMonth();
+        
+        if (eventYear === targetYear && eventMonth === targetMonth) {
+          day = Utilities.formatDate(eventDate, Session.getScriptTimeZone(), 'dd');
+          // Handle StartTime - ensure it's always HH:mm format, not a Date object
+          if (rowStartTime instanceof Date) {
+            time = Utilities.formatDate(rowStartTime, Session.getScriptTimeZone(), 'HH:mm');
+          } else {
+            time = String(rowStartTime || '').trim();
+            // If it's an ISO string, extract just HH:mm
+            if (time.match(/T\d{2}:\d{2}/)) {
+              try {
+                var timeDate = new Date(time);
+                if (!isNaN(timeDate.getTime())) {
+                  time = Utilities.formatDate(timeDate, Session.getScriptTimeZone(), 'HH:mm');
+                }
+              } catch (e) {
+                // If parsing fails, try to extract HH:mm from string
+                var match = time.match(/(\d{2}):(\d{2})/);
+                if (match) {
+                  time = match[1] + ':' + match[2];
+                }
+              }
+            }
+            // Ensure it's only HH:mm (remove seconds if present)
+            if (time.length > 5) {
+              time = time.substring(0, 5);
+            }
+          }
+        } else {
+          continue;
         }
       }
+      
+      Logger.log('Found matching student and month in row ' + i);
+      var status = String(row[statusIdx] || 'scheduled');
+      
+      // Get eventID if available
+      var eventID = eventIdIdx >= 0 ? String(row[eventIdIdx] || '').trim() : '';
+      
+      Logger.log('Matched row ' + i + ': eventID=' + eventID + ', day=' + day + ', time=' + time + ', status=' + status + ', title=' + row[titleIdx]);
+      
+      var eventObj = {
+        day: day,
+        time: time,
+        status: status
+      };
+      
+      // Add eventID if available (support both eventID and eventId for compatibility)
+      if (eventID) {
+        eventObj.eventID = eventID;
+        eventObj.eventId = eventID;
+      } else {
+        Logger.log('⚠️ No EventID for row ' + i + ' (' + day + ' ' + time + ') despite match');
+      }
+      
+      studentEvents.push(eventObj);
     }
   }
   
@@ -1802,6 +1885,8 @@ function toYYYYMM(dateOrString) {
  */
 function processEventsForMonth(events) {
   var validRows = [];
+  var tz = Session.getScriptTimeZone();
+  
   events.forEach(function(event) {
     var title = event.getTitle();
     // Ignore teacher breaks (case-insensitive 'break' or 'Teacher' in title)
@@ -1861,14 +1946,22 @@ function processEventsForMonth(events) {
       Logger.log('Could not get calendar ID for event: ' + e.toString());
     }
 
+    // Format Date/StartTime/EndTime
+    var startTime = event.getStartTime();
+    var endTime = event.getEndTime();
+    var dateStr = Utilities.formatDate(startTime, tz, 'yyyy-MM-dd');
+    var startTimeStr = Utilities.formatDate(startTime, tz, 'HH:mm');
+    var endTimeStr = Utilities.formatDate(endTime, tz, 'HH:mm');
+
     for (var i = 0; i < names.length; i++) {
       var parts = names[i].split(/\s+/);
       if (parts.length > 1) {
         validRows.push([
           event.getId(),
           title,
-          event.getStartTime(),
-          event.getEndTime(),
+          dateStr,        // Date
+          startTimeStr,   // StartTime
+          endTimeStr,     // EndTime
           status,
           names[i],
           isKidsLesson ? '子' : '',  // IsKidsLesson column
@@ -1880,12 +1973,13 @@ function processEventsForMonth(events) {
         validRows.push([
           event.getId(),
           title,
-          event.getStartTime(),
-          event.getEndTime(),
+          dateStr,        // Date
+          startTimeStr,   // StartTime
+          endTimeStr,     // EndTime
           status,
           fullName.trim(),
           isKidsLesson ? '子' : '',  // IsKidsLesson column
-          teacherName  // TeacherName column (ensure 8 columns)
+          teacherName  // TeacherName column
         ]);
       }
     }
@@ -1917,8 +2011,8 @@ function cacheEventsToSheet(monthStr, sheetName) {
     cacheSheet.clear();
   }
   
-  // Write headers - ADD NEW COLUMN
-  var headers = ['EventID', 'Title', 'Start', 'End', 'Status', 'StudentName', 'IsKidsLesson', 'TeacherName'];
+  // Write headers - UPDATED SCHEMA
+  var headers = ['EventID', 'Title', 'Date', 'StartTime', 'EndTime', 'Status', 'StudentName', 'IsKidsLesson', 'TeacherName'];
   cacheSheet.getRange(1, 1, 1, headers.length).setValues([headers]);
 
   // Fetch from both lesson calendars (main + Owner's Course)
@@ -1990,16 +2084,91 @@ function cacheMonthlyEvents(monthStr) {
 }
 
 // ===== MonthlySchedule write-through helpers =====
+/**
+ * Migrate MonthlySchedule from Start/End to Date/StartTime/EndTime
+ * Run this once to migrate existing data
+ */
+function migrateMonthlyScheduleSchema() {
+  var ss = SpreadsheetApp.openById(SS_ID);
+  var sheet = ss.getSheetByName('MonthlySchedule');
+  if (!sheet) {
+    Logger.log('MonthlySchedule sheet not found');
+    return { success: false, error: 'Sheet not found' };
+  }
+  
+  var data = sheet.getDataRange().getValues();
+  if (data.length < 2) {
+    Logger.log('No data to migrate');
+    return { success: true, migrated: 0 };
+  }
+  
+  var headers = data[0];
+  var oldStartIdx = headers.indexOf('Start');
+  var oldEndIdx = headers.indexOf('End');
+  
+  // Check if already migrated
+  if (headers.indexOf('Date') !== -1 && headers.indexOf('StartTime') !== -1) {
+    Logger.log('Schema already migrated');
+    return { success: true, migrated: 0, alreadyMigrated: true };
+  }
+  
+  if (oldStartIdx === -1 || oldEndIdx === -1) {
+    Logger.log('Old schema columns not found');
+    return { success: false, error: 'Old schema columns not found' };
+  }
+  
+  var tz = Session.getScriptTimeZone();
+  var migrated = 0;
+  
+  // Add new columns after End column
+  sheet.insertColumnsAfter(oldEndIdx + 1, 3); // Insert Date, StartTime, EndTime
+  sheet.getRange(1, oldEndIdx + 2, 1, 3).setValues([['Date', 'StartTime', 'EndTime']]);
+  
+  // Migrate data
+  for (var i = 1; i < data.length; i++) {
+    var row = data[i];
+    var startValue = row[oldStartIdx];
+    var endValue = row[oldEndIdx];
+    
+    if (startValue instanceof Date) {
+      var dateStr = Utilities.formatDate(startValue, tz, 'yyyy-MM-dd');
+      var startTimeStr = Utilities.formatDate(startValue, tz, 'HH:mm');
+      var endTimeStr = Utilities.formatDate(endValue, tz, 'HH:mm');
+      
+      sheet.getRange(i + 1, oldEndIdx + 2).setValue(dateStr);
+      sheet.getRange(i + 1, oldEndIdx + 3).setValue(startTimeStr);
+      sheet.getRange(i + 1, oldEndIdx + 4).setValue(endTimeStr);
+      migrated++;
+    }
+  }
+  
+  // Update headers row - replace old Start/End with new Date/StartTime/EndTime
+  var newHeaders = ['EventID', 'Title', 'Date', 'StartTime', 'EndTime', 'Status', 'StudentName', 'IsKidsLesson', 'TeacherName'];
+  sheet.getRange(1, 1, 1, newHeaders.length).setValues([newHeaders]);
+  
+  // Delete old Start/End columns
+  sheet.deleteColumns(oldStartIdx + 1, 2);
+  
+  Logger.log('Migrated ' + migrated + ' rows');
+  return { success: true, migrated: migrated };
+}
+
 function getMonthlyScheduleSheet_() {
   var ss = SpreadsheetApp.openById(SS_ID);
   var sheet = ss.getSheetByName('MonthlySchedule');
   if (!sheet) {
     sheet = ss.insertSheet('MonthlySchedule');
   }
-  // Ensure headers
-  var headers = ['EventID', 'Title', 'Start', 'End', 'Status', 'StudentName', 'IsKidsLesson', 'TeacherName'];
+  // Ensure headers - UPDATED SCHEMA
+  var headers = ['EventID', 'Title', 'Date', 'StartTime', 'EndTime', 'Status', 'StudentName', 'IsKidsLesson', 'TeacherName'];
   if (sheet.getLastRow() === 0) {
     sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  } else {
+    // Check if migration needed
+    var existingHeaders = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    if (existingHeaders.indexOf('Date') === -1 && existingHeaders.indexOf('Start') !== -1) {
+      Logger.log('Old schema detected, consider running migrateMonthlyScheduleSchema()');
+    }
   }
   return sheet;
 }
@@ -2011,12 +2180,19 @@ function upsertMonthlyScheduleRow_(payload) {
   var headers = data[0] || [];
   var eventIdx = headers.indexOf('EventID');
   var titleIdx = headers.indexOf('Title');
-  var startIdx = headers.indexOf('Start');
-  var endIdx = headers.indexOf('End');
+  var dateIdx = headers.indexOf('Date');
+  var startTimeIdx = headers.indexOf('StartTime');
+  var endTimeIdx = headers.indexOf('EndTime');
   var statusIdx = headers.indexOf('Status');
   var nameIdx = headers.indexOf('StudentName');
   var kidsIdx = headers.indexOf('IsKidsLesson');
   var teacherIdx = headers.indexOf('TeacherName');
+  
+  // Backward compatibility: check for old schema
+  var oldStartIdx = headers.indexOf('Start');
+  var oldEndIdx = headers.indexOf('End');
+  var useOldSchema = (dateIdx === -1 || startTimeIdx === -1) && (oldStartIdx !== -1);
+  
   var foundRow = -1;
   for (var i = 1; i < data.length; i++) {
     if (String(data[i][eventIdx] || '') === String(payload.eventId)) {
@@ -2024,16 +2200,44 @@ function upsertMonthlyScheduleRow_(payload) {
       break;
     }
   }
-  var rowValues = [
-    payload.eventId,
-    payload.title || '',
-    payload.startTime || '',
-    payload.endTime || '',
-    payload.status || 'scheduled',
-    payload.studentName || '',
-    payload.isKidsLesson ? '子' : '',
-    payload.teacherName || ''
-  ];
+  
+  // Convert Date objects to separate Date/StartTime/EndTime
+  var tz = Session.getScriptTimeZone();
+  var startDate = payload.startTime instanceof Date ? payload.startTime : new Date(payload.startTime);
+  var endDate = payload.endTime instanceof Date ? payload.endTime : new Date(payload.endTime);
+  
+  var dateStr = Utilities.formatDate(startDate, tz, 'yyyy-MM-dd');
+  var startTimeStr = Utilities.formatDate(startDate, tz, 'HH:mm');
+  var endTimeStr = Utilities.formatDate(endDate, tz, 'HH:mm');
+  
+  var rowValues;
+  if (useOldSchema) {
+    // Old schema - use Start/End
+    rowValues = [
+      payload.eventId,
+      payload.title || '',
+      payload.startTime || '',
+      payload.endTime || '',
+      payload.status || 'scheduled',
+      payload.studentName || '',
+      payload.isKidsLesson ? '子' : '',
+      payload.teacherName || ''
+    ];
+  } else {
+    // New schema - use Date/StartTime/EndTime
+    rowValues = [
+      payload.eventId,
+      payload.title || '',
+      dateStr,              // Date only
+      startTimeStr,         // StartTime only
+      endTimeStr,           // EndTime only
+      payload.status || 'scheduled',
+      payload.studentName || '',
+      payload.isKidsLesson ? '子' : '',
+      payload.teacherName || ''
+    ];
+  }
+  
   if (foundRow > 0) {
     sheet.getRange(foundRow, 1, 1, rowValues.length).setValues([rowValues]);
   } else {
@@ -2049,14 +2253,38 @@ function updateMonthlyScheduleStatus_(eventId, status, title, startTime, endTime
   var eventIdx = headers.indexOf('EventID');
   var statusIdx = headers.indexOf('Status');
   var titleIdx = headers.indexOf('Title');
-  var startIdx = headers.indexOf('Start');
-  var endIdx = headers.indexOf('End');
+  var dateIdx = headers.indexOf('Date');
+  var startTimeIdx = headers.indexOf('StartTime');
+  var endTimeIdx = headers.indexOf('EndTime');
+  
+  // Backward compatibility
+  var oldStartIdx = headers.indexOf('Start');
+  var oldEndIdx = headers.indexOf('End');
+  var useOldSchema = (dateIdx === -1 || startTimeIdx === -1) && (oldStartIdx !== -1);
+  
   for (var i = 1; i < data.length; i++) {
     if (String(data[i][eventIdx] || '') === String(eventId)) {
       if (statusIdx >= 0) data[i][statusIdx] = status;
       if (titleIdx >= 0 && title) data[i][titleIdx] = title;
-      if (startIdx >= 0 && startTime) data[i][startIdx] = startTime;
-      if (endIdx >= 0 && endTime) data[i][endIdx] = endTime;
+      
+      // Update Date/StartTime/EndTime if provided
+      if (startTime && endTime) {
+        if (useOldSchema) {
+          // Old schema
+          if (oldStartIdx >= 0) data[i][oldStartIdx] = startTime;
+          if (oldEndIdx >= 0) data[i][oldEndIdx] = endTime;
+        } else {
+          // New schema
+          var tz = Session.getScriptTimeZone();
+          var startDate = startTime instanceof Date ? startTime : new Date(startTime);
+          var endDate = endTime instanceof Date ? endTime : new Date(endTime);
+          
+          if (dateIdx >= 0) data[i][dateIdx] = Utilities.formatDate(startDate, tz, 'yyyy-MM-dd');
+          if (startTimeIdx >= 0) data[i][startTimeIdx] = Utilities.formatDate(startDate, tz, 'HH:mm');
+          if (endTimeIdx >= 0) data[i][endTimeIdx] = Utilities.formatDate(endDate, tz, 'HH:mm');
+        }
+      }
+      
       sheet.getRange(i + 1, 1, 1, data[i].length).setValues([data[i]]);
       return;
     }
@@ -2152,17 +2380,36 @@ function tallyLessonsForMonthAndStore(monthStr) {
   var data = cacheSheet.getDataRange().getValues();
   if (data.length < 2) return; // No events (just headers)
   var headers = data[0];
-  var startIdx = headers.indexOf('Start');
+  var dateIdx = headers.indexOf('Date');
+  var oldStartIdx = headers.indexOf('Start');
+  var useOldSchema = (dateIdx === -1) && (oldStartIdx !== -1);
   var studentNameIdx = headers.indexOf('StudentName');
   var lessons = 0;
   var studentSet = new Set();
   for (var i = 1; i < data.length; i++) {
-    var start = data[i][startIdx];
-    var eventMonth = toYYYYMM(start);
+    var row = data[i];
+    var eventMonth = '';
+    
+    if (useOldSchema) {
+      var start = row[oldStartIdx];
+      eventMonth = toYYYYMM(start);
+    } else {
+      var rowDate = row[dateIdx];
+      if (rowDate instanceof Date) {
+        eventMonth = Utilities.formatDate(rowDate, Session.getScriptTimeZone(), 'yyyy-MM');
+      } else if (rowDate) {
+        // Parse yyyy-MM-dd format
+        var dateStr = String(rowDate).trim();
+        if (dateStr.length >= 7) {
+          eventMonth = dateStr.substring(0, 7); // Get yyyy-MM part
+        }
+      }
+    }
+    
     if (eventMonth === monthStr) {
       lessons++;
       // Add all students in this event (split by ' and ')
-      var studentCell = data[i][studentNameIdx];
+      var studentCell = row[studentNameIdx];
       if (studentCell) {
         studentCell.split(/\s+and\s+/i).forEach(function(name) {
           studentSet.add(name.trim());
@@ -2598,9 +2845,15 @@ function getStudentsWithLessonsToday() {
   var headers = data[0];
   var studentNameIdx = headers.indexOf('StudentName');
   var eventTitleIdx = headers.indexOf('Title');
-  var eventStartIdx = headers.indexOf('Start');
-  var eventEndIdx = headers.indexOf('End');
+  var dateIdx = headers.indexOf('Date');
+  var startTimeIdx = headers.indexOf('StartTime');
+  var endTimeIdx = headers.indexOf('EndTime');
   var statusIdx = headers.indexOf('Status');
+  
+  // Backward compatibility
+  var oldStartIdx = headers.indexOf('Start');
+  var oldEndIdx = headers.indexOf('End');
+  var useOldSchema = (dateIdx === -1 || startTimeIdx === -1) && (oldStartIdx !== -1);
 
   var today = new Date();
   var todayStr = Utilities.formatDate(today, Session.getScriptTimeZone(), 'yyyy-MM-dd');
@@ -2608,17 +2861,42 @@ function getStudentsWithLessonsToday() {
   var students = [];
   for (var i = 1; i < data.length; i++) {
     var row = data[i];
-    var eventDate = row[eventStartIdx];
     var eventDateStr = '';
-    if (eventDate instanceof Date) {
-      eventDateStr = Utilities.formatDate(eventDate, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+    var eventStart = null;
+    var eventEnd = null;
+    
+    if (useOldSchema) {
+      eventStart = row[oldStartIdx];
+      eventEnd = row[oldEndIdx];
+      if (eventStart instanceof Date) {
+        eventDateStr = Utilities.formatDate(eventStart, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+      }
+    } else {
+      var rowDate = row[dateIdx];
+      if (rowDate instanceof Date) {
+        eventDateStr = Utilities.formatDate(rowDate, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+      } else if (rowDate) {
+        eventDateStr = String(rowDate).trim();
+      }
+      // Create Date objects for eventStart/eventEnd
+      if (eventDateStr && row[startTimeIdx]) {
+        try {
+          eventStart = new Date(eventDateStr + 'T' + String(row[startTimeIdx]).trim() + ':00');
+          if (row[endTimeIdx]) {
+            eventEnd = new Date(eventDateStr + 'T' + String(row[endTimeIdx]).trim() + ':00');
+          }
+        } catch (e) {
+          // Skip if date parsing fails
+        }
+      }
     }
+    
     if (eventDateStr === todayStr) {
       students.push({
         Name: row[studentNameIdx],
         Status: row[statusIdx],
-        EventStart: row[eventStartIdx],
-        EventEnd: row[eventEndIdx],
+        EventStart: eventStart,
+        EventEnd: eventEnd,
         EventTitle: row[eventTitleIdx]
       });
     }
@@ -2778,16 +3056,37 @@ function getUnpaidStudentsThisMonth(selectedMonth, selectedYear) {
   if (cacheData.length < 2) return [];
   var headers = cacheData[0];
   var studentNameIdx = headers.indexOf('StudentName');
-  var eventStartIdx = headers.indexOf('Start');
+  var dateIdx = headers.indexOf('Date');
+  var oldStartIdx = headers.indexOf('Start');
+  var useOldSchema = (dateIdx === -1) && (oldStartIdx !== -1);
 
   // Build a set of Student IDs with events this month
   var eventStudentIds = new Set();
   for (var i = 1; i < cacheData.length; i++) {
     var row = cacheData[i];
     var studentName = (row[studentNameIdx] || '').trim();
-    var eventStart = row[eventStartIdx];
-    if (!studentName || !eventStart) continue;
-    var eventDate = eventStart instanceof Date ? eventStart : new Date(eventStart);
+    if (!studentName) continue;
+    
+    var eventDate = null;
+    if (useOldSchema) {
+      var eventStart = row[oldStartIdx];
+      if (!eventStart) continue;
+      eventDate = eventStart instanceof Date ? eventStart : new Date(eventStart);
+    } else {
+      var rowDate = row[dateIdx];
+      if (!rowDate) continue;
+      if (rowDate instanceof Date) {
+        eventDate = rowDate;
+      } else {
+        try {
+          eventDate = new Date(String(rowDate).trim() + 'T00:00:00');
+          if (isNaN(eventDate.getTime())) continue;
+        } catch (e) {
+          continue;
+        }
+      }
+    }
+    
     var eventMonthNum = eventDate.getMonth() + 1;
     var eventYear = Utilities.formatDate(eventDate, tz, 'yyyy');
     var eventKey = eventYear + '-' + ('0' + eventMonthNum).slice(-2);
@@ -2924,11 +3223,15 @@ function getCachedTeacherSchedule(dateStr) {
     var headers = data[0];
     Logger.log('Headers: ' + JSON.stringify(headers));
     var dateIdx = headers.indexOf('Date');
+    // Handle both "TeacherName" and "Name" column names for backward compatibility
     var teacherNameIdx = headers.indexOf('TeacherName');
+    if (teacherNameIdx === -1) {
+      teacherNameIdx = headers.indexOf('Name');
+    }
     var startTimeIdx = headers.indexOf('StartTime');
     var endTimeIdx = headers.indexOf('EndTime');
     
-    Logger.log('Column indices - Date: ' + dateIdx + ', TeacherName: ' + teacherNameIdx + ', StartTime: ' + startTimeIdx + ', EndTime: ' + endTimeIdx);
+    Logger.log('Column indices - Date: ' + dateIdx + ', TeacherName/Name: ' + teacherNameIdx + ', StartTime: ' + startTimeIdx + ', EndTime: ' + endTimeIdx);
     
     if (dateIdx === -1 || teacherNameIdx === -1 || startTimeIdx === -1 || endTimeIdx === -1) {
       Logger.log('❌ Required columns not found in TeacherSchedules');
@@ -3062,10 +3365,29 @@ function syncTeacherSchedulesFromCalendars() {
       }
       var events = cal.getEvents(windowStart, windowEnd);
       Logger.log('Found ' + events.length + ' events for calendar ' + calEntry.id);
+      var breakEventsSkipped = 0;
+      var closedEventsSkipped = 0;
       events.forEach(function(ev) {
         if (ev.isAllDayEvent()) return;
         var st = ev.getStartTime();
         var et = ev.getEndTime();
+        
+        // Filter out CLOSED events for Sham
+        if (calEntry.teacherName === 'Sham' || calEntry.teacherName === 'sham') {
+          var eventTitle = ev.getTitle() || '';
+          if (eventTitle.toUpperCase().includes('CLOSED')) {
+            closedEventsSkipped++;
+            return; // Skip this event (it's marked as CLOSED)
+          }
+        }
+        
+        // Filter out break events: events that are 2 hours or less (120 minutes)
+        var durationMinutes = (et.getTime() - st.getTime()) / (1000 * 60);
+        if (durationMinutes <= 120) {
+          breakEventsSkipped++;
+          return; // Skip this event (it's a break)
+        }
+        
         rows.push([
           Utilities.formatDate(st, tz, 'yyyy-MM-dd'),
           calEntry.teacherName,
@@ -3073,6 +3395,12 @@ function syncTeacherSchedulesFromCalendars() {
           Utilities.formatDate(et, tz, 'HH:mm')
         ]);
       });
+      if (breakEventsSkipped > 0) {
+        Logger.log('Skipped ' + breakEventsSkipped + ' break events (≤2 hours) for calendar ' + calEntry.id);
+      }
+      if (closedEventsSkipped > 0) {
+        Logger.log('Skipped ' + closedEventsSkipped + ' CLOSED events for ' + calEntry.teacherName);
+      }
     });
     
     var schedSheet = ss.getSheetByName('TeacherSchedules');
@@ -3109,6 +3437,27 @@ function syncTeacherSchedulesFromCalendars() {
       schedSheet.getRange(2, 1, out.length, headers.length).setValues(out);
     }
     Logger.log('✅ Synced teacher schedules from calendars. New rows: ' + rows.length + ', kept rows: ' + keepRows.length);
+    
+    // Refresh BookingAvailability since teacher schedules changed
+    try {
+      var now = new Date();
+      var currentWeekStart = new Date(now);
+      var dayOfWeek = currentWeekStart.getDay();
+      var daysToMonday = dayOfWeek === 0 ? -6 : -(dayOfWeek - 1);
+      currentWeekStart.setDate(currentWeekStart.getDate() + daysToMonday);
+      currentWeekStart.setHours(0, 0, 0, 0);
+      
+      // Refresh current week and next 7 weeks (cover current + next month)
+      for (var week = 0; week < 8; week++) {
+        var weekStart = new Date(currentWeekStart);
+        weekStart.setDate(currentWeekStart.getDate() + (week * 7));
+        calculateAndStoreWeekAvailability(weekStart, true);
+      }
+      Logger.log('✅ Refreshed BookingAvailability after teacher schedule sync');
+    } catch (e) {
+      Logger.log('⚠️ Error refreshing BookingAvailability after teacher schedule sync: ' + e.toString());
+    }
+    
     return rows.length;
   } catch (e) {
     Logger.log('❌ Error in syncTeacherSchedulesFromCalendars: ' + e.toString());
@@ -3165,12 +3514,24 @@ function getAvailableTeachersForTime(dateTime, durationMinutes) {
  * @returns {Sheet} The BookingAvailability sheet
  */
 function getBookingAvailabilitySheet() {
-  var ss = SpreadsheetApp.openById(SS_ID);
+  try {
+    var ss = SpreadsheetApp.openById(SS_ID);
+  } catch (e) {
+    Logger.log('ERROR: Failed to open spreadsheet with ID: ' + SS_ID);
+    Logger.log('Error details: ' + e.toString());
+    throw new Error('Cannot access spreadsheet. Please check: 1) SS_ID is correct, 2) Script has permission to access the spreadsheet, 3) Spreadsheet exists and is accessible.');
+  }
+  
   var sheet = ss.getSheetByName('BookingAvailability');
   
   if (!sheet) {
-    // Create the sheet
-    sheet = ss.insertSheet('BookingAvailability');
+    try {
+      // Create the sheet
+      sheet = ss.insertSheet('BookingAvailability');
+    } catch (e) {
+      Logger.log('ERROR: Failed to create BookingAvailability sheet: ' + e.toString());
+      throw new Error('Cannot create BookingAvailability sheet. Please check spreadsheet permissions.');
+    }
   }
 
   // Ensure headers/formatting exist and include the Reason column
@@ -3214,8 +3575,16 @@ function calculateAndStoreWeekAvailability(weekStart, forceRecalculate) {
     normalizedWeekStart.setDate(normalizedWeekStart.getDate() + daysToMonday);
     normalizedWeekStart.setHours(0, 0, 0, 0);
     
-    var sheet = getBookingAvailabilitySheet();
     var tz = Session.getScriptTimeZone();
+    var ss;
+    try {
+      ss = SpreadsheetApp.openById(SS_ID);
+    } catch (e) {
+      Logger.log('ERROR: Failed to open spreadsheet in calculateAndStoreWeekAvailability: ' + e.toString());
+      throw new Error('Cannot access spreadsheet. Please check: 1) SS_ID is correct, 2) Script has permission to access the spreadsheet, 3) Spreadsheet exists and is accessible.');
+    }
+    
+    var sheet = getBookingAvailabilitySheet();
     var timeSlots = ['10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00'];
     
     // Check if we need to recalculate
@@ -3266,30 +3635,112 @@ function calculateAndStoreWeekAvailability(weekStart, forceRecalculate) {
     var weekStartStr = Utilities.formatDate(normalizedWeekStart, tz, 'yyyy-MM-dd');
     var weekEndStr = Utilities.formatDate(weekEnd, tz, 'yyyy-MM-dd');
     
+    // Check if week spans into next month and ensure NextMonthSchedule is populated
+    var weekStartMonth = Utilities.formatDate(normalizedWeekStart, tz, 'yyyy-MM');
+    var weekEndMonth = Utilities.formatDate(weekEnd, tz, 'yyyy-MM');
+    if (weekStartMonth !== weekEndMonth) {
+      // Week spans into next month - ensure NextMonthSchedule is populated
+      Logger.log('Week spans from ' + weekStartMonth + ' to ' + weekEndMonth + ' - checking NextMonthSchedule');
+      var nextMonthScheduleSheet = ss.getSheetByName('NextMonthSchedule');
+      var needsCache = false;
+      
+      if (!nextMonthScheduleSheet) {
+        Logger.log('NextMonthSchedule sheet does not exist - will create and populate');
+        needsCache = true;
+      } else {
+        var lastRow = nextMonthScheduleSheet.getLastRow();
+        if (lastRow <= 1) {
+          Logger.log('NextMonthSchedule sheet is empty (lastRow: ' + lastRow + ') - will populate');
+          needsCache = true;
+        } else {
+          // Check if sheet has data for the next month dates we need
+          var nextMonthData = nextMonthScheduleSheet.getDataRange().getValues();
+          if (nextMonthData.length > 1) {
+            var startColIdx = nextMonthData[0].indexOf('Start');
+            if (startColIdx !== -1) {
+              var hasDataForWeek = false;
+              for (var i = 1; i < nextMonthData.length; i++) {
+                var rowStart = nextMonthData[i][startColIdx];
+                if (rowStart instanceof Date) {
+                  var rowDateStr = Utilities.formatDate(rowStart, tz, 'yyyy-MM-dd');
+                  if (rowDateStr >= weekStartStr && rowDateStr < weekEndStr) {
+                    hasDataForWeek = true;
+                    break;
+                  }
+                }
+              }
+              if (!hasDataForWeek) {
+                Logger.log('NextMonthSchedule exists but has no data for week dates - will refresh');
+                needsCache = true;
+              } else {
+                Logger.log('NextMonthSchedule has data for this week');
+              }
+            }
+          }
+        }
+      }
+      
+      if (needsCache) {
+        try {
+          Logger.log('Populating NextMonthSchedule cache...');
+          cacheMonthlyEventsForBothMonths();
+          Logger.log('NextMonthSchedule cache populated');
+        } catch (e) {
+          Logger.log('Error caching next month: ' + e.toString());
+        }
+      }
+    }
+    
     var data = sheet.getDataRange().getValues();
     var rowsToDelete = [];
     var lastRow = sheet.getLastRow();
-    for (var i = data.length - 1; i >= 1; i--) {
-      var rowDate = data[i][0];
-      if (rowDate instanceof Date) {
-        var rowDateStr = Utilities.formatDate(rowDate, tz, 'yyyy-MM-dd');
-        if (rowDateStr >= weekStartStr && rowDateStr < weekEndStr) {
-          var rowNum = i + 1; // +1 because sheet rows are 1-indexed
-          if (rowNum <= lastRow && rowNum > 1) {
-            rowsToDelete.push(rowNum);
+    
+    // Only try to delete if sheet has data beyond headers
+    if (lastRow > 1 && data.length > 1) {
+      for (var i = data.length - 1; i >= 1; i--) {
+        var rowDate = data[i][0];
+        if (rowDate instanceof Date) {
+          var rowDateStr = Utilities.formatDate(rowDate, tz, 'yyyy-MM-dd');
+          if (rowDateStr >= weekStartStr && rowDateStr < weekEndStr) {
+            var rowNum = i + 1; // +1 because sheet rows are 1-indexed
+            // Ensure row number is valid (not header row, not out of bounds)
+            if (rowNum > 1 && rowNum <= lastRow) {
+              rowsToDelete.push(rowNum);
+            }
+          }
+        }
+      }
+      
+      // Sort and deduplicate rows to delete (descending order for safe deletion)
+      if (rowsToDelete.length > 0) {
+        rowsToDelete.sort(function(a, b) { return b - a; }); // Sort descending
+        // Remove duplicates
+        var uniqueRows = [];
+        for (var j = 0; j < rowsToDelete.length; j++) {
+          if (uniqueRows.indexOf(rowsToDelete[j]) === -1) {
+            uniqueRows.push(rowsToDelete[j]);
+          }
+        }
+        rowsToDelete = uniqueRows;
+        
+        // Delete rows from bottom to top to maintain indices
+        Logger.log('Deleting ' + rowsToDelete.length + ' existing rows for week ' + weekStartStr + ' to ' + weekEndStr);
+        for (var k = 0; k < rowsToDelete.length; k++) {
+          var rowToDelete = rowsToDelete[k];
+          // Double-check row is valid before deleting
+          if (rowToDelete > 1 && rowToDelete <= sheet.getLastRow()) {
+            try {
+              sheet.deleteRow(rowToDelete);
+            } catch (e) {
+              Logger.log('Warning: Could not delete row ' + rowToDelete + ': ' + e.toString());
+            }
           }
         }
       }
     }
     
-    // Delete rows from bottom to top to maintain indices
-    for (var i = rowsToDelete.length - 1; i >= 0; i--) {
-      sheet.deleteRow(rowsToDelete[i]);
-    }
-    
     // Get teacher schedules for the week
     var teacherSchedulesByDate = {};
-    var ss = SpreadsheetApp.openById(SS_ID);
     var teacherScheduleSheet = ss.getSheetByName('TeacherSchedules');
     
     if (teacherScheduleSheet) {
@@ -3297,11 +3748,18 @@ function calculateAndStoreWeekAvailability(weekStart, forceRecalculate) {
       if (scheduleData.length > 1) {
         var headers = scheduleData[0];
         var dateIdx = headers.indexOf('Date');
+        // Handle both "TeacherName" and "Name" column names for backward compatibility
         var teacherNameIdx = headers.indexOf('TeacherName');
+        if (teacherNameIdx === -1) {
+          teacherNameIdx = headers.indexOf('Name');
+        }
         var startTimeIdx = headers.indexOf('StartTime');
         var endTimeIdx = headers.indexOf('EndTime');
         
+        Logger.log('TeacherSchedules headers - Date: ' + dateIdx + ', TeacherName/Name: ' + teacherNameIdx + ', StartTime: ' + startTimeIdx + ', EndTime: ' + endTimeIdx);
+        
         if (dateIdx !== -1 && teacherNameIdx !== -1 && startTimeIdx !== -1 && endTimeIdx !== -1) {
+          var schedulesFound = 0;
           for (var i = 1; i < scheduleData.length; i++) {
             var row = scheduleData[i];
             var rowDate = row[dateIdx];
@@ -3340,51 +3798,155 @@ function calculateAndStoreWeekAvailability(weekStart, forceRecalculate) {
                 startTime: startTimeStr,
                 endTime: endTimeStr
               });
+              schedulesFound++;
             }
           }
+          Logger.log('Loaded ' + schedulesFound + ' teacher schedule entries for week, covering ' + Object.keys(teacherSchedulesByDate).length + ' dates');
+        } else {
+          Logger.log('WARNING: TeacherSchedules sheet exists but required columns not found');
         }
+      } else {
+        Logger.log('WARNING: TeacherSchedules sheet has no data rows (only headers)');
       }
     }
     
-    // Get existing lessons for the week
+    // Get existing lessons for the week from both MonthlySchedule and NextMonthSchedule
     var existingLessonsMap = {};
-    var monthlyScheduleSheet = ss.getSheetByName('MonthlySchedule');
     
-    if (monthlyScheduleSheet) {
-      var lessonData = monthlyScheduleSheet.getDataRange().getValues();
-      if (lessonData.length > 1) {
-        var lessonHeaders = lessonData[0];
-        var startIdx = lessonHeaders.indexOf('Start');
-        var statusIdx = lessonHeaders.indexOf('Status');
-        var isKidsLessonIdx = lessonHeaders.indexOf('IsKidsLesson');
-        
-        if (startIdx !== -1 && statusIdx !== -1) {
-          for (var i = 1; i < lessonData.length; i++) {
-            var row = lessonData[i];
-            var startTime = row[startIdx];
-            
-            if (startTime instanceof Date) {
-              var rowDateStr = Utilities.formatDate(startTime, tz, 'yyyy-MM-dd');
-              var rowTimeStr = Utilities.formatDate(startTime, tz, 'HH:mm');
-              var status = row[statusIdx] || 'scheduled';
-              var isKidsLesson = row[isKidsLessonIdx] === '子' || row[isKidsLessonIdx] === true;
-              
-              if (rowDateStr >= weekStartStr && rowDateStr < weekEndStr && status === 'scheduled') {
-                if (!existingLessonsMap[rowDateStr]) {
-                  existingLessonsMap[rowDateStr] = {};
-                }
-                if (!existingLessonsMap[rowDateStr][rowTimeStr]) {
-                  existingLessonsMap[rowDateStr][rowTimeStr] = [];
-                }
-                existingLessonsMap[rowDateStr][rowTimeStr].push({
-                  isKidsLesson: isKidsLesson
-                });
-              }
-            }
-          }
+    // Helper function to read lessons from a sheet
+    var readLessonsFromSheet = function(sheetName) {
+      var scheduleSheet = ss.getSheetByName(sheetName);
+      if (!scheduleSheet) {
+        Logger.log('Sheet not found: ' + sheetName);
+        return;
+      }
+      
+      var lessonData = scheduleSheet.getDataRange().getValues();
+      if (lessonData.length <= 1) {
+        Logger.log('Sheet ' + sheetName + ' has no data rows');
+        return;
+      }
+      
+      var lessonHeaders = lessonData[0];
+      var dateIdx = lessonHeaders.indexOf('Date');
+      var startTimeIdx = lessonHeaders.indexOf('StartTime');
+      var statusIdx = lessonHeaders.indexOf('Status');
+      var isKidsLessonIdx = lessonHeaders.indexOf('IsKidsLesson');
+      
+      // Backward compatibility: check for old schema
+      var oldStartIdx = lessonHeaders.indexOf('Start');
+      var useOldSchema = (dateIdx === -1 || startTimeIdx === -1) && (oldStartIdx !== -1);
+      
+      if (useOldSchema) {
+        // Old schema - use Start column
+        if (oldStartIdx === -1 || statusIdx === -1) {
+          Logger.log('Required columns not found in ' + sheetName + ' (Start: ' + oldStartIdx + ', Status: ' + statusIdx + ')');
+          return;
+        }
+      } else {
+        // New schema
+        if (dateIdx === -1 || startTimeIdx === -1 || statusIdx === -1) {
+          Logger.log('Required columns not found in ' + sheetName + ' (Date: ' + dateIdx + ', StartTime: ' + startTimeIdx + ', Status: ' + statusIdx + ')');
+          return;
         }
       }
-    }
+      
+      Logger.log('Reading lessons from ' + sheetName + ' (' + (lessonData.length - 1) + ' rows) - Schema: ' + (useOldSchema ? 'OLD' : 'NEW'));
+      var lessonsFound = 0;
+      
+      for (var i = 1; i < lessonData.length; i++) {
+        var row = lessonData[i];
+        var rowDateStr = '';
+        var rowTimeStr = '';
+        var status = '';
+        var isKidsLesson = false;
+        
+        if (useOldSchema) {
+          // Old schema: parse from Start column
+          var startTime = row[oldStartIdx];
+          var startDate = null;
+          
+          if (startTime instanceof Date) {
+            startDate = startTime;
+          } else if (startTime && typeof startTime === 'string') {
+            try {
+              startDate = new Date(startTime);
+              if (isNaN(startDate.getTime())) {
+                var parts = startTime.split('/');
+                if (parts.length === 3) {
+                  startDate = new Date(parts[2], parts[0] - 1, parts[1]);
+                }
+              }
+              if (isNaN(startDate.getTime())) {
+                continue;
+              }
+            } catch (e) {
+              continue;
+            }
+          } else {
+            continue;
+          }
+          
+          rowDateStr = Utilities.formatDate(startDate, tz, 'yyyy-MM-dd');
+          rowTimeStr = Utilities.formatDate(startDate, tz, 'HH:mm');
+          status = row[statusIdx] || 'scheduled';
+          isKidsLesson = row[isKidsLessonIdx] === '子' || row[isKidsLessonIdx] === true;
+        } else {
+          // New schema: use Date and StartTime columns
+          var rowDate = row[dateIdx];
+          rowTimeStr = String(row[startTimeIdx] || '').trim();
+          
+          // Handle Date column (could be Date object or string)
+          if (rowDate instanceof Date) {
+            rowDateStr = Utilities.formatDate(rowDate, tz, 'yyyy-MM-dd');
+          } else {
+            var dateStr = String(rowDate || '').trim();
+            // Try to parse MM/DD/YYYY format and convert to yyyy-MM-dd
+            if (dateStr.match(/^\d{2}\/\d{2}\/\d{4}$/)) {
+              var parts = dateStr.split('/');
+              var parsedDate = new Date(parseInt(parts[2], 10), parseInt(parts[0], 10) - 1, parseInt(parts[1], 10));
+              if (!isNaN(parsedDate.getTime())) {
+                rowDateStr = Utilities.formatDate(parsedDate, tz, 'yyyy-MM-dd');
+              } else {
+                rowDateStr = dateStr; // Fallback to original string
+              }
+            } else {
+              rowDateStr = dateStr;
+            }
+          }
+          
+          status = row[statusIdx] || 'scheduled';
+          isKidsLesson = row[isKidsLessonIdx] === '子' || row[isKidsLessonIdx] === true;
+        }
+        
+        if (!rowDateStr || !rowTimeStr) continue;
+        
+        if (rowDateStr >= weekStartStr && rowDateStr < weekEndStr && status === 'scheduled') {
+          if (!existingLessonsMap[rowDateStr]) {
+            existingLessonsMap[rowDateStr] = {};
+          }
+          if (!existingLessonsMap[rowDateStr][rowTimeStr]) {
+            existingLessonsMap[rowDateStr][rowTimeStr] = [];
+          }
+          existingLessonsMap[rowDateStr][rowTimeStr].push({
+            isKidsLesson: isKidsLesson
+          });
+          lessonsFound++;
+        }
+      }
+      
+      Logger.log('Found ' + lessonsFound + ' scheduled lessons in ' + sheetName + ' for week ' + weekStartStr + ' to ' + weekEndStr);
+    };
+    
+    // Read from MonthlySchedule
+    Logger.log('Reading lessons from MonthlySchedule...');
+    readLessonsFromSheet('MonthlySchedule');
+    
+    // Read from NextMonthSchedule (for weeks that span into next month)
+    Logger.log('Reading lessons from NextMonthSchedule...');
+    readLessonsFromSheet('NextMonthSchedule');
+    
+    Logger.log('Total lessons found across all sheets: ' + Object.keys(existingLessonsMap).length + ' dates with lessons');
     
     // Calculate availability for each time slot
     var newRows = [];
@@ -3399,7 +3961,7 @@ function calculateAndStoreWeekAvailability(weekStart, forceRecalculate) {
         var timeStr = timeSlots[t];
         
         // Get available teachers for this time slot
-        var availableTeachers = [];
+        var availableTeachersSet = {}; // Use object to track unique teachers
         var schedules = teacherSchedulesByDate[dateStr] || [];
         
         schedules.forEach(function(schedule) {
@@ -3416,10 +3978,15 @@ function calculateAndStoreWeekAvailability(weekStart, forceRecalculate) {
           var normalizedEndTimeStr = Utilities.formatDate(endTimeDate, tz, 'HH:mm');
           
           if (normalizedTimeStr >= normalizedStartTime && normalizedEndTimeStr <= normalizedEndTime) {
-            availableTeachers.push(schedule.teacherName);
+            var teacherName = String(schedule.teacherName || '').trim();
+            if (teacherName) {
+              availableTeachersSet[teacherName] = true; // Track unique teachers
+            }
           }
         });
         
+        // Convert set to array (deduplicated)
+        var availableTeachers = Object.keys(availableTeachersSet);
         var teacherCount = availableTeachers.length;
         
         // Get lesson count and kids/adults info
@@ -3467,8 +4034,59 @@ function calculateAndStoreWeekAvailability(weekStart, forceRecalculate) {
     }
     
     // Append all rows at once
+    Logger.log('Preparing to write ' + newRows.length + ' rows to BookingAvailability sheet');
+    
+    // Find the actual last row with data
+    // Use LastUpdated column (column 10/J) to find the last row that was actually written
+    var lastUpdatedCol = 10; // Column J
+    var dataRange = sheet.getDataRange();
+    var dataRangeRows = dataRange.getNumRows();
+    var lastDataRow = 1; // Start with header row
+    
+    // Check LastUpdated column from bottom up to find last row with actual data
+    // This is more reliable than checking Date column since LastUpdated is always set
+    var maxCheck = Math.min(dataRangeRows, 500); // Don't check more than 500 rows
+    for (var checkRow = maxCheck; checkRow >= 2; checkRow--) {
+      var lastUpdatedValue = sheet.getRange(checkRow, lastUpdatedCol).getValue();
+      if (lastUpdatedValue !== null && lastUpdatedValue !== '') {
+        lastDataRow = checkRow;
+        break;
+      }
+    }
+    
+    // If we didn't find anything in LastUpdated column, check Date column as fallback
+    if (lastDataRow === 1 && dataRangeRows > 1) {
+      var dateCol = 1; // Column A
+      for (var checkRow2 = Math.min(dataRangeRows, 100); checkRow2 >= 2; checkRow2--) {
+        var dateValue = sheet.getRange(checkRow2, dateCol).getValue();
+        if (dateValue !== null && dateValue !== '' && dateValue !== 0) {
+          lastDataRow = checkRow2;
+          break;
+        }
+      }
+    }
+    
+    var startRow = lastDataRow + 1; // Start writing after the last row with data
+    
+    Logger.log('Sheet data range rows: ' + dataRangeRows + ', last row with data (checked up to row ' + maxCheck + '): ' + lastDataRow + ', will write starting at row ' + startRow);
+    Logger.log('Teacher schedules found for dates: ' + Object.keys(teacherSchedulesByDate).join(', '));
+    Logger.log('Lessons found: ' + Object.keys(existingLessonsMap).length + ' dates with lessons');
+    
     if (newRows.length > 0) {
-      sheet.getRange(sheet.getLastRow() + 1, 1, newRows.length, newRows[0].length).setValues(newRows);
+      Logger.log('Writing ' + newRows.length + ' rows starting at row ' + startRow);
+      try {
+        sheet.getRange(startRow, 1, newRows.length, newRows[0].length).setValues(newRows);
+        Logger.log('Successfully wrote ' + newRows.length + ' rows to BookingAvailability at row ' + startRow);
+      } catch (writeError) {
+        Logger.log('Error writing rows: ' + writeError.toString());
+        Logger.log('Stack: ' + writeError.stack);
+        throw writeError;
+      }
+    } else {
+      Logger.log('WARNING: No rows to write! This might indicate:');
+      Logger.log('  - No teacher schedules found for this week');
+      Logger.log('  - No time slots match teacher availability');
+      Logger.log('  - An error occurred during calculation');
     }
     
     Logger.log('Calculated and stored availability for week starting ' + weekStartStr + ' (' + newRows.length + ' time slots)');
@@ -3799,7 +4417,8 @@ function refreshBookingAvailabilityCache() {
     for (var week = 0; week < 8; week++) {
       var weekStart = new Date(currentWeekStart);
       weekStart.setDate(currentWeekStart.getDate() + (week * 7));
-      calculateAndStoreWeekAvailability(weekStart, false);
+      Logger.log('Calculating availability for week starting ' + Utilities.formatDate(weekStart, Session.getScriptTimeZone(), 'yyyy-MM-dd'));
+      calculateAndStoreWeekAvailability(weekStart, true); // Force recalculate to ensure data is written
     }
     
     Logger.log('Refreshed booking availability cache for 8 weeks');
@@ -5331,14 +5950,26 @@ function getStudentEventsFromSheet(studentName, monthText) {
   
   var headers = data[0];
   var studentNameIdx = headers.indexOf('StudentName');
-  var startIdx = headers.indexOf('Start');
+  var dateIdx = headers.indexOf('Date');
+  var startTimeIdx = headers.indexOf('StartTime');
   var statusIdx = headers.indexOf('Status');
   
-  Logger.log('Column indices - StudentName: ' + studentNameIdx + ', Start: ' + startIdx + ', Status: ' + statusIdx);
+  // Backward compatibility
+  var oldStartIdx = headers.indexOf('Start');
+  var useOldSchema = (dateIdx === -1 || startTimeIdx === -1) && (oldStartIdx !== -1);
   
-  if (studentNameIdx === -1 || startIdx === -1 || statusIdx === -1) {
-    Logger.log('Required columns not found');
-    return [];
+  Logger.log('Column indices - StudentName: ' + studentNameIdx + ', Schema: ' + (useOldSchema ? 'OLD' : 'NEW'));
+  
+  if (useOldSchema) {
+    if (studentNameIdx === -1 || oldStartIdx === -1 || statusIdx === -1) {
+      Logger.log('Required columns not found');
+      return [];
+    }
+  } else {
+    if (studentNameIdx === -1 || dateIdx === -1 || startTimeIdx === -1 || statusIdx === -1) {
+      Logger.log('Required columns not found');
+      return [];
+    }
   }
   
   var studentEvents = [];
@@ -5366,30 +5997,68 @@ function getStudentEventsFromSheet(studentName, monthText) {
   for (var i = 1; i < data.length; i++) {
     var row = data[i];
     var rowStudentName = String(row[studentNameIdx] || '').trim();
-    var startTime = row[startIdx];
     var status = String(row[statusIdx] || 'scheduled');
     
     // Check if this event is for the target student
     if (rowStudentName === studentName) {
-      // Check if the event is in the target month
-      if (startTime instanceof Date) {
-        var eventMonth = monthNames[startTime.getMonth()];
-        var eventYear = startTime.getFullYear().toString();
+      var eventDate = null;
+      var day = '';
+      var time = '';
+      
+      if (useOldSchema) {
+        // Old schema: parse from Start column
+        var startTime = row[oldStartIdx];
+        if (startTime instanceof Date) {
+          eventDate = startTime;
+          var eventMonth = monthNames[eventDate.getMonth()];
+          var eventYear = eventDate.getFullYear().toString();
+          
+          if (eventMonth === monthName && eventYear === year) {
+            day = Utilities.formatDate(eventDate, Session.getScriptTimeZone(), 'dd');
+            time = Utilities.formatDate(eventDate, Session.getScriptTimeZone(), 'HH:mm');
+          } else {
+            continue;
+          }
+        } else {
+          continue;
+        }
+      } else {
+        // New schema: use Date and StartTime columns
+        var rowDate = row[dateIdx];
+        var rowStartTime = row[startTimeIdx];
+        
+        // Handle Date column
+        if (rowDate instanceof Date) {
+          eventDate = rowDate;
+        } else if (rowDate) {
+          try {
+            eventDate = new Date(rowDate + 'T00:00:00');
+            if (isNaN(eventDate.getTime())) continue;
+          } catch (e) {
+            continue;
+          }
+        } else {
+          continue;
+        }
+        
+        var eventMonth = monthNames[eventDate.getMonth()];
+        var eventYear = eventDate.getFullYear().toString();
         
         if (eventMonth === monthName && eventYear === year) {
-          Logger.log('Found matching event in row ' + i + ' for ' + studentName + ' on ' + startTime);
-          
-          // Extract day and time
-          var day = Utilities.formatDate(startTime, Session.getScriptTimeZone(), 'dd');
-          var time = Utilities.formatDate(startTime, Session.getScriptTimeZone(), 'HH:mm');
-          
-          studentEvents.push({
-            day: day,
-            time: time,
-            status: status
-          });
+          day = Utilities.formatDate(eventDate, Session.getScriptTimeZone(), 'dd');
+          time = String(rowStartTime || '').trim(); // Already in HH:mm format
+        } else {
+          continue;
         }
       }
+      
+      Logger.log('Found matching event in row ' + i + ' for ' + studentName + ' on ' + day + ' at ' + time);
+      
+      studentEvents.push({
+        day: day,
+        time: time,
+        status: status
+      });
     }
   }
   
@@ -6739,22 +7408,38 @@ function getExistingLessonsFromSheet(startDate) {
     
     Logger.log('Headers: ' + JSON.stringify(headers));
     
-    // Find the column indices
-    var startTimeCol = headers.indexOf('Start');
-    var endTimeCol = headers.indexOf('End');
+    // Find the column indices - NEW SCHEMA
+    var dateCol = headers.indexOf('Date');
+    var startTimeCol = headers.indexOf('StartTime');
+    var endTimeCol = headers.indexOf('EndTime');
     var studentNameCol = headers.indexOf('StudentName');
     var statusCol = headers.indexOf('Status');
     var eventIdCol = headers.indexOf('EventID');
     var titleCol = headers.indexOf('Title');
-    var isKidsLessonCol = headers.indexOf('IsKidsLesson');  // NEW COLUMN
+    var isKidsLessonCol = headers.indexOf('IsKidsLesson');
     
-    Logger.log('Column indices - Start: ' + startTimeCol + ', End: ' + endTimeCol + ', StudentName: ' + studentNameCol + ', Status: ' + statusCol + ', EventID: ' + eventIdCol + ', Title: ' + titleCol + ', IsKidsLesson: ' + isKidsLessonCol);
+    // Backward compatibility
+    var oldStartCol = headers.indexOf('Start');
+    var oldEndCol = headers.indexOf('End');
+    var useOldSchema = (dateCol === -1 || startTimeCol === -1) && (oldStartCol !== -1);
     
-    if (startTimeCol === -1 || endTimeCol === -1 || studentNameCol === -1 || statusCol === -1) {
-      Logger.log('ERROR: Required columns not found');
-      Logger.log('Available headers: ' + JSON.stringify(headers));
-      Logger.log('Start Time col: ' + startTimeCol + ', End Time col: ' + endTimeCol + ', Student Name col: ' + studentNameCol + ', Status col: ' + statusCol);
-      return {};
+    Logger.log('Column indices - Schema: ' + (useOldSchema ? 'OLD' : 'NEW'));
+    if (useOldSchema) {
+      Logger.log('Old schema - Start: ' + oldStartCol + ', End: ' + oldEndCol);
+    } else {
+      Logger.log('New schema - Date: ' + dateCol + ', StartTime: ' + startTimeCol + ', EndTime: ' + endTimeCol);
+    }
+    
+    if (useOldSchema) {
+      if (oldStartCol === -1 || oldEndCol === -1 || studentNameCol === -1 || statusCol === -1) {
+        Logger.log('ERROR: Required columns not found');
+        return {};
+      }
+    } else {
+      if (dateCol === -1 || startTimeCol === -1 || endTimeCol === -1 || studentNameCol === -1 || statusCol === -1) {
+        Logger.log('ERROR: Required columns not found');
+        return {};
+      }
     }
     
     var lessonsByDay = {};
@@ -6775,33 +7460,73 @@ function getExistingLessonsFromSheet(startDate) {
     Logger.log('Starting to process ' + (data.length - 1) + ' data rows');
     for (var i = 1; i < data.length; i++) {
       var row = data[i];
-      var startTime = row[startTimeCol];
-      var endTime = row[endTimeCol];
       var studentName = row[studentNameCol];
       var status = row[statusCol];
       
-      Logger.log('Row ' + i + ': startTime=' + startTime + ', studentName=' + studentName + ', status=' + status);
-      
-      if (!startTime || !studentName) {
-        Logger.log('Skipping row ' + i + ' - missing startTime or studentName');
+      if (!studentName) {
+        Logger.log('Skipping row ' + i + ' - missing studentName');
         continue;
       }
       
-      // Parse the start time
-      var startDateObj = new Date(startTime);
-      if (isNaN(startDateObj.getTime())) continue;
+      var eventDate = '';
+      var eventTime = '';
+      var startTime = null;
+      var endTime = null;
       
-      // Format date as YYYY-MM-DD
-      var eventDate = Utilities.formatDate(startDateObj, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+      if (useOldSchema) {
+        // Old schema: parse from Start/End columns
+        startTime = row[oldStartCol];
+        endTime = row[oldEndCol];
+        
+        if (!startTime) {
+          Logger.log('Skipping row ' + i + ' - missing startTime');
+          continue;
+        }
+        
+        var startDateObj = new Date(startTime);
+        if (isNaN(startDateObj.getTime())) continue;
+        
+        eventDate = Utilities.formatDate(startDateObj, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+        eventTime = Utilities.formatDate(startDateObj, Session.getScriptTimeZone(), 'HH:mm');
+      } else {
+        // New schema: use Date/StartTime/EndTime columns
+        var rowDate = row[dateCol];
+        var rowStartTime = row[startTimeCol];
+        var rowEndTime = row[endTimeCol];
+        
+        if (!rowDate || !rowStartTime) {
+          Logger.log('Skipping row ' + i + ' - missing date or startTime');
+          continue;
+        }
+        
+        // Handle Date column
+        if (rowDate instanceof Date) {
+          eventDate = Utilities.formatDate(rowDate, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+        } else {
+          eventDate = String(rowDate).trim();
+        }
+        
+        eventTime = String(rowStartTime).trim(); // Already in HH:mm format
+        
+        // Create Date objects for startTime/endTime if needed
+        try {
+          startTime = new Date(eventDate + 'T' + eventTime + ':00');
+          if (rowEndTime) {
+            endTime = new Date(eventDate + 'T' + String(rowEndTime).trim() + ':00');
+          }
+        } catch (e) {
+          Logger.log('Error parsing date/time for row ' + i + ': ' + e.toString());
+          continue;
+        }
+      }
+      
+      Logger.log('Row ' + i + ': eventDate=' + eventDate + ', eventTime=' + eventTime + ', studentName=' + studentName + ', status=' + status);
       
       // Check if lesson is within the week range
       if (eventDate < weekStartStr || eventDate >= weekEndStr) {
         Logger.log('Skipping lesson on ' + eventDate + ' (outside week range ' + weekStartStr + ' to ' + weekEndStr + ')');
         continue;
       }
-      
-      // Format time as HH:mm
-      var eventTime = Utilities.formatDate(startDateObj, Session.getScriptTimeZone(), 'HH:mm');
       
       Logger.log('Processing lesson: ' + studentName + ' on ' + eventDate + ' at ' + eventTime + ' (status: ' + status + ')');
       
@@ -6822,13 +7547,13 @@ function getExistingLessonsFromSheet(startDate) {
       }
       
       lessonsByDay[eventDate][eventTime].push({
-        eventID: row[eventIdCol],
-        title: row[titleCol],
+        eventID: eventIdCol >= 0 ? row[eventIdCol] : '',
+        title: titleCol >= 0 ? row[titleCol] : '',
         studentName: studentName,
         status: status,
         startTime: startTime,
         endTime: endTime,
-        isKidsLesson: isKidsLesson  // NEW FIELD
+        isKidsLesson: isKidsLesson
       });
       
       totalLessons++;
@@ -7056,9 +7781,15 @@ function getAllStudentDataForCacheBatched(batchSize = 20) {
         var mheaders = mdata.shift();
         var studentNameIdx = mheaders.indexOf('StudentName');
         var statusIdx = mheaders.indexOf('Status');
-        var startIdx = mheaders.indexOf('Start');
-        var endIdx = mheaders.indexOf('End');
+        var dateIdx = mheaders.indexOf('Date');
+        var startTimeIdx = mheaders.indexOf('StartTime');
+        var endTimeIdx = mheaders.indexOf('EndTime');
         var titleIdx = mheaders.indexOf('Title');
+        
+        // Backward compatibility
+        var oldStartIdx = mheaders.indexOf('Start');
+        var oldEndIdx = mheaders.indexOf('End');
+        var useOldSchema = (dateIdx === -1 || startTimeIdx === -1) && (oldStartIdx !== -1);
         
         mdata.forEach(function(row) {
           var studentName = row[studentNameIdx];
@@ -7066,29 +7797,100 @@ function getAllStudentDataForCacheBatched(batchSize = 20) {
             if (!monthlyScheduleMap[studentName]) {
               monthlyScheduleMap[studentName] = [];
             }
-            // Format Start as DD/MM/YYYY HH:mm:ss for consistent parsing
-            var startValue = row[startIdx];
-            var startFormatted = '';
-            if (startValue instanceof Date) {
-              // Use Utilities.formatDate to format the date/time properly
-              var day = Utilities.formatDate(startValue, Session.getScriptTimeZone(), 'dd');
-              var month = Utilities.formatDate(startValue, Session.getScriptTimeZone(), 'MM');
-              var year = Utilities.formatDate(startValue, Session.getScriptTimeZone(), 'yyyy');
-              var hours = Utilities.formatDate(startValue, Session.getScriptTimeZone(), 'HH');
-              var minutes = Utilities.formatDate(startValue, Session.getScriptTimeZone(), 'mm');
-              var seconds = Utilities.formatDate(startValue, Session.getScriptTimeZone(), 'ss');
-              startFormatted = day + '/' + month + '/' + year + ' ' + hours + ':' + minutes + ':' + seconds;
-            } else if (startValue) {
-              startFormatted = String(startValue);
-            }
             
             var lessonObj = {
               studentName: studentName,
               status: row[statusIdx] || '',
-              start: startFormatted,
-              end: row[endIdx] || '',
-              title: row[titleIdx] || ''
+              title: titleIdx >= 0 ? (row[titleIdx] || '') : ''
             };
+            
+            if (useOldSchema) {
+              // Old schema: format Start as DD/MM/YYYY HH:mm:ss
+              var startValue = row[oldStartIdx];
+              var startFormatted = '';
+              if (startValue instanceof Date) {
+                var day = Utilities.formatDate(startValue, Session.getScriptTimeZone(), 'dd');
+                var month = Utilities.formatDate(startValue, Session.getScriptTimeZone(), 'MM');
+                var year = Utilities.formatDate(startValue, Session.getScriptTimeZone(), 'yyyy');
+                var hours = Utilities.formatDate(startValue, Session.getScriptTimeZone(), 'HH');
+                var minutes = Utilities.formatDate(startValue, Session.getScriptTimeZone(), 'mm');
+                var seconds = Utilities.formatDate(startValue, Session.getScriptTimeZone(), 'ss');
+                startFormatted = day + '/' + month + '/' + year + ' ' + hours + ':' + minutes + ':' + seconds;
+              } else if (startValue) {
+                startFormatted = String(startValue);
+              }
+              lessonObj.start = startFormatted;
+              lessonObj.end = oldEndIdx >= 0 ? (row[oldEndIdx] || '') : '';
+            } else {
+              // New schema: use Date/StartTime/EndTime
+              var rowDate = row[dateIdx];
+              var dateStr = '';
+              if (rowDate instanceof Date) {
+                dateStr = Utilities.formatDate(rowDate, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+              } else {
+                dateStr = String(rowDate || '').trim();
+              }
+              lessonObj.date = dateStr;
+              
+              // Handle StartTime - ensure it's always HH:mm format, not a Date object
+              var startTimeValue = row[startTimeIdx];
+              var startTimeStr = '';
+              if (startTimeValue instanceof Date) {
+                startTimeStr = Utilities.formatDate(startTimeValue, Session.getScriptTimeZone(), 'HH:mm');
+              } else {
+                startTimeStr = String(startTimeValue || '').trim();
+                // If it's an ISO string, extract just HH:mm
+                if (startTimeStr.match(/T\d{2}:\d{2}/)) {
+                  try {
+                    var timeDate = new Date(startTimeStr);
+                    if (!isNaN(timeDate.getTime())) {
+                      startTimeStr = Utilities.formatDate(timeDate, Session.getScriptTimeZone(), 'HH:mm');
+                    }
+                  } catch (e) {
+                    // If parsing fails, try to extract HH:mm from string
+                    var match = startTimeStr.match(/(\d{2}):(\d{2})/);
+                    if (match) {
+                      startTimeStr = match[1] + ':' + match[2];
+                    }
+                  }
+                }
+                // Ensure it's only HH:mm (remove seconds if present)
+                if (startTimeStr.length > 5) {
+                  startTimeStr = startTimeStr.substring(0, 5);
+                }
+              }
+              lessonObj.startTime = startTimeStr;
+              
+              // Handle EndTime similarly
+              var endTimeValue = row[endTimeIdx];
+              var endTimeStr = '';
+              if (endTimeValue instanceof Date) {
+                endTimeStr = Utilities.formatDate(endTimeValue, Session.getScriptTimeZone(), 'HH:mm');
+              } else {
+                endTimeStr = String(endTimeValue || '').trim();
+                // If it's an ISO string, extract just HH:mm
+                if (endTimeStr.match(/T\d{2}:\d{2}/)) {
+                  try {
+                    var timeDate = new Date(endTimeStr);
+                    if (!isNaN(timeDate.getTime())) {
+                      endTimeStr = Utilities.formatDate(timeDate, Session.getScriptTimeZone(), 'HH:mm');
+                    }
+                  } catch (e) {
+                    // If parsing fails, try to extract HH:mm from string
+                    var match = endTimeStr.match(/(\d{2}):(\d{2})/);
+                    if (match) {
+                      endTimeStr = match[1] + ':' + match[2];
+                    }
+                  }
+                }
+                // Ensure it's only HH:mm (remove seconds if present)
+                if (endTimeStr.length > 5) {
+                  endTimeStr = endTimeStr.substring(0, 5);
+                }
+              }
+              lessonObj.endTime = endTimeStr;
+            }
+            
             monthlyScheduleMap[studentName].push(lessonObj);
           }
         });
@@ -7151,26 +7953,70 @@ function getAllStudentDataForCacheBatched(batchSize = 20) {
           // Add lessons for current month
           if (studentName && monthlyScheduleMap[studentName]) {
             var currentMonthLessons = monthlyScheduleMap[studentName].filter(function(lesson) {
-              // Parse DD/MM/YYYY format correctly
-              var dateParts = lesson.start.split(' ')[0].split('/');
-              var day = parseInt(dateParts[0]);
-              var month = parseInt(dateParts[1]) - 1; // JavaScript months are 0-based
-              var year = parseInt(dateParts[2]);
-              var lessonDate = new Date(year, month, day);
+              var lessonDate = null;
+              
+              // Handle new schema (date + startTime)
+              if (lesson.date) {
+                try {
+                  lessonDate = new Date(lesson.date + 'T00:00:00');
+                  if (isNaN(lessonDate.getTime())) return false;
+                } catch (e) {
+                  return false;
+                }
+              } 
+              // Handle old schema (start: "DD/MM/YYYY HH:mm:ss")
+              else if (lesson.start) {
+                try {
+                  var dateParts = lesson.start.split(' ')[0].split('/');
+                  if (dateParts.length === 3) {
+                    var day = parseInt(dateParts[0]);
+                    var month = parseInt(dateParts[1]) - 1; // JavaScript months are 0-based
+                    var year = parseInt(dateParts[2]);
+                    lessonDate = new Date(year, month, day);
+                  } else {
+                    return false;
+                  }
+                } catch (e) {
+                  return false;
+                }
+              } else {
+                return false;
+              }
+              
               var lessonMonth = Utilities.formatDate(lessonDate, Session.getScriptTimeZone(), 'MMM yyyy');
               return lessonMonth === currentMonth;
             }).map(function(lesson) {
               // Transform MonthlySchedule format to expected lessonCard format
-              // Parse DD/MM/YYYY format correctly
-              var dateParts = lesson.start.split(' ')[0].split('/');
-              var day = parseInt(dateParts[0]);
-              var month = parseInt(dateParts[1]) - 1; // JavaScript months are 0-based
-              var year = parseInt(dateParts[2]);
-              var lessonDate = new Date(year, month, day);
-              var time = lesson.start.split(' ')[1] || '12:00:00'; // Extract time part
+              var day = '';
+              var time = '';
+              
+              if (lesson.date && lesson.startTime) {
+                // New schema
+                try {
+                  var lessonDate = new Date(lesson.date + 'T00:00:00');
+                  day = Utilities.formatDate(lessonDate, Session.getScriptTimeZone(), 'dd');
+                  time = String(lesson.startTime).trim().substring(0, 5); // Get HH:mm part
+                } catch (e) {
+                  day = '';
+                  time = '';
+                }
+              } else if (lesson.start) {
+                // Old schema: Parse DD/MM/YYYY format
+                try {
+                  var dateParts = lesson.start.split(' ')[0].split('/');
+                  if (dateParts.length === 3) {
+                    day = dateParts[0].padStart(2, '0');
+                    time = (lesson.start.split(' ')[1] || '12:00:00').substring(0, 5); // Get HH:mm part
+                  }
+                } catch (e) {
+                  day = '';
+                  time = '';
+                }
+              }
+              
               return {
-                day: day.toString().padStart(2, '0'),
-                time: time.substring(0, 5), // Get HH:mm part
+                day: day,
+                time: time,
                 status: lesson.status || 'scheduled'
               };
             });
@@ -7183,26 +8029,70 @@ function getAllStudentDataForCacheBatched(batchSize = 20) {
           var nextMonthData = { Payment: '未', Lessons: [] };
           if (studentName && monthlyScheduleMap[studentName]) {
             var nextMonthLessons = monthlyScheduleMap[studentName].filter(function(lesson) {
-              // Parse DD/MM/YYYY format correctly
-              var dateParts = lesson.start.split(' ')[0].split('/');
-              var day = parseInt(dateParts[0]);
-              var month = parseInt(dateParts[1]) - 1; // JavaScript months are 0-based
-              var year = parseInt(dateParts[2]);
-              var lessonDate = new Date(year, month, day);
+              var lessonDate = null;
+              
+              // Handle new schema (date + startTime)
+              if (lesson.date) {
+                try {
+                  lessonDate = new Date(lesson.date + 'T00:00:00');
+                  if (isNaN(lessonDate.getTime())) return false;
+                } catch (e) {
+                  return false;
+                }
+              } 
+              // Handle old schema (start: "DD/MM/YYYY HH:mm:ss")
+              else if (lesson.start) {
+                try {
+                  var dateParts = lesson.start.split(' ')[0].split('/');
+                  if (dateParts.length === 3) {
+                    var day = parseInt(dateParts[0]);
+                    var month = parseInt(dateParts[1]) - 1; // JavaScript months are 0-based
+                    var year = parseInt(dateParts[2]);
+                    lessonDate = new Date(year, month, day);
+                  } else {
+                    return false;
+                  }
+                } catch (e) {
+                  return false;
+                }
+              } else {
+                return false;
+              }
+              
               var lessonMonth = Utilities.formatDate(lessonDate, Session.getScriptTimeZone(), 'MMM yyyy');
               return lessonMonth === nextMonth;
             }).map(function(lesson) {
               // Transform MonthlySchedule format to expected lessonCard format
-              // Parse DD/MM/YYYY format correctly
-              var dateParts = lesson.start.split(' ')[0].split('/');
-              var day = parseInt(dateParts[0]);
-              var month = parseInt(dateParts[1]) - 1; // JavaScript months are 0-based
-              var year = parseInt(dateParts[2]);
-              var lessonDate = new Date(year, month, day);
-              var time = lesson.start.split(' ')[1] || '12:00:00'; // Extract time part
+              var day = '';
+              var time = '';
+              
+              if (lesson.date && lesson.startTime) {
+                // New schema
+                try {
+                  var lessonDate = new Date(lesson.date + 'T00:00:00');
+                  day = Utilities.formatDate(lessonDate, Session.getScriptTimeZone(), 'dd');
+                  time = String(lesson.startTime).trim().substring(0, 5); // Get HH:mm part
+                } catch (e) {
+                  day = '';
+                  time = '';
+                }
+              } else if (lesson.start) {
+                // Old schema: Parse DD/MM/YYYY format
+                try {
+                  var dateParts = lesson.start.split(' ')[0].split('/');
+                  if (dateParts.length === 3) {
+                    day = dateParts[0].padStart(2, '0');
+                    time = (lesson.start.split(' ')[1] || '12:00:00').substring(0, 5); // Get HH:mm part
+                  }
+                } catch (e) {
+                  day = '';
+                  time = '';
+                }
+              }
+              
               return {
-                day: day.toString().padStart(2, '0'),
-                time: time.substring(0, 5), // Get HH:mm part
+                day: day,
+                time: time,
                 status: lesson.status || 'scheduled'
               };
             });
