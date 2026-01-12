@@ -1426,6 +1426,9 @@
         </div>
         <footer class="flex items-center justify-between px-4 py-3 border-t border-gray-200">
           <div class="flex gap-2">
+            <button type="button" id="lessonConfirmBtn" data-feature="lessonActions" class="rounded-md border border-green-300 bg-green-50 px-3 py-1.5 text-sm font-medium text-green-700 hover:bg-green-100 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 hidden">
+              Confirm
+            </button>
             <button type="button" id="lessonCancelBtn" data-feature="lessonActions" class="rounded-md border border-red-300 bg-red-50 px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-100 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2">
               Cancel
             </button>
@@ -2466,7 +2469,7 @@
       close: $('#lessonDetailsClose'), cancel: $('#lessonDetailsCancel'),
       statusDot: $('#lessonStatusDot'), statusText: $('#lessonStatusText'),
       date: $('#lessonDate'), time: $('#lessonTime'), notes: $('#lessonNotes'),
-      cancelBtn: $('#lessonCancelBtn'), rescheduleBtn: $('#lessonRescheduleBtn'), removeBtn: $('#lessonRemoveBtn')
+      cancelBtn: $('#lessonCancelBtn'), rescheduleBtn: $('#lessonRescheduleBtn'), removeBtn: $('#lessonRemoveBtn'), confirmBtn: $('#lessonConfirmBtn')
     };
 
     // ---------- Book Lesson Modal API ----------
@@ -2495,6 +2498,14 @@
       // Log lesson data for debugging
       console.log('Opening lesson details modal with lesson:', lesson);
       console.log('Lesson eventID:', lesson.eventID, 'eventId:', lesson.eventId);
+      
+      // Debug: Check if button elements exist
+      console.log('Button elements check:', {
+        confirmBtn: !!lessonDetailsEls.confirmBtn,
+        cancelBtn: !!lessonDetailsEls.cancelBtn,
+        rescheduleBtn: !!lessonDetailsEls.rescheduleBtn,
+        removeBtn: !!lessonDetailsEls.removeBtn
+      });
 
       // Set status styling
       const statusStyles = {
@@ -2502,7 +2513,8 @@
         cancelled: { color: 'bg-slate-500', text: 'Cancelled' },
         rescheduled: { color: 'bg-amber-500', text: 'Rescheduled' },
         demo: { color: 'bg-orange-500', text: 'Demo' },
-        unscheduled: { color: 'bg-red-500', text: 'Unscheduled' }
+        unscheduled: { color: 'bg-red-500', text: 'Unscheduled' },
+        reserved: { color: 'bg-yellow-500', text: 'Reserved' }
       };
 
       const status = lesson.status || 'scheduled';
@@ -2511,8 +2523,60 @@
       lessonDetailsEls.statusDot.className = `w-3 h-3 rounded-full ${style.color}`;
       lessonDetailsEls.statusText.textContent = style.text;
 
-      // Disable cancel/reschedule when cancelled; keep remove enabled
+      // Show/hide buttons based on status
       const isCancelled = status === 'cancelled';
+      const isReserved = status === 'reserved';
+      
+      console.log('Lesson status:', status, 'isReserved:', isReserved, 'isCancelled:', isCancelled);
+      
+      // Reset all button visibility first - ensure buttons exist before manipulating
+      if (lessonDetailsEls.confirmBtn) {
+        lessonDetailsEls.confirmBtn.classList.add('hidden'); // Hide by default
+        console.log('Confirm button hidden');
+      } else {
+        console.error('Confirm button element not found!');
+      }
+      
+      if (lessonDetailsEls.cancelBtn) {
+        lessonDetailsEls.cancelBtn.classList.remove('hidden'); // Show by default
+        console.log('Cancel button shown');
+      } else {
+        console.error('Cancel button element not found!');
+      }
+      
+      if (lessonDetailsEls.rescheduleBtn) {
+        lessonDetailsEls.rescheduleBtn.classList.remove('hidden'); // Show by default
+        console.log('Reschedule button shown');
+      } else {
+        console.error('Reschedule button element not found!');
+      }
+      
+      if (lessonDetailsEls.removeBtn) {
+        lessonDetailsEls.removeBtn.classList.remove('hidden'); // Show by default
+        console.log('Remove button shown');
+      } else {
+        console.error('Remove button element not found!');
+      }
+      
+      // Show Confirm button only for reserved lessons
+      if (lessonDetailsEls.confirmBtn && isReserved) {
+        lessonDetailsEls.confirmBtn.classList.remove('hidden');
+        console.log('Confirm button shown for reserved lesson');
+      }
+      
+      // Hide Cancel/Reschedule buttons for reserved lessons
+      if (isReserved) {
+        if (lessonDetailsEls.cancelBtn) {
+          lessonDetailsEls.cancelBtn.classList.add('hidden');
+          console.log('Cancel button hidden for reserved lesson');
+        }
+        if (lessonDetailsEls.rescheduleBtn) {
+          lessonDetailsEls.rescheduleBtn.classList.add('hidden');
+          console.log('Reschedule button hidden for reserved lesson');
+        }
+      }
+      
+      // Disable cancel/reschedule when cancelled; keep remove enabled
       [lessonDetailsEls.cancelBtn, lessonDetailsEls.rescheduleBtn].forEach(btn => {
         if (btn) {
           btn.disabled = isCancelled;
@@ -2569,6 +2633,9 @@
         lessonDetailsEls.cancelBtn.removeEventListener('click', handleCancelLesson);
         lessonDetailsEls.rescheduleBtn.removeEventListener('click', handleRescheduleLesson);
         lessonDetailsEls.removeBtn.removeEventListener('click', handleRemoveLesson);
+        if (lessonDetailsEls.confirmBtn) {
+          lessonDetailsEls.confirmBtn.removeEventListener('click', handleConfirmReservedLesson);
+        }
         hide(lessonDetailsEls.root);
       }
 
@@ -3014,19 +3081,71 @@
           });
       }
 
+      function handleConfirmReservedLesson() {
+        if (lesson.status !== 'reserved') {
+          showToast('This lesson is not reserved.', 'info');
+          return;
+        }
+        
+        const eventId = lesson.eventId || lesson.eventID || null;
+        if (!eventId) {
+          showToast('Error: Event ID not found. Cannot confirm this lesson.', 'error');
+          return;
+        }
+        
+        const studentId = student?.id || student?.ID || 'unknown';
+        
+        showPageLoader();
+        setButtonLoading(lessonDetailsEls.confirmBtn, true, 'Confirming...');
+        
+        google.script.run
+          .withSuccessHandler(function(result) {
+            hidePageLoader();
+            setButtonLoading(lessonDetailsEls.confirmBtn, false);
+            
+            if (result.success) {
+              showToast('Lesson confirmed successfully!', 'success');
+              doClose();
+              // Refresh student data to show updated status
+              if (window.loadStudent && window.student) {
+                window.loadStudent(window.student);
+              }
+            } else {
+              showToast('Error confirming lesson: ' + (result.error || 'Unknown error'), 'error');
+            }
+          })
+          .withFailureHandler(function(error) {
+            hidePageLoader();
+            setButtonLoading(lessonDetailsEls.confirmBtn, false);
+            showToast('Error confirming lesson: ' + error.toString(), 'error');
+          })
+          .confirmReservedLesson(eventId, studentId);
+      }
+
       // Add event listeners
       lessonDetailsEls.close.addEventListener('click', doClose);
       lessonDetailsEls.cancel.addEventListener('click', doClose);
       lessonDetailsEls.cancelBtn.addEventListener('click', handleCancelLesson);
       lessonDetailsEls.rescheduleBtn.addEventListener('click', handleRescheduleLesson);
       lessonDetailsEls.removeBtn.addEventListener('click', handleRemoveLesson);
+      if (lessonDetailsEls.confirmBtn) {
+        lessonDetailsEls.confirmBtn.addEventListener('click', handleConfirmReservedLesson);
+      }
       
       show(lessonDetailsEls.root);
     }
 
     function openTimeSlotModal({ date=null, time=null, student=null, onClose=()=>{}, onConfirm=()=>{} }={}){
       if (!date || !time || !student) {
-        console.error('Missing required data for time slot modal');
+        console.error('Missing required data for time slot modal', { date, time, student });
+        showToast('Missing required data. Please try again.', 'error');
+        return;
+      }
+
+      // Validate modal elements exist
+      if (!timeSlotEls || !timeSlotEls.root || !timeSlotEls.selectedTimeDisplay) {
+        console.error('Time slot modal elements not initialized', timeSlotEls);
+        showToast('Modal elements not found. Please refresh the page.', 'error');
         return;
       }
 
@@ -3554,7 +3673,7 @@
                   } else if (lesson.status === 'rescheduled') {
                     cardColor = 'bg-amber-500 border-amber-600';
                   }
-                  lessonCard.className = `${cardColor} border-2 border-white rounded-md text-xs p-2 absolute top-2 w-4/5 shadow-sm hover:shadow-lg transition-all duration-200 cursor-pointer text-white`;
+                  lessonCard.className = `${cardColor} border-2 border-white rounded-md text-xs p-2 absolute top-0 w-4/5 shadow-sm hover:shadow-lg transition-all duration-200 cursor-pointer text-white`;
                   lessonCard.style.height = '50px';
                   lessonCard.style.zIndex = 10 + index; // Higher than teacher shifts (z-1)
                   
@@ -3876,7 +3995,7 @@
                   } else if (lesson.status === 'rescheduled') {
                     cardColor = 'bg-amber-500 border-amber-600';
                   }
-                  lessonCard.className = `${cardColor} border-2 border-white rounded-md text-xs p-2 absolute top-2 w-4/5 shadow-sm hover:shadow-lg transition-all duration-200 cursor-pointer text-white`;
+                  lessonCard.className = `${cardColor} border-2 border-white rounded-md text-xs p-2 absolute top-0 w-4/5 shadow-sm hover:shadow-lg transition-all duration-200 cursor-pointer text-white`;
                   lessonCard.style.height = '50px';
                   lessonCard.style.zIndex = 10 + index; // Higher than teacher shifts (z-1)
                   
@@ -4356,11 +4475,25 @@
       }
 
       function selectTimeSlot(cell, date, time) {
+        console.log('selectTimeSlot called', { date, time, cell });
+        
+        // Get student from window.student (global) instead of closure variable
+        const studentObj = window.student || student;
+        console.log('Student object:', studentObj, 'window.student:', window.student, 'closure student:', student);
+        
+        if (!studentObj) {
+          console.error('No student selected. Please select a student first.');
+          showToast('Please select a student first to book a lesson.', 'error');
+          return;
+        }
+        
+        console.log('Opening time slot modal with:', { date, time, student: studentObj });
+        
         // Open the time slot selection modal
         openTimeSlotModal({
           date: date,
           time: time,
-          student: student,
+          student: studentObj,
           onClose: () => {
             // Close the time slot modal and return to booking modal
           },
@@ -4503,63 +4636,119 @@
       totalLessonsContainer: $('#totalLessonsContainerNew')
     };
 
-    // Pre-load availability data for current week and next week
+    // Pre-load ALL availability and lessons data on page load for client-side filtering
     function preloadBookingAvailability() {
-      // Calculate current week (Monday)
-      let currentWeek = new Date();
-      const dayOfWeek = currentWeek.getDay();
-      const daysToMonday = dayOfWeek === 0 ? -6 : -(dayOfWeek - 1);
-      currentWeek.setDate(currentWeek.getDate() + daysToMonday);
-      currentWeek.setHours(0, 0, 0, 0);
+      console.log('Pre-loading all booking data on page load...');
       
-      // Preload current week + next 7 weeks (covers current & next month)
-      const weeksToLoad = [];
-      for (let i = 0; i < 8; i++) {
-        const wk = new Date(currentWeek);
-        wk.setDate(currentWeek.getDate() + (i * 7));
-        weeksToLoad.push(wk);
+      // Fetch all availability data
+      google.script.run
+        .withSuccessHandler(function(result) {
+          let allAvailability = {};
+          if (typeof result === 'string') {
+            try {
+              allAvailability = JSON.parse(result) || {};
+            } catch (e) {
+              console.error('Failed to parse availability data:', e);
+              allAvailability = {};
+            }
+          } else {
+            allAvailability = result || {};
+          }
+          
+          // Store all availability data
+          window.bookingAllAvailability = allAvailability;
+          console.log('Pre-loaded all availability data:', Object.keys(allAvailability).length, 'dates');
+        })
+        .withFailureHandler(function(error) {
+          console.error('Error pre-loading all availability:', error);
+          window.bookingAllAvailability = {};
+        })
+        .getAllBookingAvailability();
+      
+      // Fetch all lessons data
+      google.script.run
+        .withSuccessHandler(function(result) {
+          let allLessons = {};
+          if (typeof result === 'string') {
+            try {
+              allLessons = JSON.parse(result) || {};
+            } catch (e) {
+              console.error('Failed to parse lessons data:', e);
+              allLessons = {};
+            }
+          } else {
+            allLessons = result || {};
+          }
+          
+          // Store all lessons data
+          window.bookingAllLessons = allLessons;
+          console.log('Pre-loaded all lessons data:', Object.keys(allLessons).length, 'dates');
+        })
+        .withFailureHandler(function(error) {
+          console.error('Error pre-loading all lessons:', error);
+          window.bookingAllLessons = {};
+        })
+        .getAllMonthlyScheduleLessons();
+    }
+    
+    // Helper function to filter availability by week from all-data cache
+    function filterAvailabilityByWeek(weekStart, allAvailability, isChildStudent = false) {
+      if (!allAvailability || Object.keys(allAvailability).length === 0) {
+        return {};
       }
       
-      weeksToLoad.forEach((weekStart) => {
-        const weekKey = weekStart.toISOString();
-        
-        // Skip if already cached
-        if (window.bookingAvailabilityCache[weekKey]) {
-          console.log('Week already cached:', weekKey);
-          return;
-        }
-        
-        // Load availability data
-        try {
-          google.script.run
-            .withSuccessHandler(function(result) {
-              let availabilityData = {};
-              if (typeof result === 'string') {
-                try {
-                  availabilityData = JSON.parse(result);
-                } catch (e) {
-                  console.error('Failed to parse availability data:', e);
-                  availabilityData = {};
-                }
-              } else {
-                availabilityData = result || {};
-              }
-              
-              // Cache the data
-              window.bookingAvailabilityCache[weekKey] = availabilityData;
-              console.log('Pre-loaded availability for week:', weekKey, Object.keys(availabilityData).length, 'dates');
-            })
-            .withFailureHandler(function(error) {
-              console.error('Error pre-loading availability for week', weekKey, ':', error);
-              // Cache empty object to prevent repeated failed requests
-              window.bookingAvailabilityCache[weekKey] = {};
-            })
-            .getWeekAvailability(weekStart.toISOString(), '');
-        } catch (error) {
-          console.error('Error calling getWeekAvailability for pre-load:', error);
-          window.bookingAvailabilityCache[weekKey] = {};
+      const weekStartDate = new Date(weekStart);
+      weekStartDate.setHours(0, 0, 0, 0);
+      const weekEndDate = new Date(weekStartDate);
+      weekEndDate.setDate(weekStartDate.getDate() + 7);
+      
+      const weekStartStr = weekStartDate.toISOString().split('T')[0];
+      const weekEndStr = weekEndDate.toISOString().split('T')[0];
+      
+      const filtered = {};
+      Object.keys(allAvailability).forEach(dateStr => {
+        if (dateStr >= weekStartStr && dateStr < weekEndStr) {
+          // Filter by date first
+          const dayData = {};
+          Object.keys(allAvailability[dateStr]).forEach(timeStr => {
+            const slot = allAvailability[dateStr][timeStr];
+            // Filter out slots with adult lessons for child students
+            if (isChildStudent && slot.hasAdultLesson) {
+              return; // Skip this slot
+            }
+            dayData[timeStr] = slot;
+          });
+          if (Object.keys(dayData).length > 0) {
+            filtered[dateStr] = dayData;
+          }
         }
       });
+      
+      return filtered;
+    }
+    
+    // Helper function to filter lessons by week from all-data cache
+    function filterLessonsByWeek(weekStart, allLessons) {
+      if (!allLessons || Object.keys(allLessons).length === 0) {
+        return {};
+      }
+      
+      const weekStartDate = new Date(weekStart);
+      weekStartDate.setHours(0, 0, 0, 0);
+      const weekEndDate = new Date(weekStartDate);
+      weekEndDate.setDate(weekStartDate.getDate() + 7);
+      
+      const weekStartStr = weekStartDate.toISOString().split('T')[0];
+      const weekEndStr = weekEndDate.toISOString().split('T')[0];
+      
+      const filtered = {};
+      Object.keys(allLessons).forEach(dateStr => {
+        if (dateStr >= weekStartStr && dateStr < weekEndStr) {
+          filtered[dateStr] = allLessons[dateStr];
+        }
+      });
+      
+      return filtered;
     }
     
     // Pre-load availability data when page loads
@@ -4735,69 +4924,39 @@
       }
 
       function generateCalendarGridNew(weekStart) {
-        // Normalize week start to Monday at midnight for cache key
-        const weekKey = new Date(weekStart);
-        weekKey.setHours(0, 0, 0, 0);
-        const cacheKey = weekKey.toISOString();
-        const studentId = window.currentBookingStudent ? window.currentBookingStudent.id : '';
+        // Normalize week start to Monday at midnight
+        const weekStartDate = new Date(weekStart);
+        weekStartDate.setHours(0, 0, 0, 0);
+        const dayOfWeek = weekStartDate.getDay();
+        const daysToMonday = dayOfWeek === 0 ? -6 : -(dayOfWeek - 1);
+        weekStartDate.setDate(weekStartDate.getDate() + daysToMonday);
+        weekStartDate.setHours(0, 0, 0, 0);
         
-        // Check if data is already cached (pre-loaded when student details opened)
-        const cachedAvailability = window.bookingAvailabilityCache && window.bookingAvailabilityCache[cacheKey];
-        const cachedLessons = window.bookingExistingLessonsCache && window.bookingExistingLessonsCache[cacheKey];
+        // Check if all-data cache exists (pre-loaded on page load)
+        const allAvailability = window.bookingAllAvailability || {};
+        const allLessons = window.bookingAllLessons || {};
+        const isChildStudent = window.currentBookingStudent && window.currentBookingStudent.isChild;
         
-        // Debug logging
-        console.log('Calendar cache check:', {
-          cacheKey: cacheKey,
-          hasAvailabilityCache: !!cachedAvailability,
-          hasLessonsCache: !!cachedLessons,
-          availabilityCacheKeys: window.bookingAvailabilityCache ? Object.keys(window.bookingAvailabilityCache) : [],
-          lessonsCacheKeys: window.bookingExistingLessonsCache ? Object.keys(window.bookingExistingLessonsCache) : []
+        // Filter data for this week from all-data cache (with child student filtering)
+        const weekAvailability = filterAvailabilityByWeek(weekStartDate, allAvailability, isChildStudent);
+        const weekLessons = filterLessonsByWeek(weekStartDate, allLessons);
+        
+        console.log('Calendar data check:', {
+          hasAllAvailability: Object.keys(allAvailability).length > 0,
+          hasAllLessons: Object.keys(allLessons).length > 0,
+          weekAvailabilityDates: Object.keys(weekAvailability).length,
+          weekLessonsDates: Object.keys(weekLessons).length
         });
         
-        // If we have availability cached, use it immediately (lessons can be empty initially)
-        if (cachedAvailability) {
-          console.log('Using pre-loaded cached data for week:', cacheKey);
-          generateAvailabilityCalendar(weekStart, cachedAvailability, cachedLessons || {});
-          
-          // If lessons are missing, fetch them in background and update
-          if (!cachedLessons) {
-            console.log('Lessons cache missing, fetching in background...');
-            try {
-              google.script.run
-                .withSuccessHandler(function(result) {
-                  let existingLessons = {};
-                  if (typeof result === 'string') {
-                    try {
-                      existingLessons = JSON.parse(result);
-                    } catch (e) {
-                      console.error('Failed to parse existing lessons:', e);
-                      existingLessons = {};
-                    }
-                  } else {
-                    existingLessons = result || {};
-                  }
-                  
-                  if (!window.bookingExistingLessonsCache) {
-                    window.bookingExistingLessonsCache = {};
-                  }
-                  window.bookingExistingLessonsCache[cacheKey] = existingLessons;
-                  
-                  // Re-render with updated lessons data
-                  generateAvailabilityCalendar(weekStart, cachedAvailability, existingLessons);
-                })
-                .withFailureHandler(function(error) {
-                  console.error('Error getting existing lessons:', error);
-                })
-                .getExistingLessonsFromSheet(weekStart.toISOString());
-            } catch (error) {
-              console.error('Error calling getExistingLessonsFromSheet:', error);
-            }
-          }
+        // If we have data (even if empty), use it immediately - no database fetch needed
+        if (Object.keys(allAvailability).length > 0 || Object.keys(allLessons).length > 0) {
+          console.log('Using pre-loaded all-data cache, filtered for week');
+          generateAvailabilityCalendar(weekStartDate, weekAvailability, weekLessons);
           return; // Exit early - no loading spinner needed
         }
         
-        // Only show loading spinner if NO cache exists at all
-        console.log('No cache found, fetching data...');
+        // Fallback: if cache doesn't exist yet, show loading and wait for it
+        console.log('All-data cache not ready yet, showing loading spinner...');
         setCalendarLoading(true);
         bookLessonElsNew.calendarGrid.innerHTML = `
           <div class="col-span-8 flex flex-col items-center justify-center min-h-[400px] w-full bg-gray-50 rounded-lg p-8">
@@ -4806,114 +4965,44 @@
               <div class="animate-spin rounded-full h-12 w-12 border-4 border-green-600 border-t-transparent absolute top-0 left-0"></div>
             </div>
             <div class="mt-4 text-center">
-              <p class="text-lg font-medium text-gray-900">Loading Availability</p>
-              <p class="text-sm text-gray-500 mt-1">Checking teacher schedules...</p>
+              <p class="text-lg font-medium text-gray-900">Loading Calendar</p>
+              <p class="text-sm text-gray-500 mt-1">Pre-loading data...</p>
             </div>
           </div>
         `;
-
-        // Fetch both availability and existing lessons in parallel
-        Promise.all([
-          new Promise((resolve, reject) => {
-            // Fetch availability from server
-            try {
-              google.script.run
-                .withSuccessHandler(function(result) {
-                  let availabilityData = {};
-                  if (typeof result === 'string') {
-                    try {
-                      availabilityData = JSON.parse(result);
-                    } catch (e) {
-                      console.error('Failed to parse availability data:', e);
-                      availabilityData = {};
-                    }
-                  } else {
-                    availabilityData = result || {};
-                  }
-
-                  // Cache the data
-                  if (!window.bookingAvailabilityCache) {
-                    window.bookingAvailabilityCache = {};
-                  }
-                  window.bookingAvailabilityCache[cacheKey] = availabilityData;
-                  console.log('Cached availability data for week:', cacheKey);
-                  resolve(availabilityData);
-                })
-                .withFailureHandler(function(error) {
-                  console.error('Error getting availability:', error);
-                  resolve({}); // Resolve with empty instead of rejecting
-                })
-                .getWeekAvailability(weekStart.toISOString(), studentId);
-            } catch (error) {
-              resolve({}); // Resolve with empty on error
-            }
-          }),
-          new Promise((resolve, reject) => {
-            // Check cache first for existing lessons
-            if (cachedLessons) {
-              console.log('Using cached existing lessons for week:', cacheKey);
-              resolve(cachedLessons);
-              return;
-            }
-            
-            // Fetch existing lessons
-            try {
-              google.script.run
-                .withSuccessHandler(function(result) {
-                  let existingLessons = {};
-                  if (typeof result === 'string') {
-                    try {
-                      existingLessons = JSON.parse(result);
-                    } catch (e) {
-                      console.error('Failed to parse existing lessons:', e);
-                      existingLessons = {};
-                    }
-                  } else {
-                    existingLessons = result || {};
-                  }
-                  
-                  // Cache the data
-                  if (!window.bookingExistingLessonsCache) {
-                    window.bookingExistingLessonsCache = {};
-                  }
-                  window.bookingExistingLessonsCache[cacheKey] = existingLessons;
-                  resolve(existingLessons);
-                })
-                .withFailureHandler(function(error) {
-                  console.error('Error getting existing lessons:', error);
-                  resolve({}); // Resolve with empty object instead of rejecting
-                })
-                .getExistingLessonsFromSheet(weekStart.toISOString());
-            } catch (error) {
-              resolve({}); // Resolve with empty object on error
-            }
-          })
-        ]).then(([availabilityData, existingLessons]) => {
-          // Check if we have any data
-          const dateKeys = Object.keys(availabilityData);
-          console.log('Availability dates found:', dateKeys.length);
-          if (dateKeys.length === 0) {
-            console.warn('No availability data returned - teacher schedules may need to be cached');
-            showToast('No availability data found. Please ensure teacher schedules are cached.', 'warning');
+        
+        // Wait for cache to be ready (check every 100ms, max 5 seconds)
+        let checkCount = 0;
+        const maxChecks = 50;
+        const checkInterval = setInterval(() => {
+          checkCount++;
+          const cachedAvailability = window.bookingAllAvailability || {};
+          const cachedLessons = window.bookingAllLessons || {};
+          
+          if (Object.keys(cachedAvailability).length > 0 || Object.keys(cachedLessons).length > 0 || checkCount >= maxChecks) {
+            clearInterval(checkInterval);
+            const isChildStudent = window.currentBookingStudent && window.currentBookingStudent.isChild;
+            const filteredAvailability = filterAvailabilityByWeek(weekStartDate, cachedAvailability, isChildStudent);
+            const filteredLessons = filterLessonsByWeek(weekStartDate, cachedLessons);
+            setCalendarLoading(false);
+            generateAvailabilityCalendar(weekStartDate, filteredAvailability, filteredLessons);
           }
-
-          generateAvailabilityCalendar(weekStart, availabilityData, existingLessons);
-        }).catch((error) => {
-          console.error('Error loading calendar data:', error);
-          showToast('Error loading availability data: ' + error, 'error');
-          bookLessonElsNew.calendarGrid.innerHTML = `
-            <div class="col-span-8 p-8 text-center">
-              <p class="text-gray-500 mb-2">Error loading availability</p>
-              <p class="text-sm text-gray-400">${error}</p>
-              <p class="text-sm text-gray-400 mt-2">Please ensure teacher schedules are cached.</p>
-            </div>
-          `;
-        }).finally(() => {
-          setCalendarLoading(false);
-        });
+        }, 100);
       }
 
       function selectTimeSlotNew(cell, date, time) {
+        console.log('selectTimeSlotNew called', { date, time, cell });
+        
+        // Get student from window.student (global) instead of closure variable
+        const studentObj = window.student || student;
+        console.log('Student object:', studentObj, 'window.student:', window.student, 'closure student:', student);
+        
+        if (!studentObj) {
+          console.error('No student selected. Please select a student first.');
+          showToast('Please select a student first to book a lesson.', 'error');
+          return;
+        }
+        
         // Check if slot is at least 1 hour in the future
         const slotDateTime = new Date(date);
         const [hours, minutes] = time.split(':').map(Number);
@@ -4927,10 +5016,12 @@
           return;
         }
         
+        console.log('Opening time slot modal (new) with:', { date, time, student: studentObj });
+        
         openTimeSlotModalNew({
           date: date,
           time: time,
-          student: student,
+          student: studentObj,
           onClose: () => {},
           onConfirm: (lessonData) => {
             handleReservedBooking(lessonData);
@@ -5083,39 +5174,74 @@
 
     function openTimeSlotModalNew({ date=null, time=null, student=null, onClose=()=>{}, onConfirm=()=>{} }={}){
       if (!date || !time || !student) {
-        console.error('Missing required data for time slot modal');
+        console.error('Missing required data for time slot modal', { date, time, student });
+        showToast('Missing required data. Please try again.', 'error');
+        return;
+      }
+
+      // Validate modal elements exist
+      if (!timeSlotElsNew || !timeSlotElsNew.root || !timeSlotElsNew.selectedTimeDisplay) {
+        console.error('Time slot modal elements not initialized', timeSlotElsNew);
+        showToast('Modal elements not found. Please refresh the page.', 'error');
         return;
       }
 
       // Format the selected time for display (just HH:MM)
       const timeStr = time;
       
-      timeSlotElsNew.selectedTimeDisplay.textContent = timeStr;
-      timeSlotElsNew.type.value = 'Cafe';
-      timeSlotElsNew.notes.value = '';
-      timeSlotElsNew.teacher.value = '';
-      timeSlotElsNew.totalLessons.value = '';
+      // Safely set all form values with validation
+      // Note: $() returns DOM element or null, not jQuery object
+      try {
+        if (timeSlotElsNew.selectedTimeDisplay) {
+          timeSlotElsNew.selectedTimeDisplay.textContent = timeStr;
+        }
+        if (timeSlotElsNew.type) {
+          timeSlotElsNew.type.value = 'Cafe';
+        }
+        if (timeSlotElsNew.notes) {
+          timeSlotElsNew.notes.value = '';
+        }
+        // Safely set teacher value - check if element exists
+        if (timeSlotElsNew.teacher) {
+          timeSlotElsNew.teacher.value = '';
+        }
+        if (timeSlotElsNew.totalLessons) {
+          timeSlotElsNew.totalLessons.value = '';
+        }
+      } catch (e) {
+        console.error('Error setting form values:', e);
+        // Continue anyway - modal should still open
+      }
       
       // Load teacher names and populate dropdown
       if (window.google && google.script && google.script.run) {
         google.script.run
           .withSuccessHandler(function(teachers) {
+            // Validate teachers is an array
+            if (!teachers || !Array.isArray(teachers)) {
+              console.warn('Invalid teachers data received:', teachers);
+              return;
+            }
+            
             const teacherSelect = timeSlotElsNew.teacher;
-            if (teacherSelect && teacherSelect.length > 0) {
+            // Check if teacherSelect exists (DOM element, not jQuery object)
+            if (teacherSelect && teacherSelect.nodeName) {
               // Clear existing options except the first "Any Available Teacher"
-              while (teacherSelect[0].options.length > 1) {
-                teacherSelect[0].remove(1);
+              while (teacherSelect.options.length > 1) {
+                teacherSelect.remove(1);
               }
               
               // Add teacher options
-              if (teachers && teachers.length > 0) {
+              if (teachers.length > 0) {
                 teachers.forEach(function(teacher) {
                   const option = document.createElement('option');
                   option.value = teacher;
                   option.textContent = teacher;
-                  teacherSelect[0].appendChild(option);
+                  teacherSelect.appendChild(option);
                 });
               }
+            } else {
+              console.warn('Teacher select element not found or not initialized');
             }
           })
           .withFailureHandler(function(error) {
@@ -5176,17 +5302,22 @@
         const isInputVisible = totalLessonsContainerCheck && totalLessonsContainerCheck.style.display !== 'none';
         
         if (isInputVisible) {
-          const totalLessonsInput = timeSlotElsNew.totalLessons.value.trim();
+          const totalLessonsEl = timeSlotElsNew.totalLessons;
+          if (!totalLessonsEl) {
+            showToast('Total lessons input not found.', 'error');
+            return;
+          }
+          const totalLessonsInput = totalLessonsEl.value.trim();
           if (!totalLessonsInput) {
             showToast('Please enter the total number of lessons for this month.', 'error');
-            timeSlotElsNew.totalLessons.focus();
+            totalLessonsEl.focus();
             return;
           }
           
           totalLessons = parseInt(totalLessonsInput);
           if (isNaN(totalLessons) || totalLessons <= 0) {
             showToast('Please enter a valid number of lessons.', 'error');
-            timeSlotElsNew.totalLessons.focus();
+            totalLessonsEl.focus();
             return;
           }
         } else {
@@ -5197,13 +5328,18 @@
         const [hours, minutes] = time.split(':');
         dateTime.setHours(parseInt(hours), parseInt(minutes), 0, 0);
 
+        // Safely get form values (DOM elements, not jQuery objects)
+        const typeEl = timeSlotElsNew.type;
+        const notesEl = timeSlotElsNew.notes;
+        const teacherEl = timeSlotElsNew.teacher;
+
         const lessonData = {
           studentId: studentId,
           dateTime: dateTime.toISOString(),
           duration: 50,
-          type: timeSlotElsNew.type.value,
-          notes: timeSlotElsNew.notes.value,
-          teacherName: timeSlotElsNew.teacher && timeSlotElsNew.teacher.length > 0 ? timeSlotElsNew.teacher[0].value : '',
+          type: typeEl ? typeEl.value : 'Cafe',
+          notes: notesEl ? notesEl.value : '',
+          teacherName: teacherEl ? teacherEl.value : '',
           totalLessons: totalLessons
         };
 
@@ -7112,7 +7248,8 @@
           cancelled:   { accent:'bg-slate-500',   hoverRing:'hover:ring-slate-500/60',   dot:'bg-slate-500',   bg:'bg-slate-50'   },
           rescheduled: { accent:'bg-amber-500',   hoverRing:'hover:ring-amber-500/60',   dot:'bg-amber-500',   bg:'bg-amber-50'   },
           demo:        { accent:'bg-orange-500',  hoverRing:'hover:ring-orange-500/60',  dot:'bg-orange-500',  bg:'bg-orange-50'  },
-          unscheduled: { accent:'bg-red-500',     hoverRing:'hover:ring-red-500/60',     dot:'bg-red-500',     bg:'bg-red-50'     }
+          unscheduled: { accent:'bg-red-500',     hoverRing:'hover:ring-red-500/60',     dot:'bg-red-500',     bg:'bg-red-50'     },
+          reserved:    { accent:'bg-yellow-500',  hoverRing:'hover:ring-yellow-500/60',  dot:'bg-yellow-500', bg:'bg-yellow-50'  }
         };
         const styles = stylesMap[l.status] || stylesMap.cancelled;
         

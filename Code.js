@@ -1894,7 +1894,7 @@ function processEventsForMonth(events) {
     
     // Check for placeholder events first
     var status = 'scheduled'; // default
-    if (/(placeholder)/i.test(title)) {
+    if (/\(placeholder\)/i.test(title)) {
       status = 'reserved';
       Logger.log('📅 Found placeholder event: ' + title + ' -> Status: reserved');
     } else if (/\[RESCHEDULED\]/i.test(title)) {
@@ -3894,7 +3894,18 @@ function calculateAndStoreWeekAvailability(weekStart, forceRecalculate) {
         } else {
           // New schema: use Date and StartTime columns
           var rowDate = row[dateIdx];
-          rowTimeStr = String(row[startTimeIdx] || '').trim();
+          
+          // Handle StartTime column (could be Date object or string)
+          var startTimeValue = row[startTimeIdx];
+          if (startTimeValue instanceof Date) {
+            rowTimeStr = Utilities.formatDate(startTimeValue, tz, 'HH:mm');
+          } else {
+            rowTimeStr = String(startTimeValue || '').trim();
+            // Ensure it's in HH:mm format (remove any extra characters)
+            if (rowTimeStr.length > 5) {
+              rowTimeStr = rowTimeStr.substring(0, 5);
+            }
+          }
           
           // Handle Date column (could be Date object or string)
           if (rowDate instanceof Date) {
@@ -3921,7 +3932,8 @@ function calculateAndStoreWeekAvailability(weekStart, forceRecalculate) {
         
         if (!rowDateStr || !rowTimeStr) continue;
         
-        if (rowDateStr >= weekStartStr && rowDateStr < weekEndStr && status === 'scheduled') {
+        // Count scheduled, reserved, AND demo lessons in availability calculation
+        if (rowDateStr >= weekStartStr && rowDateStr < weekEndStr && (status === 'scheduled' || status === 'reserved' || status === 'demo')) {
           if (!existingLessonsMap[rowDateStr]) {
             existingLessonsMap[rowDateStr] = {};
           }
@@ -3929,13 +3941,14 @@ function calculateAndStoreWeekAvailability(weekStart, forceRecalculate) {
             existingLessonsMap[rowDateStr][rowTimeStr] = [];
           }
           existingLessonsMap[rowDateStr][rowTimeStr].push({
+            status: status,
             isKidsLesson: isKidsLesson
           });
           lessonsFound++;
         }
       }
       
-      Logger.log('Found ' + lessonsFound + ' scheduled lessons in ' + sheetName + ' for week ' + weekStartStr + ' to ' + weekEndStr);
+      Logger.log('Found ' + lessonsFound + ' scheduled/reserved/demo lessons in ' + sheetName + ' for week ' + weekStartStr + ' to ' + weekEndStr);
     };
     
     // Read from MonthlySchedule
@@ -4094,6 +4107,82 @@ function calculateAndStoreWeekAvailability(weekStart, forceRecalculate) {
   } catch (error) {
     Logger.log('Error calculating week availability: ' + error.toString());
     Logger.log('Stack: ' + error.stack);
+  }
+}
+
+/**
+ * Get ALL booking availability data from BookingAvailability sheet
+ * Used for page load pre-fetching - returns all data for client-side filtering
+ * @returns {string} JSON string of all availability data organized by date and time
+ */
+function getAllBookingAvailability() {
+  try {
+    var sheet = getBookingAvailabilitySheet();
+    var data = sheet.getDataRange().getValues();
+    
+    if (data.length < 2) {
+      Logger.log('No availability data found');
+      return JSON.stringify({});
+    }
+    
+    var headers = data[0];
+    var tz = Session.getScriptTimeZone();
+    
+    // Build availability object with all dates
+    var allAvailability = {};
+    
+    for (var i = 1; i < data.length; i++) {
+      var row = data[i];
+      var rowDate = row[0];
+      
+      if (!(rowDate instanceof Date)) continue;
+      
+      var rowDateStr = Utilities.formatDate(rowDate, tz, 'yyyy-MM-dd');
+      var rowTime = row[1];
+      var rowTimeStr = '';
+      
+      if (rowTime instanceof Date) {
+        rowTimeStr = Utilities.formatDate(rowTime, tz, 'HH:mm');
+      } else {
+        rowTimeStr = String(rowTime || '').trim();
+        if (rowTimeStr.length > 5) {
+          rowTimeStr = rowTimeStr.substring(0, 5);
+        }
+      }
+      
+      if (!rowTimeStr) continue;
+      
+      var teacherCount = Number(row[2]) || 0;
+      var lessonCount = Number(row[3]) || 0;
+      var availableSlotsCount = Number(row[4]) || 0;
+      var teachersStr = String(row[5] || '');
+      var teachers = teachersStr ? teachersStr.split(',').map(function(t) { return t.trim(); }).filter(function(t) { return t.length > 0; }) : [];
+      var hasKidsLesson = row[6] === true || row[6] === 'TRUE';
+      var hasAdultLesson = row[7] === true || row[7] === 'TRUE';
+      var reason = String(row[8] || '');
+      
+      if (!allAvailability[rowDateStr]) {
+        allAvailability[rowDateStr] = {};
+      }
+      
+      allAvailability[rowDateStr][rowTimeStr] = {
+        available: availableSlotsCount > 0,
+        teacherCount: teacherCount,
+        lessonCount: lessonCount,
+        availableSlots: availableSlotsCount,
+        teachers: teachers,
+        hasKidsLesson: hasKidsLesson,
+        hasAdultLesson: hasAdultLesson,
+        reason: reason || null
+      };
+    }
+    
+    Logger.log('Returning all availability data: ' + Object.keys(allAvailability).length + ' dates');
+    return JSON.stringify(allAvailability);
+    
+  } catch (error) {
+    Logger.log('Error getting all booking availability: ' + error.toString());
+    return JSON.stringify({ error: error.toString() });
   }
 }
 
@@ -4395,7 +4484,98 @@ function updateAvailabilityForTimeSlot(lessonDateTime, isBooking, isKidsLesson) 
 }
 
 /**
+ * Refresh availability for current month only (4 weeks)
+ * Faster than full refresh - intended for hourly updates
+ */
+function refreshCurrentMonthAvailability() {
+  try {
+    // Removed syncTeacherSchedulesFromCalendars() - now only called in daily maintenance
+    
+    var now = new Date();
+    var currentWeekStart = new Date(now);
+    var dayOfWeek = currentWeekStart.getDay();
+    var daysToMonday = dayOfWeek === 0 ? -6 : -(dayOfWeek - 1);
+    currentWeekStart.setDate(currentWeekStart.getDate() + daysToMonday);
+    currentWeekStart.setHours(0, 0, 0, 0);
+    
+    var tz = Session.getScriptTimeZone();
+    var currentMonth = Utilities.formatDate(now, tz, 'yyyy-MM');
+    
+    // Refresh up to 4 weeks, but only if they're in the current month
+    var weeksRefreshed = 0;
+    for (var week = 0; week < 4; week++) {
+      var weekStart = new Date(currentWeekStart);
+      weekStart.setDate(currentWeekStart.getDate() + (week * 7));
+      
+      // Check if this week belongs to current month
+      var weekMonth = Utilities.formatDate(weekStart, tz, 'yyyy-MM');
+      if (weekMonth !== currentMonth) {
+        // Week is in next month, stop here
+        break;
+      }
+      
+      Logger.log('Calculating availability for week starting ' + Utilities.formatDate(weekStart, tz, 'yyyy-MM-dd'));
+      calculateAndStoreWeekAvailability(weekStart, true);
+      weeksRefreshed++;
+    }
+    
+    Logger.log('Refreshed booking availability cache for ' + weeksRefreshed + ' weeks of current month');
+  } catch (error) {
+    Logger.log('Error refreshing current month availability cache: ' + error.toString());
+  }
+}
+
+/**
+ * Refresh availability for next month
+ * Intended for daily updates
+ */
+function refreshNextMonthAvailability() {
+  try {
+    // Removed syncTeacherSchedulesFromCalendars() - now only called in daily maintenance
+    
+    var now = new Date();
+    var tz = Session.getScriptTimeZone();
+    var currentMonth = Utilities.formatDate(now, tz, 'yyyy-MM');
+    
+    // Calculate first day of next month
+    var nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    var nextMonthStr = Utilities.formatDate(nextMonth, tz, 'yyyy-MM');
+    
+    // Find Monday of the first week that contains next month
+    var firstDayOfNextMonth = new Date(nextMonth);
+    var dayOfWeek = firstDayOfNextMonth.getDay();
+    var daysToMonday = dayOfWeek === 0 ? -6 : -(dayOfWeek - 1);
+    var nextMonthWeekStart = new Date(firstDayOfNextMonth);
+    nextMonthWeekStart.setDate(firstDayOfNextMonth.getDate() + daysToMonday);
+    nextMonthWeekStart.setHours(0, 0, 0, 0);
+    
+    // Refresh up to 4 weeks of next month
+    var weeksRefreshed = 0;
+    for (var week = 0; week < 4; week++) {
+      var weekStart = new Date(nextMonthWeekStart);
+      weekStart.setDate(nextMonthWeekStart.getDate() + (week * 7));
+      
+      // Check if this week still belongs to next month
+      var weekMonth = Utilities.formatDate(weekStart, tz, 'yyyy-MM');
+      if (weekMonth !== nextMonthStr) {
+        // Week is beyond next month, stop here
+        break;
+      }
+      
+      Logger.log('Calculating availability for next month week starting ' + Utilities.formatDate(weekStart, tz, 'yyyy-MM-dd'));
+      calculateAndStoreWeekAvailability(weekStart, true);
+      weeksRefreshed++;
+    }
+    
+    Logger.log('Refreshed booking availability cache for ' + weeksRefreshed + ' weeks of next month');
+  } catch (error) {
+    Logger.log('Error refreshing next month availability cache: ' + error.toString());
+  }
+}
+
+/**
  * Refresh availability for next 6 weeks (background job)
+ * @deprecated Use refreshCurrentMonthAvailability() and refreshNextMonthAvailability() instead
  */
 function refreshBookingAvailabilityCache() {
   try {
@@ -4470,12 +4650,29 @@ function prunePastAvailability() {
 }
 
 /**
- * Hourly maintenance: prune past availability and refresh future availability.
+ * Hourly maintenance: prune past availability and refresh current month (4 weeks only).
  * Set an Apps Script time-based trigger to call this hourly.
  */
 function hourlyAvailabilityMaintenance() {
   prunePastAvailability();
-  refreshBookingAvailabilityCache();
+  refreshCurrentMonthAvailability(); // Only refresh current month (faster)
+}
+
+/**
+ * Daily maintenance: refresh both current month and next month availability.
+ * Set an Apps Script time-based trigger to call this daily (e.g., at 2 AM).
+ */
+function dailyAvailabilityMaintenance() {
+  // Sync teacher schedules once per day (not hourly)
+  try {
+    syncTeacherSchedulesFromCalendars();
+  } catch (e) {
+    Logger.log('Warning: syncTeacherSchedulesFromCalendars failed: ' + e.toString());
+  }
+  
+  prunePastAvailability();
+  refreshCurrentMonthAvailability(); // Refresh current month
+  refreshNextMonthAvailability(); // Also refresh next month
 }
 
 /**
@@ -4507,9 +4704,9 @@ function checkTimeSlotAvailability(dateStr, timeStr, existingLessonsMap) {
     if (existingLessonsMap && existingLessonsMap[dateStr] && existingLessonsMap[dateStr][timeStr]) {
       var lessons = existingLessonsMap[dateStr][timeStr];
       if (Array.isArray(lessons)) {
-        // Only count scheduled lessons (not reserved, cancelled, etc.)
+        // Count scheduled, reserved, AND demo lessons (to prevent overbooking)
         lessonCount = lessons.filter(function(lesson) {
-          return lesson.status === 'scheduled';
+          return lesson.status === 'scheduled' || lesson.status === 'reserved' || lesson.status === 'demo';
         }).length;
       }
     } else if (!existingLessonsMap) {
@@ -4534,9 +4731,9 @@ function checkTimeSlotAvailability(dateStr, timeStr, existingLessonsMap) {
                 var rowDateStr = Utilities.formatDate(startTime, tz, 'yyyy-MM-dd');
                 var rowTimeStr = Utilities.formatDate(startTime, tz, 'HH:mm');
                 
-                // Only count scheduled lessons (not reserved, cancelled, etc.)
+                // Count scheduled, reserved, AND demo lessons (to prevent overbooking)
                 var status = row[statusIdx] || 'scheduled';
-                if (rowDateStr === dateStr && rowTimeStr === timeStr && status === 'scheduled') {
+                if (rowDateStr === dateStr && rowTimeStr === timeStr && (status === 'scheduled' || status === 'reserved' || status === 'demo')) {
                   lessonCount++;
                 }
               }
@@ -7110,7 +7307,7 @@ function bookReservedLesson(studentId, dateTime, duration, lessonType, notes, to
     // Create event title (add 子 marker if child, and "placeholder" for reserved)
     var studentName = student.Name || student.name || 'Unknown Student';
     // Build title: child marker as prefix, lesson type suffix
-    var title = (isChildStudent ? '子 ' : '') + studentName + ' (' + lessonType + ') [placeholder]';
+    var title = (isChildStudent ? '子 ' : '') + studentName + ' (' + lessonType + ') (placeholder)';
     
     // Create event description
     var description = 'Reserved booking\n';
@@ -7148,7 +7345,7 @@ function bookReservedLesson(studentId, dateTime, duration, lessonType, notes, to
       title: title,
       startTime: startTime,
       endTime: endTime,
-      status: 'scheduled',
+      status: 'reserved',
       studentName: studentName,
       isKidsLesson: isChildStudent,
       teacherName: teacherName && teacherName.trim() ? teacherName.trim() : ''
@@ -7165,6 +7362,154 @@ function bookReservedLesson(studentId, dateTime, duration, lessonType, notes, to
     
   } catch (error) {
     Logger.log('Error booking reserved lesson: ' + error.toString());
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
+ * Confirm a reserved lesson (convert from reserved to scheduled)
+ * @param {string} eventId - Google Calendar event ID
+ * @param {string} studentId - Student ID for logging
+ * @returns {Object} Success/failure status
+ */
+function confirmReservedLesson(eventId, studentId) {
+  try {
+    Logger.log('=== confirmReservedLesson called ===');
+    Logger.log('Event ID: ' + eventId);
+    Logger.log('Student ID: ' + studentId);
+    
+    var calendar = CalendarApp.getCalendarById(LESSON_CALENDAR_ID);
+    var event = calendar.getEventById(eventId);
+    
+    if (!event) {
+      Logger.log('Event not found: ' + eventId);
+      return { success: false, error: 'Event not found' };
+    }
+    
+    // Get current title and validate it's a reserved lesson
+    var currentTitle = event.getTitle() || '';
+    
+    // Validate that this is actually a reserved lesson
+    if (!/\(placeholder\)/i.test(currentTitle)) {
+      Logger.log('ERROR: Event does not contain (placeholder) in title. EventId: ' + eventId + ', Title: ' + currentTitle);
+      return { success: false, error: 'Event is not a reserved lesson (no (placeholder) in title)' };
+    }
+    
+    // Log which event we're about to update
+    Logger.log('=== Updating ONLY this specific event ===');
+    Logger.log('EventId: ' + eventId);
+    Logger.log('Event Title: ' + currentTitle);
+    Logger.log('Event Start: ' + event.getStartTime());
+    Logger.log('Event Color (before): ' + event.getColor());
+    var startTime = event.getStartTime();
+    var endTime = event.getEndTime();
+    var description = event.getDescription() || '';
+    
+    // Extract lesson type from title (e.g., "(Cafe)" from "John Doe (Cafe) (placeholder)")
+    var lessonTypeMatch = currentTitle.match(/\(([^)]+)\)/);
+    var lessonType = lessonTypeMatch ? lessonTypeMatch[1] : 'Cafe'; // Default to Cafe if not found
+    
+    // Extract total lessons from description
+    var totalLessonsMatch = description.match(/Total lessons for month:\s*(\d+)/i);
+    var totalLessons = totalLessonsMatch ? parseInt(totalLessonsMatch[1], 10) : null;
+    
+    // Extract student name (remove 子 marker and (placeholder))
+    var studentName = currentTitle.replace(/^子\s*/, '').replace(/\s*\([^)]+\)\s*\(placeholder\)/i, '').trim();
+    
+    // Count scheduled lessons for this student in this month
+    var lessonNumber = 1; // Default to 1 if we can't calculate
+    if (totalLessons && studentName) {
+      var tz = Session.getScriptTimeZone();
+      var monthStr = Utilities.formatDate(startTime, tz, 'MMM yyyy'); // e.g., "Jan 2025"
+      
+      try {
+        var studentEvents = getStudentEventsForMonth(studentName, monthStr);
+        // Count scheduled lessons (excluding reserved ones)
+        var scheduledCount = 0;
+        for (var i = 0; i < studentEvents.length; i++) {
+          if (studentEvents[i].status === 'scheduled') {
+            scheduledCount++;
+          }
+        }
+        // This lesson will be the next one
+        lessonNumber = scheduledCount + 1;
+        
+        // Don't exceed totalLessons
+        if (lessonNumber > totalLessons) {
+          lessonNumber = totalLessons;
+        }
+      } catch (e) {
+        Logger.log('Error counting scheduled lessons: ' + e.toString());
+        // Use default lessonNumber = 1
+      }
+    }
+    
+    // Build confirmed title with lesson number
+    var confirmedTitle = '';
+    if (totalLessons && lessonNumber) {
+      // Format: "John Doe (Cafe) 1/4"
+      var childMarker = /^子\s/.test(currentTitle) ? '子 ' : '';
+      confirmedTitle = childMarker + studentName + ' (' + lessonType + ') ' + lessonNumber + '/' + totalLessons;
+    } else {
+      // Fallback: just remove (placeholder) if we can't calculate lesson number
+      confirmedTitle = currentTitle.replace(/\s*\(placeholder\)/i, '').trim();
+    }
+    
+    // Update event title - ONLY this one event
+    Logger.log('Updating title from: "' + currentTitle + '" to: "' + confirmedTitle + '"');
+    event.setTitle(confirmedTitle);
+    
+    // Change color from orange (11) to green (10) for scheduled lessons - ONLY this one event
+    Logger.log('Changing color from: ' + event.getColor() + ' to: 10');
+    event.setColor('10'); // Green color for scheduled lessons
+    
+    // Add confirmation note to description - ONLY this one event
+    var confirmationNote = '\n\n--- CONFIRMED ---\nConfirmed by: ' + getCurrentStaffName() + '\nDate: ' + new Date().toLocaleString();
+    Logger.log('Appending confirmation note to description');
+    event.setDescription(description + confirmationNote);
+    
+    // Verify the update worked
+    Logger.log('Event updated successfully. New title: ' + event.getTitle() + ', New color: ' + event.getColor());
+    
+    // Get student info for MonthlySchedule update
+    var student = getStudentById(studentId);
+    var studentName = student ? (student.Name || student.name || 'Unknown Student') : 'Unknown Student';
+    var isKidsLesson = /^子\s/.test(confirmedTitle);
+    
+    // Extract teacher name from description if available
+    var teacherName = '';
+    var teacherMatch = description.match(/Teacher:\s*([^\n]+)/i);
+    if (teacherMatch) {
+      teacherName = teacherMatch[1].trim();
+    }
+    
+    // Log the action
+    logLessonAction(studentId, eventId, 'confirm', null, startTime.toISOString(), 'Reserved lesson confirmed');
+    
+    // Update MonthlySchedule using upsert to ensure all fields are updated correctly
+    upsertMonthlyScheduleRow_({
+      eventId: eventId,
+      title: confirmedTitle,
+      startTime: startTime,
+      endTime: endTime,
+      status: 'scheduled',
+      studentName: studentName,
+      isKidsLesson: isKidsLesson,
+      teacherName: teacherName
+    });
+    
+    // Update availability cache (lesson is now confirmed, so it counts as scheduled)
+    updateAvailabilityForTimeSlot(startTime, false, isKidsLesson); // false = not a new booking, just status change
+    
+    Logger.log('Reserved lesson confirmed successfully: ' + eventId);
+    return { 
+      success: true, 
+      message: 'Lesson confirmed successfully',
+      eventId: eventId
+    };
+    
+  } catch (error) {
+    Logger.log('Error confirming reserved lesson: ' + error.toString());
     return { success: false, error: error.toString() };
   }
 }
@@ -7610,6 +7955,142 @@ function getExistingLessonsFromSheet(startDate) {
     Logger.log('Error in getExistingLessonsFromSheet: ' + error.toString());
     Logger.log('Error stack: ' + error.stack);
     return {};
+  }
+}
+
+/**
+ * Get ALL lessons from MonthlySchedule sheet
+ * Used for page load pre-fetching - returns all lessons for client-side filtering
+ * @returns {string} JSON string of all lessons organized by date and time
+ */
+function getAllMonthlyScheduleLessons() {
+  try {
+    var ss = SpreadsheetApp.openById(SS_ID);
+    var sheet = ss.getSheetByName('MonthlySchedule');
+    
+    if (!sheet) {
+      Logger.log('MonthlySchedule sheet not found');
+      return JSON.stringify({});
+    }
+    
+    var lastRow = sheet.getLastRow();
+    if (lastRow <= 1) {
+      Logger.log('No data in MonthlySchedule sheet');
+      return JSON.stringify({});
+    }
+    
+    var data = sheet.getDataRange().getValues();
+    var headers = data[0];
+    
+    var dateCol = headers.indexOf('Date');
+    var startTimeCol = headers.indexOf('StartTime');
+    var endTimeCol = headers.indexOf('EndTime');
+    var studentNameCol = headers.indexOf('StudentName');
+    var statusCol = headers.indexOf('Status');
+    var eventIdCol = headers.indexOf('EventID');
+    var titleCol = headers.indexOf('Title');
+    var isKidsLessonCol = headers.indexOf('IsKidsLesson');
+    
+    // Backward compatibility
+    var oldStartCol = headers.indexOf('Start');
+    var oldEndCol = headers.indexOf('End');
+    var useOldSchema = (dateCol === -1 || startTimeCol === -1) && (oldStartCol !== -1);
+    
+    if (useOldSchema) {
+      if (oldStartCol === -1 || oldEndCol === -1 || studentNameCol === -1 || statusCol === -1) {
+        Logger.log('ERROR: Required columns not found');
+        return JSON.stringify({});
+      }
+    } else {
+      if (dateCol === -1 || startTimeCol === -1 || endTimeCol === -1 || studentNameCol === -1 || statusCol === -1) {
+        Logger.log('ERROR: Required columns not found');
+        return JSON.stringify({});
+      }
+    }
+    
+    var tz = Session.getScriptTimeZone();
+    var lessonsByDay = {};
+    
+    for (var i = 1; i < data.length; i++) {
+      var row = data[i];
+      var studentName = row[studentNameCol];
+      var status = row[statusCol];
+      
+      if (!studentName) continue;
+      
+      var eventDate = '';
+      var eventTime = '';
+      var startTime = null;
+      var endTime = null;
+      
+      if (useOldSchema) {
+        startTime = row[oldStartCol];
+        endTime = row[oldEndCol];
+        
+        if (!startTime) continue;
+        
+        var startDateObj = new Date(startTime);
+        if (isNaN(startDateObj.getTime())) continue;
+        
+        eventDate = Utilities.formatDate(startDateObj, tz, 'yyyy-MM-dd');
+        eventTime = Utilities.formatDate(startDateObj, tz, 'HH:mm');
+      } else {
+        var rowDate = row[dateCol];
+        var rowStartTime = row[startTimeCol];
+        var rowEndTime = row[endTimeCol];
+        
+        if (!rowDate || !rowStartTime) continue;
+        
+        if (rowDate instanceof Date) {
+          eventDate = Utilities.formatDate(rowDate, tz, 'yyyy-MM-dd');
+        } else {
+          eventDate = String(rowDate).trim();
+        }
+        
+        eventTime = String(rowStartTime).trim();
+        
+        try {
+          startTime = new Date(eventDate + 'T' + eventTime + ':00');
+          if (rowEndTime) {
+            endTime = new Date(eventDate + 'T' + String(rowEndTime).trim() + ':00');
+          }
+        } catch (e) {
+          continue;
+        }
+      }
+      
+      if (!eventDate || !eventTime) continue;
+      
+      if (!lessonsByDay[eventDate]) {
+        lessonsByDay[eventDate] = {};
+      }
+      
+      if (!lessonsByDay[eventDate][eventTime]) {
+        lessonsByDay[eventDate][eventTime] = [];
+      }
+      
+      var isKidsLesson = false;
+      if (isKidsLessonCol !== -1 && row[isKidsLessonCol]) {
+        isKidsLesson = row[isKidsLessonCol] === '子' || row[isKidsLessonCol] === true;
+      }
+      
+      lessonsByDay[eventDate][eventTime].push({
+        eventID: eventIdCol >= 0 ? row[eventIdCol] : '',
+        title: titleCol >= 0 ? row[titleCol] : '',
+        studentName: studentName,
+        status: status,
+        startTime: startTime ? startTime.toISOString() : null,
+        endTime: endTime ? endTime.toISOString() : null,
+        isKidsLesson: isKidsLesson
+      });
+    }
+    
+    Logger.log('Returning all lessons: ' + Object.keys(lessonsByDay).length + ' dates');
+    return JSON.stringify(lessonsByDay);
+    
+  } catch (error) {
+    Logger.log('Error getting all monthly schedule lessons: ' + error.toString());
+    return JSON.stringify({ error: error.toString() });
   }
 }
 

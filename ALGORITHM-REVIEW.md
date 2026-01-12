@@ -163,3 +163,5 @@ For each day (0-6):
 **Remaining Risk**:
 - ⚠️ Lessons created outside booking system might not be counted if they don't start on the hour
 
+
+
