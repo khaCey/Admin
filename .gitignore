@@ -1,2 +1,8 @@
 /.clasp.json
 /appsscript.json
+
+# React app
+/react-app/node_modules
+/react-app/client/node_modules
+/react-app/data
+/react-app/.env

@@ -4,8 +4,10 @@ var STUDENT_SHEET       = 'Students';
 var PAYMENT_SHEET       = 'Payment';
 var NOTES_SHEET         = 'Notes';
 var LESSON_SHEET        = 'Lessons';
-var OWNERS_COURSE_CAL_ID = 'c_403306dccf2039f61a620a4cfc22424c5a6f79e945054e57f30ecc50c90b9207@group.calendar.google.com';
 var LESSON_CALENDAR_ID  = 'greensquare.jp_h8u0oufn8feana384v67o46o78@group.calendar.google.com';
+var SHAM_CALENDAR_ID    = 'c_403306dccf2039f61a620a4cfc22424c5a6f79e945054e57f30ecc50c90b9207@group.calendar.google.com';
+var LESSONS_TODAY_SHEET_ID = '1nAxTJVh45mc6N9tX2Xr_B4DGQ-fG3s0LTp7eY4sacVo';
+var LESSONS_TODAY_SHEET_NAME = 'lessons_today';
 
 // Fee table definition
 var feeTable = {
@@ -65,12 +67,15 @@ var feeTable = {
 var FEATURE_FLAGS = {
   notifications: { enabled: false, description: 'Notification system' },
   unpaidStudents: { enabled: true, description: 'Unpaid students button' },
-  unscheduledLessons: { enabled: true, description: 'Unscheduled lessons button' },
+  unscheduledLessons: { enabled: false, description: 'Unscheduled lessons button' },
   codePage: { enabled: true, description: 'Code management page' },
   lessonBooking: { enabled: true, description: 'Lesson booking calendar' },
   lessonActions: { enabled: true, description: 'Cancel/Reschedule/Remove lesson actions' }
 };
 // ─── END CONFIGURATION ─────────────────────────────────────────────────────────
+
+// Silence all Logger.log output.
+Logger.log = function() {};
 
 function doGet(){return HtmlService.createTemplateFromFile('Index').evaluate().setTitle('Student Admin - Green Square');}
 
@@ -607,6 +612,37 @@ function updateNote(note) {
   }
 }
 
+function deleteNote(note) {
+  Logger.log('🗑️ Deleting note: ' + JSON.stringify(note));
+  
+  var ss      = SpreadsheetApp.openById(SS_ID),
+      sh      = ss.getSheetByName(NOTES_SHEET),
+      headers = sh.getDataRange().getValues()[0],
+      idCol   = headers.indexOf('ID') + 1; // +1 for 1-based column index
+  
+  if (!note || !note['ID']) {
+    Logger.log('❌ Note ID missing; cannot delete.');
+    return false;
+  }
+  
+  Logger.log('🔍 Looking for note with ID: ' + note['ID']);
+  Logger.log('🔢 ID column: ' + idCol);
+  
+  // Use findText for efficient search
+  var range = sh.getRange(1, idCol, sh.getLastRow(), 1);
+  var searchResult = range.createTextFinder(note['ID']).findNext();
+  
+  if (searchResult) {
+    var rowNum = searchResult.getRow();
+    sh.deleteRow(rowNum);
+    Logger.log('✅ Note deleted successfully at row ' + rowNum);
+    return true;
+  } else {
+    Logger.log('❌ Note with ID ' + note['ID'] + ' not found in sheet');
+    return false;
+  }
+}
+
 function updatePayment(pay) {
   var ss      = SpreadsheetApp.openById(SS_ID),
       sh      = ss.getSheetByName('Payment'),
@@ -784,6 +820,65 @@ function addNote(note) {
 
   sh.appendRow(newRow);
   return true;
+}
+
+/**
+ * Upsert total lessons for a student/month in Lessons sheet.
+ * @param {string} studentId
+ * @param {string} monthText - Month in 'YYYY-MM' or 'MMMM yyyy'
+ * @param {number} totalLessons
+ * @returns {boolean}
+ */
+function upsertLessonTotal(studentId, monthText, totalLessons) {
+  try {
+    if (!studentId || !monthText || !totalLessons) return false;
+    
+    var ss = SpreadsheetApp.openById(SS_ID);
+    var sh = ss.getSheetByName(LESSON_SHEET);
+    if (!sh) return false;
+    
+    var data = sh.getDataRange().getValues();
+    if (data.length === 0) return false;
+    
+    var headers = data[0];
+    var sidIdx = headers.indexOf('Student ID');
+    if (sidIdx === -1) sidIdx = headers.indexOf('ID');
+    var monthIdx = headers.indexOf('Month');
+    var lessonsIdx = headers.indexOf('Lessons');
+    if (lessonsIdx === -1) lessonsIdx = headers.indexOf('Booked');
+    
+    if (sidIdx === -1 || monthIdx === -1 || lessonsIdx === -1) {
+      Logger.log('Lessons sheet missing required columns');
+      return false;
+    }
+    
+    var targetMonthStr = toYYYYMM(monthText);
+    var foundRow = -1;
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][sidIdx]) !== String(studentId)) continue;
+      var rowMonthStr = toYYYYMM(data[i][monthIdx]);
+      if (rowMonthStr && rowMonthStr === targetMonthStr) {
+        foundRow = i + 1;
+        break;
+      }
+    }
+    
+    if (foundRow !== -1) {
+      sh.getRange(foundRow, lessonsIdx + 1).setValue(totalLessons);
+      return true;
+    }
+    
+    // Append new row with required columns
+    var newRow = new Array(headers.length).fill('');
+    newRow[sidIdx] = studentId;
+    newRow[monthIdx] = targetMonthStr;
+    newRow[lessonsIdx] = totalLessons;
+    sh.appendRow(newRow);
+    return true;
+  } catch (error) {
+    Logger.log('Error in upsertLessonTotal: ' + error.toString());
+    return false;
+  }
 }
 
 function normalizeString(v) {
@@ -1021,19 +1116,20 @@ function insertPayment(pay) {
     var monIdx       = lessonHeads.indexOf('Month');
     var payIdx       = lessonHeads.indexOf('Payment');
     var monthText    = pay['Month'];
-    var yearVal      = pay['Year'] || pay['year'] || Utilities.formatDate(new Date(), ss.getSpreadsheetTimeZone(), 'yyyy');
-    var monthNum     = normalizeMonthValue(monthText);
-    var monthIdxNum  = monthNum ? monthNum - 1 : 0;
+    // Normalize "MMMM yyyy"
+    var parts        = monthText.split('-');
+    var year         = parseInt(parts[0], 10);
+    var monthNum     = parseInt(parts[1], 10) - 1;
     var tz           = ss.getSpreadsheetTimeZone();
-    var formattedMonth = Utilities.formatDate(new Date(parseInt(yearVal,10), monthIdxNum, 1), tz, 'MMMM yyyy');
+    var formattedMonth = Utilities.formatDate(new Date(year, monthNum, 1), tz, 'MMMM yyyy');
 
     for (var i = 1; i < lessonData.length; i++) {
       var row = lessonData[i];
       if (String(row[sidIdx]) === String(pay['Student ID'])) {
         var cell = row[monIdx];
         var match = (cell instanceof Date)
-          ? (cell.getFullYear() === parseInt(yearVal,10) && cell.getMonth() === monthIdxNum)
-          : (String(cell).trim() === formattedMonth || String(cell).trim() === monthText || String(cell).trim() === (monthText + ' ' + yearVal));
+          ? (cell.getFullYear() === year && cell.getMonth() === monthNum)
+          : (String(cell).trim() === formattedMonth || String(cell).trim() === monthText);
         if (match) {
           lessonSheet.getRange(i+1, payIdx+1).setValue('済');
           break;
@@ -1157,18 +1253,32 @@ function getStudentEventsForMonth(studentName, monthText) {
   Logger.log('Month text: ' + monthText);
   
   var ss = SpreadsheetApp.openById(SS_ID);
-  var cacheSheet = ss.getSheetByName('MonthlySchedule');
+  
+  // Choose cache sheet based on requested month (current vs next)
+  var now = new Date();
+  var currentMonthStr = Utilities.formatDate(now, Session.getScriptTimeZone(), 'yyyy-MM');
+  var nextMonthDate = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+  var nextMonthStr = Utilities.formatDate(nextMonthDate, Session.getScriptTimeZone(), 'yyyy-MM');
+  var targetMonthStr = toYYYYMM(monthText);
+  var cacheSheetName = (targetMonthStr === nextMonthStr) ? 'NextMonthSchedule' : 'MonthlySchedule';
+  
+  var cacheSheet = ss.getSheetByName(cacheSheetName);
   if (!cacheSheet) {
-    Logger.log('MonthlySchedule sheet not found, creating cache...');
+    Logger.log(cacheSheetName + ' sheet not found, creating cache...');
     // If no cache exists, create it for this month
-    cacheMonthlyEvents(monthText);
+    if (cacheSheetName === 'NextMonthSchedule') {
+      cacheEventsToSheet(nextMonthStr, 'NextMonthSchedule');
+    } else {
+      cacheMonthlyEvents(monthText);
+    }
+    cacheSheet = ss.getSheetByName(cacheSheetName);
   }
   
   var data = cacheSheet.getDataRange().getValues();
-  Logger.log('MonthlySchedule data rows: ' + data.length);
+  Logger.log(cacheSheetName + ' data rows: ' + data.length);
   
   if (data.length < 2) {
-    Logger.log('No data in MonthlySchedule sheet');
+    Logger.log('No data in ' + cacheSheetName + ' sheet');
     return []; // No data
   }
   
@@ -1177,84 +1287,49 @@ function getStudentEventsForMonth(studentName, monthText) {
   
   var studentNameIdx = headers.indexOf('StudentName');
   var statusIdx = headers.indexOf('Status');
+  var dateIdx = headers.indexOf('Date');
   var startIdx = headers.indexOf('Start');
   var endIdx = headers.indexOf('End');
   var eventIdIdx = headers.indexOf('EventID');
-  // Fallback if header row was misaligned (e.g., month written into A1 previously)
-  if (eventIdIdx === -1) {
-    Logger.log('EventID column not found in headers, falling back to column 0');
-    eventIdIdx = 0;
-  }
   var titleIdx = headers.indexOf('Title');
   
-  Logger.log('Column indices - StudentName: ' + studentNameIdx + ', Status: ' + statusIdx + ', Start: ' + startIdx + ', EventID: ' + eventIdIdx);
-  Logger.log('Indices - EventID: ' + eventIdIdx + ', Title: ' + titleIdx + ', Start: ' + startIdx + ', Status: ' + statusIdx);
+  Logger.log('Column indices - StudentName: ' + studentNameIdx + ', Status: ' + statusIdx + ', Start: ' + startIdx);
   
   var studentEvents = [];
   
   Logger.log('Searching for student: "' + studentName + '" in month: "' + monthText + '"');
-  Logger.log('Total rows in MonthlySchedule: ' + (data.length - 1));
   
-  // Parse the target month to get year and month number
-  var targetYear, targetMonth;
-  if (monthText.includes(' ')) {
-    // Format: "September 2024"
-    var parts = monthText.split(' ');
-    var monthNames = ["January","February","March","April","May","June","July","August","September","October","November","December"];
-    targetMonth = monthNames.indexOf(parts[0]);
-    targetYear = parseInt(parts[1]);
-  } else {
-    // Format: "2024-09"
-    var parts = monthText.split('-');
-    targetYear = parseInt(parts[0]);
-    targetMonth = parseInt(parts[1]) - 1;
-  }
-  
-  Logger.log('Target year: ' + targetYear + ', target month: ' + targetMonth);
+  var targetMonthStr = toYYYYMM(monthText);
+  Logger.log('Target month (YYYY-MM): ' + targetMonthStr);
   
   for (var i = 1; i < data.length; i++) {
     var row = data[i];
     var rowStudentName = String(row[studentNameIdx] || '').trim();
+    var rowDate = (dateIdx !== -1) ? row[dateIdx] : null;
     var startTime = row[startIdx];
     
     // Check if this row is for the target student
     if (rowStudentName === studentName) {
       // Check if the event is in the target month
-      if (startTime instanceof Date) {
-        var eventYear = startTime.getFullYear();
-        var eventMonth = startTime.getMonth();
+      var eventMonthStr = rowDate ? toYYYYMM(rowDate) : toYYYYMM(startTime);
+      Logger.log('Row ' + i + ' - Event month: ' + eventMonthStr);
+      
+      if (eventMonthStr && eventMonthStr === targetMonthStr) {
+        Logger.log('Found matching student and month in row ' + i);
+        var status = String(row[statusIdx] || 'scheduled');
         
-        Logger.log('Row ' + i + ' - Event date: ' + startTime + ' (Year: ' + eventYear + ', Month: ' + eventMonth + ')');
+        // Extract day and time
+        var day = Utilities.formatDate(startTime, Session.getScriptTimeZone(), 'dd');
+        var time = Utilities.formatDate(startTime, Session.getScriptTimeZone(), 'HH:mm');
         
-        if (eventYear === targetYear && eventMonth === targetMonth) {
-          Logger.log('Found matching student and month in row ' + i);
-          var status = String(row[statusIdx] || 'scheduled');
-          
-          // Extract day and time
-          var day = Utilities.formatDate(startTime, Session.getScriptTimeZone(), 'dd');
-          var time = Utilities.formatDate(startTime, Session.getScriptTimeZone(), 'HH:mm');
-          
-          // Get eventID if available
-          var eventID = eventIdIdx >= 0 ? String(row[eventIdIdx] || '').trim() : '';
-          
-          Logger.log('Matched row ' + i + ': eventID=' + eventID + ', day=' + day + ', time=' + time + ', status=' + status + ', title=' + row[titleIdx]);
-          
-          var eventObj = {
-            day: day,
-            time: time,
-            status: status
-          };
-          
-          // Add eventID if available (support both eventID and eventId for compatibility)
-          if (eventID) {
-            eventObj.eventID = eventID;
-            eventObj.eventId = eventID;
-          } else {
-            Logger.log('⚠️ No EventID for row ' + i + ' (' + day + ' ' + time + ') despite match');
-          }
-          
-          studentEvents.push(eventObj);
-        }
+        studentEvents.push({
+          day: day,
+          time: time,
+          status: status,
+          eventID: row[eventIdIdx] || row[eventIdIdx === -1 ? 0 : eventIdIdx],
+          eventId: row[eventIdIdx] || row[eventIdIdx === -1 ? 0 : eventIdIdx],
+          title: row[titleIdx] || ''
+        });
       }
     }
   }
@@ -1687,13 +1762,10 @@ function getLessonsForWeek(weekStart) {
           status = 'demo';
         }
         
-        // Clean title (strip any trailing time that may be embedded in title)
-        var cleanTitle = title.replace(/,?\s*\d{1,2}:\d{2}(\s*-\s*\d{1,2}:\d{2})?$/,'').trim();
-        
         // Add lesson to the time slot
         lessonsByDay[eventDate][eventTime].push({
-          title: cleanTitle,
-          studentName: cleanTitle, // Use title as student name for now
+          title: title,
+          studentName: title, // Use title as student name for now
           status: status,
           startTime: startTime,
           endTime: endTime,
@@ -1830,6 +1902,10 @@ function processEventsForMonth(events) {
     
     // Check if title contains '子' marker BEFORE removing it
     var isKidsLesson = /子/.test(title);
+
+    // Derive date string for separate Date column
+    var startTime = event.getStartTime();
+    var dateStr = Utilities.formatDate(startTime, Session.getScriptTimeZone(), 'yyyy-MM-dd');
     
     // Extract the part before the first parenthesis
     var namePart = title.split('(')[0];
@@ -1848,31 +1924,31 @@ function processEventsForMonth(events) {
         lastName = lastParts[lastParts.length - 1];
       }
     }
-
-    // Determine teacher name from calendar ID (used for all rows)
-    var teacherName = '';
-    try {
-      var calendarId = event.getOriginalCalendarId();
-      if (calendarId === OWNERS_COURSE_CAL_ID) {
-        teacherName = 'Sham';
-      }
-      // Add more teacher calendar checks here if needed
-    } catch (e) {
-      Logger.log('Could not get calendar ID for event: ' + e.toString());
-    }
-
     for (var i = 0; i < names.length; i++) {
       var parts = names[i].split(/\s+/);
       if (parts.length > 1) {
+        // Determine teacher name from calendar ID
+        var teacherName = '';
+        try {
+          var calendarId = event.getOriginalCalendarId();
+          if (calendarId === SHAM_CALENDAR_ID) {
+            teacherName = 'Sham';
+          }
+          // Add more teacher calendar checks here if needed
+        } catch (e) {
+          Logger.log('Could not get calendar ID for event: ' + e.toString());
+        }
+        
         validRows.push([
           event.getId(),
           title,
-          event.getStartTime(),
+          dateStr,
+          startTime,
           event.getEndTime(),
           status,
           names[i],
           isKidsLesson ? '子' : '',  // IsKidsLesson column
-          teacherName  // TeacherName column
+          teacherName              // TeacherName column
         ]);
       } else {
         // If no last name, append the lastName found from the group
@@ -1880,12 +1956,13 @@ function processEventsForMonth(events) {
         validRows.push([
           event.getId(),
           title,
-          event.getStartTime(),
+          dateStr,
+          startTime,
           event.getEndTime(),
           status,
           fullName.trim(),
           isKidsLesson ? '子' : '',  // IsKidsLesson column
-          teacherName  // TeacherName column (ensure 8 columns)
+          teacherName              // TeacherName column
         ]);
       }
     }
@@ -1917,29 +1994,16 @@ function cacheEventsToSheet(monthStr, sheetName) {
     cacheSheet.clear();
   }
   
-  // Write headers - ADD NEW COLUMN
-  var headers = ['EventID', 'Title', 'Start', 'End', 'Status', 'StudentName', 'IsKidsLesson', 'TeacherName'];
+  // Write headers (include separate Date column)
+  var headers = ['EventID', 'Title', 'Date', 'Start', 'End', 'Status', 'StudentName', 'IsKidsLesson', 'TeacherName'];
   cacheSheet.getRange(1, 1, 1, headers.length).setValues([headers]);
 
-  // Fetch from both lesson calendars (main + Owner's Course)
-  var lessonCal = CalendarApp.getCalendarById(LESSON_CALENDAR_ID);
-  var ownersCal = CalendarApp.getCalendarById(OWNERS_COURSE_CAL_ID);
-  var calendars = [lessonCal, ownersCal].filter(Boolean);
-  if (!calendars.length) {
-    Logger.log('No lesson calendars found for caching.');
-    return 0;
-  }
-  var monthDateStart = new Date(yyyymm + '-01');
-  var monthDateEnd = new Date(monthDateStart.getFullYear(), monthDateStart.getMonth() + 1, 1);
-  var allEvents = [];
-  calendars.forEach(function(cal){
-    var evts = cal.getEvents(monthDateStart, monthDateEnd);
-    Logger.log('Retrieved ' + evts.length + ' events from calendar ' + cal.getId() + ' for ' + monthStr);
-    allEvents = allEvents.concat(evts);
-  });
+  // Use getAllEventsForMonth function to fetch ALL events (no filtering)
+  var events = getAllEventsForMonth(monthStr);
+  Logger.log('Retrieved ' + events.length + ' events from calendar for ' + monthStr);
   
   // Process events using the extracted function
-  var validRows = processEventsForMonth(allEvents);
+  var validRows = processEventsForMonth(events);
   
   // Count different status types for summary
   var statusCounts = {};
@@ -1954,6 +2018,8 @@ function cacheEventsToSheet(monthStr, sheetName) {
   if (validRows.length > 0) {
     cacheSheet.getRange(2, 1, validRows.length, headers.length).setValues(validRows);
   }
+  
+  // No month stamp in A1 to avoid overwriting headers
   
   // Refresh booking availability for affected months
   try {
@@ -1987,102 +2053,6 @@ function cacheMonthlyEvents(monthStr) {
   }
   
   return cacheEventsToSheet(monthStr, 'MonthlySchedule');
-}
-
-// ===== MonthlySchedule write-through helpers =====
-function getMonthlyScheduleSheet_() {
-  var ss = SpreadsheetApp.openById(SS_ID);
-  var sheet = ss.getSheetByName('MonthlySchedule');
-  if (!sheet) {
-    sheet = ss.insertSheet('MonthlySchedule');
-  }
-  // Ensure headers
-  var headers = ['EventID', 'Title', 'Start', 'End', 'Status', 'StudentName', 'IsKidsLesson', 'TeacherName'];
-  if (sheet.getLastRow() === 0) {
-    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
-  }
-  return sheet;
-}
-
-function upsertMonthlyScheduleRow_(payload) {
-  if (!payload || !payload.eventId) return;
-  var sheet = getMonthlyScheduleSheet_();
-  var data = sheet.getDataRange().getValues();
-  var headers = data[0] || [];
-  var eventIdx = headers.indexOf('EventID');
-  var titleIdx = headers.indexOf('Title');
-  var startIdx = headers.indexOf('Start');
-  var endIdx = headers.indexOf('End');
-  var statusIdx = headers.indexOf('Status');
-  var nameIdx = headers.indexOf('StudentName');
-  var kidsIdx = headers.indexOf('IsKidsLesson');
-  var teacherIdx = headers.indexOf('TeacherName');
-  var foundRow = -1;
-  for (var i = 1; i < data.length; i++) {
-    if (String(data[i][eventIdx] || '') === String(payload.eventId)) {
-      foundRow = i + 1; // 1-based for sheet
-      break;
-    }
-  }
-  var rowValues = [
-    payload.eventId,
-    payload.title || '',
-    payload.startTime || '',
-    payload.endTime || '',
-    payload.status || 'scheduled',
-    payload.studentName || '',
-    payload.isKidsLesson ? '子' : '',
-    payload.teacherName || ''
-  ];
-  if (foundRow > 0) {
-    sheet.getRange(foundRow, 1, 1, rowValues.length).setValues([rowValues]);
-  } else {
-    sheet.appendRow(rowValues);
-  }
-}
-
-function updateMonthlyScheduleStatus_(eventId, status, title, startTime, endTime) {
-  if (!eventId) return;
-  var sheet = getMonthlyScheduleSheet_();
-  var data = sheet.getDataRange().getValues();
-  var headers = data[0] || [];
-  var eventIdx = headers.indexOf('EventID');
-  var statusIdx = headers.indexOf('Status');
-  var titleIdx = headers.indexOf('Title');
-  var startIdx = headers.indexOf('Start');
-  var endIdx = headers.indexOf('End');
-  for (var i = 1; i < data.length; i++) {
-    if (String(data[i][eventIdx] || '') === String(eventId)) {
-      if (statusIdx >= 0) data[i][statusIdx] = status;
-      if (titleIdx >= 0 && title) data[i][titleIdx] = title;
-      if (startIdx >= 0 && startTime) data[i][startIdx] = startTime;
-      if (endIdx >= 0 && endTime) data[i][endIdx] = endTime;
-      sheet.getRange(i + 1, 1, 1, data[i].length).setValues([data[i]]);
-      return;
-    }
-  }
-  // If not found, insert new row
-  upsertMonthlyScheduleRow_({
-    eventId: eventId,
-    title: title,
-    startTime: startTime,
-    endTime: endTime,
-    status: status
-  });
-}
-
-function removeMonthlyScheduleRow_(eventId) {
-  if (!eventId) return;
-  var sheet = getMonthlyScheduleSheet_();
-  var data = sheet.getDataRange().getValues();
-  var headers = data[0] || [];
-  var eventIdx = headers.indexOf('EventID');
-  for (var i = 1; i < data.length; i++) {
-    if (String(data[i][eventIdx] || '') === String(eventId)) {
-      sheet.deleteRow(i + 1);
-      return;
-    }
-  }
 }
 
 /**
@@ -2601,6 +2571,7 @@ function getStudentsWithLessonsToday() {
   var eventStartIdx = headers.indexOf('Start');
   var eventEndIdx = headers.indexOf('End');
   var statusIdx = headers.indexOf('Status');
+  var teacherIdx = headers.indexOf('TeacherName');
 
   var today = new Date();
   var todayStr = Utilities.formatDate(today, Session.getScriptTimeZone(), 'yyyy-MM-dd');
@@ -2615,15 +2586,202 @@ function getStudentsWithLessonsToday() {
     }
     if (eventDateStr === todayStr) {
       students.push({
-        Name: row[studentNameIdx],
+        Title: row[eventTitleIdx],
+        StudentName: row[studentNameIdx],
+        Start: row[eventStartIdx],
+        End: row[eventEndIdx],
         Status: row[statusIdx],
-        EventStart: row[eventStartIdx],
-        EventEnd: row[eventEndIdx],
-        EventTitle: row[eventTitleIdx]
+        TeacherName: teacherIdx >= 0 ? row[teacherIdx] : ''
       });
     }
   }
   return students;
+}
+
+function checkLessonsTodayAccess() {
+  try {
+    var externalSs = SpreadsheetApp.openById(LESSONS_TODAY_SHEET_ID);
+    var externalSheet = externalSs.getSheetByName(LESSONS_TODAY_SHEET_NAME);
+    if (!externalSheet) {
+      return {
+        ok: false,
+        sheetId: LESSONS_TODAY_SHEET_ID,
+        sheetName: LESSONS_TODAY_SHEET_NAME,
+        error: 'Sheet not found',
+        rows: []
+      };
+    }
+    var data = externalSheet.getDataRange().getValues();
+    var headers = data[0] || [];
+    var rows = [];
+    if (data.length > 1) {
+      for (var i = 1; i < data.length; i++) {
+        var row = data[i];
+        var obj = {};
+        for (var j = 0; j < headers.length; j++) {
+          obj[headers[j]] = row[j];
+        }
+        rows.push(obj);
+      }
+    }
+    return {
+      ok: true,
+      sheetId: LESSONS_TODAY_SHEET_ID,
+      sheetName: LESSONS_TODAY_SHEET_NAME,
+      rowCount: data.length,
+      headers: headers,
+      rows: rows
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      sheetId: LESSONS_TODAY_SHEET_ID,
+      sheetName: LESSONS_TODAY_SHEET_NAME,
+      error: error && error.toString ? error.toString() : String(error),
+      rows: []
+    };
+  }
+}
+
+/**
+ * Resolve student name(s) to IDs from Students sheet.
+ * @param {string} namesStr - One or more names, e.g. "Kanako Imai" or "A and B"
+ * @returns {string[]} Array of student IDs found
+ */
+function resolveStudentIdsFromNames(namesStr) {
+  if (!namesStr || typeof namesStr !== 'string') return [];
+  var names = namesStr.split(/\s+and\s+|,\s*|&/i).map(function(n) { return (n || '').trim(); }).filter(Boolean);
+  if (names.length === 0) return [];
+  try {
+    var students = getStudents();
+    if (!students || students.length < 2) return [];
+    var headers = students[0];
+    var idIdx = headers.indexOf('ID');
+    var nameIdx = headers.indexOf('Name');
+    if (idIdx === -1 || nameIdx === -1) return [];
+    var nameToId = {};
+    for (var i = 1; i < students.length; i++) {
+      var n = (students[i][nameIdx] || '').toString().trim();
+      var id = (students[i][idIdx] || '').toString().trim();
+      if (n && id) nameToId[n] = id;
+    }
+    var ids = [];
+    for (var j = 0; j < names.length; j++) {
+      var id = nameToId[names[j]];
+      if (id && ids.indexOf(id) === -1) ids.push(id);
+    }
+    return ids;
+  } catch (e) {
+    Logger.log('resolveStudentIdsFromNames error: ' + e.toString());
+    return [];
+  }
+}
+
+/**
+ * Add studentIds to each lesson row (for Unpaid check and click handlers).
+ */
+function enrichLessonRowsWithStudentIds(rows) {
+  if (!rows || !Array.isArray(rows)) return rows;
+  for (var i = 0; i < rows.length; i++) {
+    var row = rows[i];
+    if (row.studentIds && Array.isArray(row.studentIds) && row.studentIds.length > 0) continue;
+    var fromSheet = row.studentId || row['Student ID'] || row.StudentID;
+    if (fromSheet && String(fromSheet).trim()) {
+      row.studentIds = [String(fromSheet).trim()];
+      continue;
+    }
+    var nameStr = row.StudentName || row.StudentNames || row.studentName || row.studentNames || row.Name || '';
+    row.studentIds = resolveStudentIdsFromNames(nameStr);
+  }
+  return rows;
+}
+
+function normalizeLessonValue(value) {
+  if (value instanceof Date) {
+    return Utilities.formatDate(value, Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm');
+  }
+  return value;
+}
+
+function normalizeLessonRowObject(rowObj) {
+  var normalized = {};
+  for (var key in rowObj) {
+    if (rowObj.hasOwnProperty(key)) {
+      normalized[key] = normalizeLessonValue(rowObj[key]);
+    }
+  }
+  return normalized;
+}
+
+function normalizeLessonRows(headers, dataRows) {
+  var rows = [];
+  for (var i = 0; i < dataRows.length; i++) {
+    var row = dataRows[i];
+    var obj = {};
+    for (var j = 0; j < headers.length; j++) {
+      obj[headers[j]] = normalizeLessonValue(row[j]);
+    }
+    rows.push(obj);
+  }
+  return rows;
+}
+
+function getLessonsTodayForAdmin() {
+  try {
+    var externalSs = SpreadsheetApp.openById(LESSONS_TODAY_SHEET_ID);
+    var externalSheet = externalSs.getSheetByName(LESSONS_TODAY_SHEET_NAME);
+    if (!externalSheet) {
+      return {
+        debug: {
+          sheetId: LESSONS_TODAY_SHEET_ID,
+          sheetName: LESSONS_TODAY_SHEET_NAME,
+          error: 'Sheet not found',
+          source: 'lessons_today'
+        },
+        rows: []
+      };
+    }
+
+    var data = externalSheet.getDataRange().getValues();
+    if (data.length < 2) {
+      return {
+        debug: {
+          sheetId: LESSONS_TODAY_SHEET_ID,
+          sheetName: LESSONS_TODAY_SHEET_NAME,
+          rowCount: data.length,
+          headers: data[0] || [],
+          source: 'lessons_today',
+          error: 'Sheet empty'
+        },
+        rows: []
+      };
+    }
+
+    var headers = data[0];
+    var lessons = normalizeLessonRows(headers, data.slice(1));
+    enrichLessonRowsWithStudentIds(lessons);
+
+    return {
+      debug: {
+        sheetId: LESSONS_TODAY_SHEET_ID,
+        sheetName: LESSONS_TODAY_SHEET_NAME,
+        rowCount: data.length,
+        headers: headers,
+        source: 'lessons_today'
+      },
+      rows: lessons
+    };
+  } catch (error) {
+    return {
+      debug: {
+        sheetId: LESSONS_TODAY_SHEET_ID,
+        sheetName: LESSONS_TODAY_SHEET_NAME,
+        error: error && error.toString ? error.toString() : String(error),
+        source: 'lessons_today'
+      },
+      rows: []
+    };
+  }
 }
 
 function getDashboardStats() {
@@ -2699,52 +2857,7 @@ function getDashboardStatsForClient() {
   return getDashboardStats();
 }
 
-function normalizeMonthValue(val) {
-  if (val === null || val === undefined) return null;
-  var s = String(val).trim().toLowerCase();
-  if (!s) return null;
-  if (/^\d+$/.test(s)) {
-    var num = parseInt(s, 10);
-    if (num >= 1 && num <= 12) return num;
-  }
-  var map = {
-    jan: 1, january: 1,
-    feb: 2, february: 2,
-    mar: 3, march: 3,
-    apr: 4, april: 4,
-    may: 5,
-    jun: 6, june: 6,
-    jul: 7, july: 7,
-    aug: 8, august: 8,
-    sep: 9, sept: 9, september: 9,
-    oct: 10, october: 10,
-    nov: 11, november: 11,
-    dec: 12, december: 12
-  };
-  return map[s] || map[s.slice(0, 3)] || null;
-}
-
-function monthNameFromAny(val) {
-  var months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-  var num = normalizeMonthValue(val);
-  if (num) return months[num - 1];
-  var s = String(val || '').toLowerCase();
-  for (var i = 0; i < months.length; i++) {
-    var m = months[i].toLowerCase();
-    if (s.indexOf(m) !== -1) return months[i];
-  }
-  return String(val || '').trim();
-}
-
-function monthNumberFromText(val) {
-  var name = monthNameFromAny(val);
-  if (!name) return null;
-  var months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-  var idx = months.indexOf(name);
-  return idx >= 0 ? idx + 1 : null;
-}
-
-function getUnpaidStudentsThisMonth(selectedMonth, selectedYear) {
+function getUnpaidStudentsThisMonth() {
   var ss = SpreadsheetApp.openById(SS_ID);
   var cacheSheet = ss.getSheetByName('MonthlySchedule');
   var paymentSheet = ss.getSheetByName(PAYMENT_SHEET);
@@ -2752,14 +2865,8 @@ function getUnpaidStudentsThisMonth(selectedMonth, selectedYear) {
 
   var today = new Date();
   var tz = Session.getScriptTimeZone();
-
-  // Resolve target month/year from caller or default to "now" (script TZ)
-  var targetYear = String(selectedYear || Utilities.formatDate(today, tz, 'yyyy')).trim();
-  var targetMonthNum = normalizeMonthValue(selectedMonth);
-  if (!targetMonthNum) {
-    targetMonthNum = today.getMonth() + 1; // 1-12
-  }
-  var targetKey = targetYear + '-' + ('0' + targetMonthNum).slice(-2); // YYYY-MM
+  var currentMonth = Utilities.formatDate(today, tz, 'MMMM');
+  var currentYear = Utilities.formatDate(today, tz, 'yyyy');
 
   // Build a map of student name -> ID from Students sheet
   var studentsData = studentsSheet.getDataRange().getValues();
@@ -2788,10 +2895,9 @@ function getUnpaidStudentsThisMonth(selectedMonth, selectedYear) {
     var eventStart = row[eventStartIdx];
     if (!studentName || !eventStart) continue;
     var eventDate = eventStart instanceof Date ? eventStart : new Date(eventStart);
-    var eventMonthNum = eventDate.getMonth() + 1;
+    var eventMonth = Utilities.formatDate(eventDate, tz, 'MMMM');
     var eventYear = Utilities.formatDate(eventDate, tz, 'yyyy');
-    var eventKey = eventYear + '-' + ('0' + eventMonthNum).slice(-2);
-    if (eventKey === targetKey) {
+    if (eventMonth === currentMonth && eventYear === currentYear) {
       // Handle group lessons (split by ' and ')
       studentName.split(/\s+and\s+/i).forEach(function(name) {
         name = name.trim();
@@ -2810,10 +2916,7 @@ function getUnpaidStudentsThisMonth(selectedMonth, selectedYear) {
   var paidSet = new Set();
   for (var i = 1; i < paymentData.length; i++) {
     var row = paymentData[i];
-    var payMonthNum = normalizeMonthValue(row[idxPayMonth]);
-    var payYear = (row[idxPayYear] || '').toString().trim();
-    var payKey = payYear && payMonthNum ? payYear + '-' + ('0' + payMonthNum).slice(-2) : '';
-    if (payKey === targetKey) {
+    if (row[idxPayMonth] === currentMonth && row[idxPayYear] === currentYear) {
       paidSet.add((row[idxPayId] || '').toString().trim());
     }
   }
@@ -2881,12 +2984,91 @@ function tallyStatsFromFeb2020() {
       var monthStr = year + '-' + ('0' + month).slice(-2);
       // Fill MonthlySchedule for this month
       cacheMonthlyEvents(monthStr);
-      // Set A1 to the month (redundant if cacheMonthlyEvents does this, but safe)
-      cacheSheet.getRange('A1').setValue(monthStr);
+      // Do not stamp month in A1 to preserve headers
       // Tally stats for this month
       tallyLessonsForMonthAndStore(monthStr);
     }
   }
+}
+
+/**
+ * Sync teacher availability calendars into TeacherSchedules sheet.
+ * Pulls current + next month events for each teacher calendar.
+ * @returns {number} Number of rows written.
+ */
+function syncTeacherSchedulesFromCalendars() {
+  Logger.log('=== syncTeacherSchedulesFromCalendars called ===');
+  
+  var ss = SpreadsheetApp.openById(SS_ID);
+  var calendarsSheet = ss.getSheetByName('TeacherCalendars');
+  if (!calendarsSheet) {
+    Logger.log('TeacherCalendars sheet not found');
+    return 0;
+  }
+  
+  var calData = calendarsSheet.getDataRange().getValues();
+  if (calData.length < 2) {
+    Logger.log('TeacherCalendars sheet has no data rows');
+    return 0;
+  }
+  
+  var calHeaders = calData[0];
+  var calIdIdx = calHeaders.indexOf('CalendarID');
+  if (calIdIdx === -1) calIdIdx = calHeaders.indexOf('Calendar ID');
+  var teacherNameIdx = calHeaders.indexOf('TeacherName');
+  if (teacherNameIdx === -1) teacherNameIdx = calHeaders.indexOf('Teacher Name');
+  
+  if (calIdIdx === -1 || teacherNameIdx === -1) {
+    Logger.log('TeacherCalendars headers missing CalendarID or TeacherName');
+    return 0;
+  }
+  
+  var tz = Session.getScriptTimeZone();
+  var now = new Date();
+  var start = new Date(now.getFullYear(), now.getMonth(), 1);
+  var end = new Date(now.getFullYear(), now.getMonth() + 2, 1);
+  
+  var rows = [];
+  for (var i = 1; i < calData.length; i++) {
+    var row = calData[i];
+    var calendarId = String(row[calIdIdx] || '').trim();
+    var teacherName = String(row[teacherNameIdx] || '').trim();
+    if (!calendarId || !teacherName) continue;
+    
+    var calendar = CalendarApp.getCalendarById(calendarId);
+    if (!calendar) {
+      Logger.log('Calendar not found for teacher: ' + teacherName + ' (' + calendarId + ')');
+      continue;
+    }
+    
+    var events = calendar.getEvents(start, end);
+    events.forEach(function(event) {
+      var startTime = event.getStartTime();
+      var endTime = event.getEndTime();
+      rows.push([
+        Utilities.formatDate(startTime, tz, 'yyyy-MM-dd'),
+        teacherName,
+        Utilities.formatDate(startTime, tz, 'HH:mm'),
+        Utilities.formatDate(endTime, tz, 'HH:mm')
+      ]);
+    });
+  }
+  
+  var scheduleSheet = ss.getSheetByName('TeacherSchedules');
+  if (!scheduleSheet) {
+    scheduleSheet = ss.insertSheet('TeacherSchedules');
+  } else {
+    scheduleSheet.clear();
+  }
+  
+  var headers = ['Date', 'TeacherName', 'StartTime', 'EndTime'];
+  scheduleSheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  if (rows.length > 0) {
+    scheduleSheet.getRange(2, 1, rows.length, headers.length).setValues(rows);
+  }
+  
+  Logger.log('TeacherSchedules updated with ' + rows.length + ' rows');
+  return rows.length;
 }
 
 /**
@@ -3005,118 +3187,6 @@ function getCachedTeacherSchedule(dateStr) {
 }
 
 /**
- * Sync teacher schedules from calendar IDs into TeacherSchedules.
- * Source: Code sheet, columns A (CalendarID) and B (TeacherName), rows starting at 2.
- * Writes rows into TeacherSchedules with columns: Date, TeacherName, StartTime, EndTime.
- * Window: current month + next month.
- */
-function syncTeacherSchedulesFromCalendars() {
-  try {
-    var ss = SpreadsheetApp.openById(SS_ID);
-    var codeSheet = ss.getSheetByName('Code');
-    if (!codeSheet) {
-      Logger.log('❌ Code sheet not found');
-      return 0;
-    }
-    var data = codeSheet.getDataRange().getValues();
-    if (data.length < 2) {
-      Logger.log('⚠️ Code sheet has no calendar rows');
-      return 0;
-    }
-    var calendars = [];
-    for (var i = 1; i < data.length; i++) {
-      var calId = String(data[i][0] || '').trim();
-      var teacherName = String(data[i][1] || '').trim();
-      if (calId && teacherName) {
-        calendars.push({ id: calId, teacherName: teacherName });
-      }
-    }
-
-    // Deduplicate
-    if (calendars.length) {
-      var seen = {};
-      calendars = calendars.filter(function(entry){
-        var key = entry.id + '|' + entry.teacherName;
-        if (seen[key]) return false;
-        seen[key] = true;
-        return true;
-      });
-    }
-
-    if (!calendars.length) {
-      Logger.log('⚠️ No valid teacher calendars found in Code sheet.');
-      return 0;
-    }
-    
-    var tz = Session.getScriptTimeZone();
-    var now = new Date();
-    var windowStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    var windowEnd = new Date(now.getFullYear(), now.getMonth() + 2, 1); // current + next month
-    
-    var rows = [];
-    calendars.forEach(function(calEntry) {
-      var cal = CalendarApp.getCalendarById(calEntry.id);
-      if (!cal) {
-        Logger.log('⚠️ Calendar not found: ' + calEntry.id);
-        return;
-      }
-      var events = cal.getEvents(windowStart, windowEnd);
-      Logger.log('Found ' + events.length + ' events for calendar ' + calEntry.id);
-      events.forEach(function(ev) {
-        if (ev.isAllDayEvent()) return;
-        var st = ev.getStartTime();
-        var et = ev.getEndTime();
-        rows.push([
-          Utilities.formatDate(st, tz, 'yyyy-MM-dd'),
-          calEntry.teacherName,
-          Utilities.formatDate(st, tz, 'HH:mm'),
-          Utilities.formatDate(et, tz, 'HH:mm')
-        ]);
-      });
-    });
-    
-    var schedSheet = ss.getSheetByName('TeacherSchedules');
-    if (!schedSheet) {
-      schedSheet = ss.insertSheet('TeacherSchedules');
-    }
-    var headers = ['Date', 'TeacherName', 'StartTime', 'EndTime'];
-    var existing = schedSheet.getDataRange().getValues();
-    var keepRows = [];
-    if (existing.length > 1) {
-      var h = existing[0];
-      var dIdx = h.indexOf('Date');
-      var tIdx = h.indexOf('TeacherName');
-      var sIdx = h.indexOf('StartTime');
-      var eIdx = h.indexOf('EndTime');
-      if (dIdx !== -1 && tIdx !== -1 && sIdx !== -1 && eIdx !== -1) {
-        for (var r = 1; r < existing.length; r++) {
-          var row = existing[r];
-          var dCell = row[dIdx];
-          var dStr = dCell instanceof Date ? Utilities.formatDate(dCell, tz, 'yyyy-MM-dd') : String(dCell || '').trim();
-          var dDate = new Date(dStr + 'T00:00:00');
-          if (isNaN(dDate.getTime())) continue;
-          if (dDate < windowStart || dDate >= windowEnd) {
-            keepRows.push(row);
-          }
-        }
-      }
-    }
-    
-    schedSheet.clear();
-    schedSheet.getRange(1, 1, 1, headers.length).setValues([headers]);
-    var out = keepRows.concat(rows);
-    if (out.length > 0) {
-      schedSheet.getRange(2, 1, out.length, headers.length).setValues(out);
-    }
-    Logger.log('✅ Synced teacher schedules from calendars. New rows: ' + rows.length + ', kept rows: ' + keepRows.length);
-    return rows.length;
-  } catch (e) {
-    Logger.log('❌ Error in syncTeacherSchedulesFromCalendars: ' + e.toString());
-    return 0;
-  }
-}
-
-/**
  * Get available teachers for a specific date and time
  * @param {Date} dateTime - Date and time object
  * @param {number} durationMinutes - Duration of lesson in minutes (default 50)
@@ -3171,33 +3241,89 @@ function getBookingAvailabilitySheet() {
   if (!sheet) {
     // Create the sheet
     sheet = ss.insertSheet('BookingAvailability');
+    
+    // Set headers
+    var headers = [
+      'Date',           // YYYY-MM-DD
+      'Time',           // HH:mm
+      'TeacherCount',   // Number of teachers available
+      'LessonCount',    // Number of scheduled lessons
+      'AvailableSlots', // TeacherCount - LessonCount
+      'Teachers',       // Comma-separated list of teacher names
+      'HasKidsLesson',  // Boolean: true if any lesson is kids lesson
+      'HasAdultLesson', // Boolean: true if any lesson is adult lesson
+      'LastUpdated'     // Timestamp of last update
+    ];
+    
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold');
+    sheet.setFrozenRows(1);
+    
+    // Set data validation and formatting
+    var dateRange = sheet.getRange('A:A');
+    dateRange.setNumberFormat('yyyy-mm-dd');
+    
+    var timeRange = sheet.getRange('B:B');
+    timeRange.setNumberFormat('hh:mm');
+    
+    var lastUpdatedRange = sheet.getRange('I:I');
+    lastUpdatedRange.setNumberFormat('yyyy-mm-dd hh:mm:ss');
   }
-
-  // Ensure headers/formatting exist and include the Reason column
-  var headers = [
-    'Date',           // YYYY-MM-DD
-    'Time',           // HH:mm
-    'TeacherCount',   // Number of teachers available
-    'LessonCount',    // Number of scheduled lessons
-    'AvailableSlots', // TeacherCount - LessonCount
-    'Teachers',       // Comma-separated list of teacher names
-    'HasKidsLesson',  // Boolean: true if any lesson is kids lesson
-    'HasAdultLesson', // Boolean: true if any lesson is adult lesson
-    'Reason',         // no-teachers | fully-booked | '' when available
-    'LastUpdated'     // Timestamp of last update
-  ];
-
-  var headerRange = sheet.getRange(1, 1, 1, headers.length);
-  headerRange.setValues([headers]);
-  headerRange.setFontWeight('bold');
-  sheet.setFrozenRows(1);
-
-  // Set data validation and formatting
-  sheet.getRange('A:A').setNumberFormat('yyyy-mm-dd');
-  sheet.getRange('B:B').setNumberFormat('hh:mm');
-  sheet.getRange('J:J').setNumberFormat('yyyy-mm-dd hh:mm:ss');
   
   return sheet;
+}
+
+/**
+ * Remove past availability rows from BookingAvailability.
+ * @returns {number} Number of rows removed.
+ */
+function prunePastAvailability() {
+  try {
+    var sheet = getBookingAvailabilitySheet();
+    var data = sheet.getDataRange().getValues();
+    if (data.length < 2) return 0;
+    
+    var headers = data[0];
+    var dateIdx = headers.indexOf('Date');
+    var timeIdx = headers.indexOf('Time');
+    if (dateIdx === -1 || timeIdx === -1) {
+      Logger.log('BookingAvailability headers missing Date/Time columns');
+      return 0;
+    }
+    
+    var tz = Session.getScriptTimeZone();
+    var now = new Date();
+    var removed = 0;
+    
+    for (var i = data.length - 1; i >= 1; i--) {
+      var rowDate = data[i][dateIdx];
+      var rowTime = data[i][timeIdx];
+      
+      var dateStr = rowDate instanceof Date
+        ? Utilities.formatDate(rowDate, tz, 'yyyy-MM-dd')
+        : String(rowDate || '').trim();
+      
+      var timeStr = '';
+      if (rowTime instanceof Date) {
+        timeStr = Utilities.formatDate(rowTime, tz, 'HH:mm');
+      } else {
+        timeStr = String(rowTime || '').trim().substring(0, 5);
+      }
+      
+      if (!dateStr || !timeStr) continue;
+      var dateTime = new Date(dateStr + 'T' + timeStr + ':00');
+      if (!isNaN(dateTime.getTime()) && dateTime < now) {
+        sheet.deleteRow(i + 1);
+        removed++;
+      }
+    }
+    
+    Logger.log('Pruned past availability rows: ' + removed);
+    return removed;
+  } catch (error) {
+    Logger.log('Error pruning past availability: ' + error.toString());
+    return 0;
+  }
 }
 
 /**
@@ -3268,16 +3394,12 @@ function calculateAndStoreWeekAvailability(weekStart, forceRecalculate) {
     
     var data = sheet.getDataRange().getValues();
     var rowsToDelete = [];
-    var lastRow = sheet.getLastRow();
     for (var i = data.length - 1; i >= 1; i--) {
       var rowDate = data[i][0];
       if (rowDate instanceof Date) {
         var rowDateStr = Utilities.formatDate(rowDate, tz, 'yyyy-MM-dd');
         if (rowDateStr >= weekStartStr && rowDateStr < weekEndStr) {
-          var rowNum = i + 1; // +1 because sheet rows are 1-indexed
-          if (rowNum <= lastRow && rowNum > 1) {
-            rowsToDelete.push(rowNum);
-          }
+          rowsToDelete.push(i + 1); // +1 because sheet rows are 1-indexed
         }
       }
     }
@@ -3427,7 +3549,6 @@ function calculateAndStoreWeekAvailability(weekStart, forceRecalculate) {
         var lessonCount = lessons.length;
         var hasKidsLesson = false;
         var hasAdultLesson = false;
-        var reason = '';
         
         lessons.forEach(function(lesson) {
           if (lesson.isKidsLesson) {
@@ -3438,13 +3559,6 @@ function calculateAndStoreWeekAvailability(weekStart, forceRecalculate) {
         });
         
         var availableSlots = Math.max(0, teacherCount - lessonCount);
-        if (availableSlots === 0) {
-          if (teacherCount === 0) {
-            reason = 'no-teachers';
-          } else if (lessonCount >= teacherCount) {
-            reason = 'fully-booked';
-          }
-        }
         
         // Create time value for the row
         var timeValue = new Date(dayDate);
@@ -3460,7 +3574,6 @@ function calculateAndStoreWeekAvailability(weekStart, forceRecalculate) {
           availableTeachers.join(','),                 // Teachers
           hasKidsLesson,                              // HasKidsLesson
           hasAdultLesson,                             // HasAdultLesson
-          reason,                                     // Reason
           now                                         // LastUpdated
         ]);
       }
@@ -3754,13 +3867,6 @@ function updateAvailabilityForTimeSlot(lessonDateTime, isBooking, isKidsLesson) 
  */
 function refreshBookingAvailabilityCache() {
   try {
-    // Sync teacher schedules from calendar IDs before calculating availability
-    try {
-      syncTeacherSchedulesFromCalendars();
-    } catch (e) {
-      Logger.log('Warning: syncTeacherSchedulesFromCalendars failed: ' + e.toString());
-    }
-
     var now = new Date();
     var currentWeekStart = new Date(now);
     var dayOfWeek = currentWeekStart.getDay();
@@ -3768,68 +3874,33 @@ function refreshBookingAvailabilityCache() {
     currentWeekStart.setDate(currentWeekStart.getDate() + daysToMonday);
     currentWeekStart.setHours(0, 0, 0, 0);
     
-    // Refresh current week and next 7 weeks (cover current + next month)
-    for (var week = 0; week < 8; week++) {
+    // Refresh current week and next 5 weeks
+    for (var week = 0; week < 6; week++) {
       var weekStart = new Date(currentWeekStart);
       weekStart.setDate(currentWeekStart.getDate() + (week * 7));
       calculateAndStoreWeekAvailability(weekStart, false);
     }
     
-    Logger.log('Refreshed booking availability cache for 8 weeks');
+    Logger.log('Refreshed booking availability cache for 6 weeks');
   } catch (error) {
     Logger.log('Error refreshing availability cache: ' + error.toString());
   }
 }
 
 /**
- * Remove availability rows that are in the past (Date+Time earlier than now).
- * Intended to be run hourly to keep BookingAvailability clean.
- * @returns {number} count of rows removed
- */
-function prunePastAvailability() {
-  var sheet = getBookingAvailabilitySheet();
-  var data = sheet.getDataRange().getValues();
-  if (data.length <= 1) return 0;
-
-  var tz = Session.getScriptTimeZone();
-  var now = new Date();
-  var cutoff = new Date(now.getTime() + 60 * 60 * 1000); // 1 hour from now
-  var rowsToDelete = [];
-
-  for (var i = 1; i < data.length; i++) {
-    var row = data[i];
-    var dateCell = row[0];
-    var timeCell = row[1];
-    if (!(dateCell instanceof Date)) continue;
-    var dateStr = Utilities.formatDate(dateCell, tz, 'yyyy-MM-dd');
-    var timeStr = '';
-    if (timeCell instanceof Date) {
-      timeStr = Utilities.formatDate(timeCell, tz, 'HH:mm');
-    } else {
-      timeStr = String(timeCell || '').trim().substring(0, 5);
-    }
-    if (!timeStr) continue;
-    var dateTime = new Date(dateStr + 'T' + timeStr + ':00');
-    if (isNaN(dateTime.getTime())) continue;
-    if (dateTime < cutoff) {
-      rowsToDelete.push(i + 1); // sheet is 1-indexed and has header row
-    }
-  }
-
-  for (var d = rowsToDelete.length - 1; d >= 0; d--) {
-    sheet.deleteRow(rowsToDelete[d]);
-  }
-  Logger.log('Pruned ' + rowsToDelete.length + ' past availability rows');
-  return rowsToDelete.length;
-}
-
-/**
- * Hourly maintenance: prune past availability and refresh future availability.
- * Set an Apps Script time-based trigger to call this hourly.
+ * Hourly maintenance task for availability cache.
+ * Runs prunePastAvailability if available, then refreshes cache.
  */
 function hourlyAvailabilityMaintenance() {
-  prunePastAvailability();
-  refreshBookingAvailabilityCache();
+  try {
+    if (typeof prunePastAvailability === 'function') {
+      prunePastAvailability();
+    }
+    refreshBookingAvailabilityCache();
+    Logger.log('Hourly availability maintenance completed');
+  } catch (error) {
+    Logger.log('Error in hourly availability maintenance: ' + error.toString());
+  }
 }
 
 /**
@@ -4036,7 +4107,7 @@ function checkTeacherAvailability(teacherName, startTime, endTime, checkShamCale
     }
     
     // Check Sham's calendar for conflicts - if Sham has any lesson, he's not available
-    var shamCalendar = CalendarApp.getCalendarById(OWNERS_COURSE_CAL_ID);
+    var shamCalendar = CalendarApp.getCalendarById(SHAM_CALENDAR_ID);
     if (shamCalendar) {
       // Check for existing events in Sham's calendar during the requested time
       var events = shamCalendar.getEvents(startTime, endTime);
@@ -4482,9 +4553,8 @@ function getAvailableMonths(studentID, yearStr) {
   for (var i = 0; i < data.length; i++) {
     if (String(data[i][idIdx]) === String(studentID)) {
       var monthCell = data[i][monthIdx];
-      if (monthCell) {
-        var monthNameOnly = monthNameFromAny(monthCell);
-        months.push(monthNameOnly);
+      if (monthCell && monthCell.toString().includes(yearStr)) {
+        months.push(monthCell.toString());
       }
     }
   }
@@ -4538,10 +4608,11 @@ function getStudentLessonTotal(studentId, monthText) {
     Logger.log('Student ID: ' + studentId);
     Logger.log('Month: ' + monthText);
     
-    // Get student name from ID
+    // Get student name from ID (for payment lookup fallback)
     var students = getStudents();
     var headers = students[0];
     var idIdx = headers.indexOf('Student ID');
+    if (idIdx === -1) idIdx = headers.indexOf('ID');
     var nameIdx = headers.indexOf('Name');
     var studentName = null;
     
@@ -4552,26 +4623,112 @@ function getStudentLessonTotal(studentId, monthText) {
       }
     }
     
+    // 1) Prefer Lessons sheet (Student ID + Month)
+    var lessonTotal = 0;
+    try {
+      var ss = SpreadsheetApp.openById(SS_ID);
+      var lessonsSheet = ss.getSheetByName(LESSON_SHEET);
+      if (lessonsSheet) {
+        var lessonsData = lessonsSheet.getDataRange().getValues();
+        if (lessonsData.length > 1) {
+          var lHeaders = lessonsData[0];
+          var lIdIdx = lHeaders.indexOf('Student ID');
+          if (lIdIdx === -1) lIdIdx = lHeaders.indexOf('ID');
+          var lMonthIdx = lHeaders.indexOf('Month');
+          var lLessonsIdx = lHeaders.indexOf('Lessons');
+          if (lLessonsIdx === -1) lLessonsIdx = lHeaders.indexOf('Booked');
+          
+          var targetMonthStr = toYYYYMM(monthText);
+          for (var r = 1; r < lessonsData.length; r++) {
+            var row = lessonsData[r];
+            if (String(row[lIdIdx]) !== String(studentId)) continue;
+            var rowMonthStr = toYYYYMM(row[lMonthIdx]);
+            if (rowMonthStr && rowMonthStr === targetMonthStr) {
+              lessonTotal = Number(row[lLessonsIdx]) || 0;
+              break;
+            }
+          }
+        }
+      }
+    } catch (e) {
+      Logger.log('Error reading Lessons sheet in getStudentLessonTotal: ' + e.toString());
+    }
+    
+    if (lessonTotal > 0) {
+      Logger.log('Total lessons from Lessons sheet: ' + lessonTotal);
+      return lessonTotal;
+    }
+    
+    // 2) Fallback to payment info for the month
     if (!studentName) {
       Logger.log('Student not found for ID: ' + studentId);
       return 0;
     }
     
-    // Get payment info for the month
-    var paymentInfo = getPaymentInfoForMonth(studentName, monthText);
-    
+    var paymentInfo = getPaymentInfoForMonth(studentName, monthText, studentId);
     if (paymentInfo && paymentInfo.lessons) {
-      Logger.log('Total lessons for ' + studentName + ' in ' + monthText + ': ' + paymentInfo.lessons);
+      Logger.log('Total lessons from payment for ' + studentName + ' in ' + monthText + ': ' + paymentInfo.lessons);
       return paymentInfo.lessons;
     }
     
-    Logger.log('No payment info found for ' + studentName + ' in ' + monthText);
+    Logger.log('No lesson total found for ' + studentName + ' in ' + monthText);
     return 0;
     
   } catch (error) {
     Logger.log('Error in getStudentLessonTotal: ' + error.toString());
     return 0;
   }
+}
+
+/**
+ * Returns payment status + lesson total for a student/month.
+ * @param {string} studentId
+ * @param {string} monthText - "Month YYYY" (e.g., "February 2026")
+ * @returns {{studentId:string, monthText:string, paid:boolean, totalLessons:number, studentName:string}}
+ */
+function getStudentLessonStatusForMonth(studentId, monthText) {
+  var result = {
+    studentId: String(studentId || ''),
+    monthText: String(monthText || ''),
+    paid: false,
+    totalLessons: 0,
+    studentName: ''
+  };
+
+  if (!studentId || !monthText) return result;
+
+  try {
+    var students = getStudents();
+    if (students && students.length > 1) {
+      var headers = students[0];
+      var idIdx = headers.indexOf('Student ID');
+      if (idIdx === -1) idIdx = headers.indexOf('ID');
+      var nameIdx = headers.indexOf('Name');
+      for (var i = 1; i < students.length; i++) {
+        if (String(students[i][idIdx]) === String(studentId)) {
+          result.studentName = String(students[i][nameIdx] || '').trim();
+          break;
+        }
+      }
+    }
+  } catch (error) {
+    Logger.log('Error resolving student name: ' + error.toString());
+  }
+
+  try {
+    var paymentStatus = getPaymentStatusForMonth(result.studentName, monthText, studentId);
+    result.paid = paymentStatus === '済';
+  } catch (error) {
+    Logger.log('Error resolving payment status: ' + error.toString());
+  }
+
+  try {
+    result.totalLessons = getStudentLessonTotal(studentId, monthText);
+  } catch (error) {
+    Logger.log('Error resolving lesson total: ' + error.toString());
+  }
+
+  return result;
 }
 
 /**
@@ -4713,7 +4870,8 @@ function diagnoseTeacherSchedules() {
 function getLatestRecordData(studentName, studentIdOpt) {
   // Get latest record data for the Latest Record component
   Logger.log('=== getLatestRecordData called ===');
-  Logger.log('Student name: ' + studentName + ', studentId: ' + (studentIdOpt || ''));
+  Logger.log('Student name: ' + studentName);
+  Logger.log('Student ID: ' + (studentIdOpt || ''));
   
   var now = new Date();
   var currentMonth = Utilities.formatDate(now, Session.getScriptTimeZone(), 'MMMM yyyy');
@@ -4729,19 +4887,12 @@ function getLatestRecordData(studentName, studentIdOpt) {
   var currentMonthShort = shortMonthNames[now.getMonth()];
   var nextMonthShort = shortMonthNames[(now.getMonth() + 1) % 12];
   
-  // Ensure cache exists and is populated for both months
+  // Ensure cache exists for both months
   var ss = SpreadsheetApp.openById(SS_ID);
   var cacheSheet = ss.getSheetByName('MonthlySchedule');
   if (!cacheSheet) {
     Logger.log('MonthlySchedule sheet not found, creating cache for current month...');
     cacheMonthlyEvents(currentMonth);
-  } else {
-    // Check if cache needs to be refreshed (if sheet is empty or has no data for current month)
-    var data = cacheSheet.getDataRange().getValues();
-    if (data.length < 2) {
-      Logger.log('MonthlySchedule sheet is empty, populating cache for current month...');
-      cacheMonthlyEvents(currentMonth);
-    }
   }
   
   // Get events for both months
@@ -4751,32 +4902,28 @@ function getLatestRecordData(studentName, studentIdOpt) {
   Logger.log('Current month events: ' + currentMonthEvents.length);
   Logger.log('Next month events: ' + nextMonthEvents.length);
   
-  // Resolve student ID (for Lessons + Payment lookup)
-  var studentId = studentIdOpt || null;
-  if (!studentId) {
+  // Resolve student ID if not provided (for Lessons sheet lookup)
+  var resolvedStudentId = studentIdOpt;
+  if (!resolvedStudentId) {
     try {
-      var studentsSheet = ss.getSheetByName('Students');
-      var studentsData = studentsSheet ? studentsSheet.getDataRange().getValues() : [];
-      if (studentsData.length > 1) {
-        var sHeaders = studentsData[0];
-        var idxId = sHeaders.indexOf('ID');
-        var idxName = sHeaders.indexOf('Name');
-        for (var si = 1; si < studentsData.length; si++) {
-          var nm = String(studentsData[si][idxName] || '').trim();
-          if (nm === studentName) {
-            studentId = String(studentsData[si][idxId] || '').trim();
-            break;
-          }
+      var studentsData = getStudents();
+      var sHeaders = studentsData[0] || [];
+      var sIdIdx = sHeaders.indexOf('ID');
+      var sNameIdx = sHeaders.indexOf('Name');
+      for (var s = 1; s < studentsData.length; s++) {
+        if (String(studentsData[s][sNameIdx] || '').trim() === String(studentName || '').trim()) {
+          resolvedStudentId = studentsData[s][sIdIdx];
+          break;
         }
       }
     } catch (e) {
-      Logger.log('Error mapping student name to ID in getLatestRecordData: ' + e);
+      Logger.log('Error resolving student ID in getLatestRecordData: ' + e.toString());
     }
   }
 
   // Get payment information for both months
-  var currentMonthPaymentInfo = getPaymentInfoForMonth(studentName, currentMonth, studentId);
-  var nextMonthPaymentInfo = getPaymentInfoForMonth(studentName, nextMonth, studentId);
+  var currentMonthPaymentInfo = getPaymentInfoForMonth(studentName, currentMonth, resolvedStudentId);
+  var nextMonthPaymentInfo = getPaymentInfoForMonth(studentName, nextMonth, resolvedStudentId);
   
   Logger.log('Current month payment info: ' + JSON.stringify(currentMonthPaymentInfo));
   Logger.log('Next month payment info: ' + JSON.stringify(nextMonthPaymentInfo));
@@ -4792,81 +4939,83 @@ function getLatestRecordData(studentName, studentIdOpt) {
   
   var latestByMonth = {};
 
-  // Helper to get planned lessons from Lessons sheet
-  function getPlannedLessonsForMonth(studentId, yearNum, monthNum) {
+  function getIntendedLessonCount(studentId, monthText) {
+    if (!studentId || !monthText) return 0;
     try {
-      var lessonsSheet = ss.getSheetByName('Lessons');
-      if (!lessonsSheet || !studentId) return 0;
-      var lessonsData = lessonsSheet.getDataRange().getDisplayValues();
-      if (lessonsData.length < 2) return 0;
-      var lh = lessonsData[0];
-      var idxId = lh.indexOf('Student ID');
-      var idxMonth = lh.indexOf('Month');
-      var idxLessons = lh.indexOf('Lessons');
-      if (idxId === -1 || idxMonth === -1 || idxLessons === -1) return 0;
-      var targetKey = yearNum + '-' + ('0' + monthNum).slice(-2);
-      for (var i = 1; i < lessonsData.length; i++) {
-        var row = lessonsData[i];
-        if (String(row[idxId]).trim() !== String(studentId)) continue;
-        var mVal = String(row[idxMonth] || '').trim();
-        if (mVal === targetKey) {
-          var planned = parseInt(row[idxLessons]) || 0;
-          return planned;
+      var lessonsSheet = ss.getSheetByName(LESSON_SHEET);
+      if (!lessonsSheet) return 0;
+      var lData = lessonsSheet.getDataRange().getValues();
+      if (lData.length < 2) return 0;
+      var lHeaders = lData[0];
+      var lIdIdx = lHeaders.indexOf('Student ID');
+      if (lIdIdx === -1) lIdIdx = lHeaders.indexOf('ID');
+      var lMonthIdx = lHeaders.indexOf('Month');
+      var lLessonsIdx = lHeaders.indexOf('Lessons');
+      if (lLessonsIdx === -1) lLessonsIdx = lHeaders.indexOf('Booked');
+      if (lIdIdx === -1 || lMonthIdx === -1 || lLessonsIdx === -1) return 0;
+      var targetMonthStr = toYYYYMM(monthText);
+      for (var r = 1; r < lData.length; r++) {
+        if (String(lData[r][lIdIdx]) !== String(studentId)) continue;
+        var rowMonthStr = toYYYYMM(lData[r][lMonthIdx]);
+        if (rowMonthStr && rowMonthStr === targetMonthStr) {
+          return Number(lData[r][lLessonsIdx]) || 0;
         }
       }
-      return 0;
     } catch (e) {
-      Logger.log('Error reading Lessons sheet planned count: ' + e);
-      return 0;
+      Logger.log('Error reading Lessons sheet in getLatestRecordData: ' + e.toString());
     }
+    return 0;
   }
   
-  // Helper to build month data with planned vs scheduled
-  function buildMonthData(monthLabel, monthShort, eventsArr, paymentInfo, yearNum, monthNum) {
-    var plannedFromPayment = paymentInfo ? (paymentInfo.lessons || 0) : 0;
-    var plannedFromLessons = (studentId ? getPlannedLessonsForMonth(studentId, yearNum, monthNum) : 0);
-    var planned = plannedFromPayment > 0 ? plannedFromPayment : plannedFromLessons;
-    var paymentStatus = paymentInfo ? paymentInfo.status : '未';
-
-    var scheduledCount = eventsArr.length;
-    var data = {
-      Payment: paymentStatus,
-      lessons: eventsArr.slice() // copy existing events
+  // Add current month data with unscheduled lessons
+  if (currentMonthEvents.length > 0 || currentMonthPaymentInfo !== null || getIntendedLessonCount(resolvedStudentId, currentMonth) > 0) {
+    var currentMonthData = {
+      Payment: currentMonthPaymentInfo ? currentMonthPaymentInfo.status : '未',
+      lessons: currentMonthEvents
     };
-
-    var unscheduledCount = Math.max(0, planned - scheduledCount);
-    if (unscheduledCount > 0) {
-      Logger.log('Adding ' + unscheduledCount + ' unscheduled lessons for ' + studentName + ' in ' + monthLabel + ' (planned=' + planned + ', scheduled=' + scheduledCount + ')');
+    
+    var currentIntended = getIntendedLessonCount(resolvedStudentId, currentMonth);
+    var currentTotal = currentIntended || (currentMonthPaymentInfo ? currentMonthPaymentInfo.lessons : 0);
+    if (currentTotal > currentMonthEvents.length) {
+      var unscheduledCount = currentTotal - currentMonthEvents.length;
+      Logger.log('Adding ' + unscheduledCount + ' unscheduled lessons for ' + studentName + ' in ' + currentMonth);
+      
       for (var i = 0; i < unscheduledCount; i++) {
-        data.lessons.push({ day: '--', time: '--', status: 'unscheduled' });
+        currentMonthData.lessons.push({
+          day: '--',
+          time: '--',
+          status: 'unscheduled'
+        });
       }
     }
-
-    // If nothing planned/scheduled and no payment, still include empty to avoid disappearance? Only include if events or planned or payment info exists.
-    if (data.lessons.length > 0 || paymentInfo !== null || planned > 0) {
-      latestByMonth[monthShort] = data;
-    }
+    
+    latestByMonth[currentMonthShort] = currentMonthData;
   }
-
-  // Add current month data (prefer payment lessons, fallback to Lessons sheet)
-  buildMonthData(
-    currentMonth,
-    currentMonthShort,
-    currentMonthEvents,
-    currentMonthPaymentInfo,
-    now.getFullYear(),
-    now.getMonth() + 1
-  );
   
-  // Add next month data
-  buildMonthData(
-    nextMonth,
-    nextMonthShort,
-    nextMonthEvents,
-    nextMonthPaymentInfo,
-    (now.getMonth() === 11 ? now.getFullYear() + 1 : now.getFullYear()),
-    ((now.getMonth() + 1) % 12) + 1
-  );
+  // Add next month data with unscheduled lessons
+  if (nextMonthEvents.length > 0 || nextMonthPaymentInfo !== null || getIntendedLessonCount(resolvedStudentId, nextMonth) > 0) {
+    var nextMonthData = {
+      Payment: nextMonthPaymentInfo ? nextMonthPaymentInfo.status : '未',
+      lessons: nextMonthEvents
+    };
+    
+    var nextIntended = getIntendedLessonCount(resolvedStudentId, nextMonth);
+    var nextTotal = nextIntended || (nextMonthPaymentInfo ? nextMonthPaymentInfo.lessons : 0);
+    if (nextTotal > nextMonthEvents.length) {
+      var unscheduledCountNext = nextTotal - nextMonthEvents.length;
+      Logger.log('Adding ' + unscheduledCountNext + ' unscheduled lessons for ' + studentName + ' in ' + nextMonth);
+      
+      for (var i = 0; i < unscheduledCountNext; i++) {
+        nextMonthData.lessons.push({
+          day: '--',
+          time: '--',
+          status: 'unscheduled'
+        });
+      }
+    }
+    
+    latestByMonth[nextMonthShort] = nextMonthData;
+  }
   
   // If no data for current/next month, try to get data from previous months
   if (Object.keys(latestByMonth).length === 0) {
@@ -4874,7 +5023,7 @@ function getLatestRecordData(studentName, studentIdOpt) {
       var prevMonth = Utilities.formatDate(new Date(now.getFullYear(), now.getMonth() - i, 1), Session.getScriptTimeZone(), 'MMMM yyyy');
       var prevMonthShort = shortMonthNames[(now.getMonth() - i + 12) % 12];
       var prevMonthEvents = getStudentEventsForMonth(studentName, prevMonth);
-      var prevMonthPaymentInfo = getPaymentInfoForMonth(studentName, prevMonth);
+      var prevMonthPaymentInfo = getPaymentInfoForMonth(studentName, prevMonth, studentIdOpt);
       
       if (prevMonthEvents.length > 0 || prevMonthPaymentInfo !== null) {
         var prevMonthData = {
@@ -4904,31 +5053,17 @@ function getLatestRecordData(studentName, studentIdOpt) {
   
   Logger.log('Final latestByMonth object: ' + JSON.stringify(latestByMonth));
   
-  // Debug: log what we're sending back per month, including first lesson eventID
-  try {
-    Object.keys(latestByMonth || {}).forEach(function(monthKey) {
-      var lessonsArr = latestByMonth[monthKey] && latestByMonth[monthKey].lessons ? latestByMonth[monthKey].lessons : [];
-      var first = lessonsArr.length ? lessonsArr[0] : null;
-      var firstSummary = first ? {
-        day: first.day,
-        time: first.time,
-        status: first.status,
-        eventID: first.eventID || first.eventId || 'MISSING'
-      } : 'none';
-      Logger.log('[LATEST OUT] month=%s lessons=%s firstLesson=%s', monthKey, lessonsArr.length, JSON.stringify(firstSummary));
-    });
-  } catch (e) {
-    Logger.log('Error logging latestByMonth outbound: ' + e);
-  }
-  
   return {
     latestByMonth: latestByMonth
   };
 }
 
 function getPaymentInfoForMonth(studentName, monthText, studentIdOpt) {
+  // Get payment information for a student in a specific month
+  // Simply check if there are any payment logs for this student in this month
   Logger.log('=== getPaymentInfoForMonth called ===');
-  Logger.log('Student name: ' + studentName + ', studentId: ' + (studentIdOpt || ''));
+  Logger.log('Student name: ' + studentName);
+  Logger.log('Student ID: ' + (studentIdOpt || ''));
   Logger.log('Month text: ' + monthText);
   
   var ss = SpreadsheetApp.openById(SS_ID);
@@ -4942,114 +5077,145 @@ function getPaymentInfoForMonth(studentName, monthText, studentIdOpt) {
   var headers = data[0];
   Logger.log('Payment sheet headers: ' + JSON.stringify(headers));
   
+  var studentNameIdx = headers.indexOf('Student Name');
   var studentIdIdx = headers.indexOf('Student ID');
   var monthIdx = headers.indexOf('Month');
   var yearIdx = headers.indexOf('Year');
-  var lessonsIdx = headers.indexOf('Lessons'); // optional
-  var amountIdx = headers.indexOf('Amount');   // optional
-  var totalIdx = headers.indexOf('Total');     // optional
+  var lessonsIdx = headers.indexOf('Lessons');
+  var amountIdx = headers.indexOf('Amount');
+  var totalIdx = headers.indexOf('Total');
   
-  if (studentIdIdx === -1 || monthIdx === -1 || yearIdx === -1) {
-    Logger.log('Required columns not found in Payment sheet (need Student ID, Month, Year)');
+  Logger.log('Column indices - StudentName: ' + studentNameIdx + ', Student ID: ' + studentIdIdx + ', Month: ' + monthIdx + ', Year: ' + yearIdx);
+  
+  if ((studentNameIdx === -1 && studentIdIdx === -1) || monthIdx === -1) {
+    Logger.log('Required columns not found in Payment sheet');
     return null;
   }
-
-  // Parse monthText to target year/month
-  var targetYear = null;
-  var targetMonthNum = null;
+  
+  // Parse month text to get month name and year
+  var monthNames = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+  var year, monthName;
+  
   if (/^\d{4}-\d{2}$/.test(monthText)) { // '2025-05'
     var parts = monthText.split('-');
-    targetYear = parts[0];
-    targetMonthNum = parseInt(parts[1], 10);
+    year = parts[0];
+    monthName = monthNames[parseInt(parts[1]) - 1];
+  } else if (/^[A-Za-z]+ \d{4}$/.test(monthText)) { // 'May 2025'
+    var parts = monthText.trim().split(' ');
+    monthName = parts[0];
+    year = parts[1];
   } else {
-    // Expect like 'May 2025'
-    var tokens = String(monthText || '').trim().split(/\s+/);
-    for (var t = 0; t < tokens.length; t++) {
-      if (/^\d{4}$/.test(tokens[t])) {
-        targetYear = tokens[t];
-      }
-    }
-    targetMonthNum = monthNumberFromText(monthText);
-  }
-
-  if (!targetYear || !targetMonthNum) {
-    Logger.log('Could not parse target month/year from: ' + monthText);
+    Logger.log('Invalid monthText format: ' + monthText);
     return null;
   }
-
-  // Map student name -> ID as fallback
-  var studentId = studentIdOpt || null;
-  if (!studentId) {
-    try {
-      var studentsSheet = ss.getSheetByName('Students');
-      var studentsData = studentsSheet ? studentsSheet.getDataRange().getValues() : [];
-      if (studentsData.length > 1) {
-        var sHeaders = studentsData[0];
-        var idxId = sHeaders.indexOf('ID');
-        var idxName = sHeaders.indexOf('Name');
-        for (var si = 1; si < studentsData.length; si++) {
-          var nm = String(studentsData[si][idxName] || '').trim();
-          if (nm === studentName) {
-            studentId = String(studentsData[si][idxId] || '').trim();
-            break;
-          }
-        }
-      }
-    } catch (e) {
-      Logger.log('Error mapping student name to ID: ' + e);
-    }
-  }
-
-  if (!studentId) {
-    Logger.log('No Student ID resolved; cannot match payments reliably.');
-    return null;
-  }
-
-  Logger.log('Looking for payment logs: studentId=' + studentId + ', monthNum=' + targetMonthNum + ', year=' + targetYear);
+  
+  Logger.log('Looking for payment logs: student=' + studentName + ', studentId=' + (studentIdOpt || '') + ', month=' + monthName + ', year=' + year);
   
   var totalLessons = 0;
   var totalAmount = 0;
   var foundAnyPayment = false;
   
+  // Check all payment logs for this student in this month
   for (var i = 1; i < data.length; i++) {
     var row = data[i];
-    var rowStudentId = String(row[studentIdIdx] || '').trim();
-    if (rowStudentId !== studentId) continue;
-
+    var rowStudentName = studentNameIdx !== -1 ? String(row[studentNameIdx] || '').trim() : '';
+    var rowStudentId = studentIdIdx !== -1 ? String(row[studentIdIdx] || '').trim() : '';
+    var rowMonth = String(row[monthIdx] || '').trim();
     var rowYear = String(row[yearIdx] || '').trim();
-    var rowMonthRaw = String(row[monthIdx] || '').trim();
-    var rowMonthNum = monthNumberFromText(rowMonthRaw);
-
-    if (rowYear === targetYear && rowMonthNum === targetMonthNum) {
+    
+    Logger.log('Row ' + i + ' - Student: "' + rowStudentName + '", Student ID: "' + rowStudentId + '", Month: "' + rowMonth + '", Year: "' + rowYear + '"');
+    
+    var matchesStudent = false;
+    if (studentIdOpt && rowStudentId) {
+      matchesStudent = rowStudentId === String(studentIdOpt).trim();
+    } else if (rowStudentName && studentName) {
+      matchesStudent = rowStudentName === studentName;
+    }
+    
+    if (matchesStudent && rowMonth === monthName && rowYear === year) {
       foundAnyPayment = true;
-      var lessons = lessonsIdx !== -1 ? (parseInt(row[lessonsIdx]) || 0) : 0;
-      var amount = amountIdx !== -1 ? (parseFloat(row[amountIdx]) || 0) : 0;
-      var total = totalIdx !== -1 ? (parseFloat(row[totalIdx]) || amount) : amount;
+      var lessonsSource = lessonsIdx !== -1 ? row[lessonsIdx] : row[amountIdx];
+      var lessons = parseInt(lessonsSource) || 0;
+      var amountSource = totalIdx !== -1 ? row[totalIdx] : row[amountIdx];
+      var amount = parseFloat(amountSource) || 0;
       
       totalLessons += lessons;
-      totalAmount += total;
+      totalAmount += amount;
       
-      Logger.log('Found payment log: lessons=' + lessons + ', total=' + total);
+      Logger.log('Found payment log: lessons=' + lessons + ', amount=' + amount);
     }
   }
   
   if (foundAnyPayment) {
-    Logger.log('Payment found for studentId ' + studentId + ' in ' + monthText + ': lessons=' + totalLessons + ', total=' + totalAmount);
+    Logger.log('Payment found for ' + studentName + ' in ' + monthText + ': lessons=' + totalLessons + ', amount=' + totalAmount);
     return {
-      status: '済',
+      status: '済', // Mark as paid if any payment logs exist
       lessons: totalLessons,
       amount: totalAmount,
       total: totalAmount
     };
   }
   
-  Logger.log('No payment logs found for studentId ' + studentId + ' in ' + monthText);
-  return null;
+  Logger.log('No payment logs found for ' + studentName + ' in ' + monthText);
+  return null; // No payment logs found
 }
 
 function getPaymentStatusForMonth(studentName, monthText, studentIdOpt) {
-  var info = getPaymentInfoForMonth(studentName, monthText, studentIdOpt);
-  return info ? info.status : null;
+  // Check payment status for a student in a specific month
+  // Simply check if there are any payment logs for this student in this month
+  var ss = SpreadsheetApp.openById(SS_ID);
+  var paymentSheet = ss.getSheetByName(PAYMENT_SHEET);
+  if (!paymentSheet) return null;
+  
+  var data = paymentSheet.getDataRange().getValues();
+  var headers = data[0];
+  var studentNameIdx = headers.indexOf('Student Name');
+  var studentIdIdx = headers.indexOf('Student ID');
+  var monthIdx = headers.indexOf('Month');
+  var yearIdx = headers.indexOf('Year');
+  
+  if ((studentNameIdx === -1 && studentIdIdx === -1) || monthIdx === -1) return null;
+  
+  // Parse month text to get month name and year
+  var monthNames = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+  var year, monthName;
+  
+  if (/^\d{4}-\d{2}$/.test(monthText)) { // '2025-05'
+    var parts = monthText.split('-');
+    year = parts[0];
+    monthName = monthNames[Number(parts[1]) - 1];
+  } else if (/^[A-Za-z]+ \d{4}$/.test(monthText)) { // 'May 2025'
+    var parts = monthText.trim().split(' ');
+    monthName = parts[0];
+    year = parts[1];
+  } else {
+    return null;
+  }
+  
+  // Look for any payment logs for this student in this month
+  for (var i = 1; i < data.length; i++) {
+    var row = data[i];
+    var rowStudentName = studentNameIdx !== -1 ? String(row[studentNameIdx] || '').trim() : '';
+    var rowStudentId = studentIdIdx !== -1 ? String(row[studentIdIdx] || '').trim() : '';
+    var rowMonth = String(row[monthIdx] || '').trim();
+    var rowYear = String(row[yearIdx] || '').trim();
+    
+    var matchesStudent = false;
+    if (studentIdOpt && rowStudentId) {
+      matchesStudent = rowStudentId === String(studentIdOpt).trim();
+    } else if (rowStudentName && studentName) {
+      matchesStudent = rowStudentName === studentName;
+    }
+    
+    if (matchesStudent && 
+        (rowMonth === monthName || rowMonth === monthText) && 
+        rowYear === year) {
+      // If any payment log exists for this student in this month, mark as paid
+      return '済';
+    }
+  }
+  
+  return null; // No payment logs found
 }
 
 
@@ -5072,7 +5238,8 @@ function testLatestRecordCommunication() {
 function getLatestRecordForStudent(studentName, studentIdOpt) {
   // API endpoint to get latest record data for the Latest Record component
   Logger.log('=== getLatestRecordForStudent called ===');
-  Logger.log('Student name: ' + studentName + ', studentId: ' + (studentIdOpt || ''));
+  Logger.log('Student name: ' + studentName);
+  Logger.log('Student ID: ' + (studentIdOpt || ''));
   
   try {
     var data = getLatestRecordData(studentName, studentIdOpt);
@@ -5230,10 +5397,11 @@ function getStudentEventsFromSheet(studentName, monthText) {
   
   var headers = data[0];
   var studentNameIdx = headers.indexOf('StudentName');
+  var dateIdx = headers.indexOf('Date');
   var startIdx = headers.indexOf('Start');
   var statusIdx = headers.indexOf('Status');
   
-  Logger.log('Column indices - StudentName: ' + studentNameIdx + ', Start: ' + startIdx + ', Status: ' + statusIdx);
+  Logger.log('Column indices - StudentName: ' + studentNameIdx + ', Date: ' + dateIdx + ', Start: ' + startIdx + ', Status: ' + statusIdx);
   
   if (studentNameIdx === -1 || startIdx === -1 || statusIdx === -1) {
     Logger.log('Required columns not found');
@@ -5242,52 +5410,41 @@ function getStudentEventsFromSheet(studentName, monthText) {
   
   var studentEvents = [];
   
-  // Parse month text to get month and year
-  var monthNames = ["January","February","March","April","May","June","July","August","September","October","November","December"];
-  var year, monthName;
-  
-  if (/^\d{4}-\d{2}$/.test(monthText)) { // '2025-05'
-    var parts = monthText.split('-');
-    year = parts[0];
-    monthName = monthNames[Number(parts[1]) - 1];
-  } else if (/^[A-Za-z]+ \d{4}$/.test(monthText)) { // 'May 2025'
-    var parts = monthText.trim().split(' ');
-    monthName = parts[0];
-    year = parts[1];
-  } else {
+  var targetMonthStr = toYYYYMM(monthText);
+  if (!targetMonthStr) {
     Logger.log('Invalid monthText format: ' + monthText);
     return [];
   }
   
-  Logger.log('Looking for events in month: ' + monthName + ' year: ' + year);
+  Logger.log('Looking for events in month: ' + targetMonthStr);
   
   // Look for events for this student in the specified month
   for (var i = 1; i < data.length; i++) {
     var row = data[i];
     var rowStudentName = String(row[studentNameIdx] || '').trim();
+    var rowDate = (dateIdx !== -1) ? row[dateIdx] : null;
     var startTime = row[startIdx];
     var status = String(row[statusIdx] || 'scheduled');
     
     // Check if this event is for the target student
     if (rowStudentName === studentName) {
       // Check if the event is in the target month
-      if (startTime instanceof Date) {
-        var eventMonth = monthNames[startTime.getMonth()];
-        var eventYear = startTime.getFullYear().toString();
+      var eventMonthStr = rowDate ? toYYYYMM(rowDate) : toYYYYMM(startTime);
+      if (eventMonthStr && eventMonthStr === targetMonthStr) {
+        Logger.log('Found matching event in row ' + i + ' for ' + studentName + ' on ' + startTime);
         
-        if (eventMonth === monthName && eventYear === year) {
-          Logger.log('Found matching event in row ' + i + ' for ' + studentName + ' on ' + startTime);
-          
-          // Extract day and time
-          var day = Utilities.formatDate(startTime, Session.getScriptTimeZone(), 'dd');
-          var time = Utilities.formatDate(startTime, Session.getScriptTimeZone(), 'HH:mm');
-          
+        // Extract day and time
+        var day = Utilities.formatDate(startTime, Session.getScriptTimeZone(), 'dd');
+        var time = Utilities.formatDate(startTime, Session.getScriptTimeZone(), 'HH:mm');
+        
           studentEvents.push({
             day: day,
             time: time,
-            status: status
+            status: status,
+            eventID: row[eventIdIdx] || row[eventIdIdx === -1 ? 0 : eventIdIdx],
+            eventId: row[eventIdIdx] || row[eventIdIdx === -1 ? 0 : eventIdIdx],
+            title: row[titleIdx] || ''
           });
-        }
       }
     }
   }
@@ -5411,6 +5568,20 @@ function getAllStudentDataForCache() {
 }
 
 /**
+ * Get student IDs listed in the Unpaid sheet (used for Today's Lessons 未納 styling).
+ * @returns {string[]} Array of student IDs
+ */
+function getUnpaidStudentIds() {
+  try {
+    var list = getUnpaidStudents();
+    return list.map(function(o) { return String(o.id || '').trim(); }).filter(Boolean);
+  } catch (error) {
+    Logger.log('getUnpaidStudentIds error: ' + error.toString());
+    return [];
+  }
+}
+
+/**
  * Get all students from Unpaid sheet (all students in this sheet are unpaid)
  * Column A: Student Name, Column B: Student ID
  * @returns {Array} Array of objects with student name and ID
@@ -5436,7 +5607,7 @@ function getUnpaidStudents() {
     
     // Get only columns A and B (1st and 2nd columns, 1-indexed)
     var studentNameData = unpaidSheet.getRange(1, 1, lastRow, 1).getDisplayValues(); // Column A
-    var studentIdData = unpaidSheet.getRange(1, 2, lastRow, 1).getDisplayValues(); // Column B
+    var studentIdData = unpaidSheet.getRange(1, 2, lastRow, 2).getDisplayValues(); // Column B
     
     Logger.log('Retrieved ' + lastRow + ' rows from columns A and B only');
     
@@ -5472,6 +5643,46 @@ function getUnpaidStudents() {
 }
 
 /**
+ * Get Unpaid sheet rows for display: Student Name + resolved Student ID (from Students sheet).
+ * Column A in Unpaid = name; ID is resolved by name lookup. Returns all rows; id is null when not found.
+ * @returns {Array<{name: string, id: string|null}>}
+ */
+function getUnpaidStudentsForDisplay() {
+  try {
+    var ss = SpreadsheetApp.openById(SS_ID);
+    var unpaidSheet = ss.getSheetByName('Unpaid');
+    if (!unpaidSheet) return [];
+    var lastRow = unpaidSheet.getLastRow();
+    if (lastRow <= 1) return [];
+    var nameCol = unpaidSheet.getRange(1, 1, lastRow, 1).getDisplayValues();
+    var names = nameCol.map(function(row) { return (row[0] || '').toString().trim(); });
+    // Build name -> ID from Students sheet
+    var studentsData = getStudents();
+    if (!studentsData || studentsData.length < 2) return names.slice(1).map(function(n) { return { name: n, id: null }; });
+    var headers = studentsData[0];
+    var idxId = headers.indexOf('ID');
+    var idxName = headers.indexOf('Name');
+    if (idxId === -1 || idxName === -1) return names.slice(1).map(function(n) { return { name: n, id: null }; });
+    var nameToId = {};
+    for (var i = 1; i < studentsData.length; i++) {
+      var n = (studentsData[i][idxName] || '').toString().trim();
+      var id = (studentsData[i][idxId] || '').toString().trim();
+      if (n && id) nameToId[n] = id;
+    }
+    var out = [];
+    for (var j = 1; j < names.length; j++) {
+      var studentName = names[j];
+      if (!studentName) { out.push({ name: '', id: null }); continue; }
+      out.push({ name: studentName, id: nameToId[studentName] || null });
+    }
+    return out;
+  } catch (e) {
+    Logger.log('getUnpaidStudentsForDisplay error: ' + e.toString());
+    return [];
+  }
+}
+
+/**
  * Get all students from LessonsMonth sheet (all students in this sheet are unscheduled)
  * Column E: Student Name, Column F: Student ID
  * @returns {Array} Array of objects with student name and ID
@@ -5495,11 +5706,27 @@ function getUnscheduledStudents() {
       return [];
     }
     
-    // Get only columns E and F (5th and 6th columns, 1-indexed)
-    var studentNameData = lessonsSheet.getRange(1, 5, lastRow, 1).getDisplayValues(); // Column E
-    var studentIdData = lessonsSheet.getRange(1, 6, lastRow, 1).getDisplayValues(); // Column F
+    // Get only columns E and F (5th and 6th columns); use endRow,endColumn convention
+    var studentNameData = lessonsSheet.getRange(1, 5, lastRow, 5).getDisplayValues(); // Column E
+    var studentIdData = lessonsSheet.getRange(1, 6, lastRow, 6).getDisplayValues(); // Column F
     
     Logger.log('Retrieved ' + lastRow + ' rows from columns E and F only');
+    
+    // Build ID -> name from Students sheet for fallback when LessonsMonth name is empty
+    var studentsData = getStudents();
+    var idToName = {};
+    if (studentsData && studentsData.length > 1) {
+      var headers = studentsData[0];
+      var idxId = headers.indexOf('ID');
+      var idxName = headers.indexOf('Name');
+      if (idxId !== -1 && idxName !== -1) {
+        for (var s = 1; s < studentsData.length; s++) {
+          var sid = (studentsData[s][idxId] || '').toString().trim();
+          var sname = (studentsData[s][idxName] || '').toString().trim();
+          if (sid) idToName[sid] = sname;
+        }
+      }
+    }
     
     // Convert to flat arrays (remove nested arrays)
     var studentNames = studentNameData.map(function(row) { return row[0]; });
@@ -5507,20 +5734,17 @@ function getUnscheduledStudents() {
     
     var unscheduledStudents = [];
     
-    // Process each row (skip header row, start from index 1)
+    // Process each row (skip header row, start from index 1); include rows with at least ID
     for (var i = 1; i < studentNames.length; i++) {
       var studentName = studentNames[i] ? studentNames[i].toString().trim() : '';
       var studentId = studentIds[i] ? studentIds[i].toString().trim() : '';
-      
-      // Add all students from the sheet (they are all unscheduled)
-      if (studentId && studentName) {
-        unscheduledStudents.push({
-          id: studentId,
-          name: studentName
-        });
-        
-        Logger.log('Found unscheduled student: ' + studentName + ' (ID: ' + studentId + ')');
-      }
+      if (!studentId) continue;
+      if (!studentName && idToName[studentId]) studentName = idToName[studentId];
+      unscheduledStudents.push({
+        id: studentId,
+        name: studentName || ''
+      });
+      Logger.log('Found unscheduled student: ' + (studentName || '(no name)') + ' (ID: ' + studentId + ')');
     }
     
     Logger.log('=== getUnscheduledStudents: Found ' + unscheduledStudents.length + ' unscheduled students ===');
@@ -5810,18 +6034,10 @@ function cancelLesson(eventId, reason, studentId) {
       return { success: false, error: 'Event not found' };
     }
     
-    // Capture start time for cache updates
-    var startTime = event.getStartTime();
-
     // Update event title to show cancelled status
-    var originalTitle = event.getTitle() || '';
-    // Strip any existing cancellation/move prefixes
-    var baseTitle = originalTitle.replace(/^\[(CANCELLED|MOVED TO[^\]]*)\]\s*/i, '').trim();
-    // Append cancelled suffix to preserve original ordering (incl. 子 marker)
-    var cancelledTitle = `${baseTitle} [Cancelled]`;
+    var originalTitle = event.getTitle();
+    var cancelledTitle = '[CANCELLED] ' + originalTitle;
     event.setTitle(cancelledTitle);
-    // Graphite color (8) for cancelled lessons
-    event.setColor('8');
     
     // Add cancellation note to description
     var originalDescription = event.getDescription() || '';
@@ -5834,15 +6050,12 @@ function cancelLesson(eventId, reason, studentId) {
     // Get lesson details to determine if it was a kids lesson
     var isKidsLesson = false;
     if (event) {
-      var titleForKids = event.getTitle() || '';
-      isKidsLesson = titleForKids.indexOf('子') !== -1;
+      var title = event.getTitle() || '';
+      isKidsLesson = title.indexOf('子') !== -1;
     }
     
     // Update availability cache
-    updateAvailabilityForTimeSlot(startTime, false, isKidsLesson);
-    
-    // Write-through to MonthlySchedule
-    updateMonthlyScheduleStatus_(eventId, 'cancelled', cancelledTitle, startTime, event.getEndTime());
+    updateAvailabilityForTimeSlot(event.getStartTime(), false, isKidsLesson);
     
     Logger.log('Lesson cancelled successfully: ' + eventId);
     return { success: true, message: 'Lesson cancelled successfully' };
@@ -5900,10 +6113,8 @@ function rescheduleLesson(eventId, newDateTime, reason, studentId) {
     var movedNote = '\n\n--- RESCHEDULED ---\nMoved to: ' + newTimeStr + '\nReason: ' + reason + '\nRescheduled by: ' + getCurrentStaffName() + '\nDate: ' + new Date().toLocaleString();
     originalEvent.setDescription(originalDescription + movedNote);
     
-    // Grey out the original event (use Graphite color 8) and label moved-to date
+    // Grey out the original event (use Graphite color 8)
     originalEvent.setColor('8');
-    var movedTitle = '[MOVED TO ' + newTimeStr + '] ' + originalTitle;
-    originalEvent.setTitle(movedTitle);
     
     // Create new event at the new time
     var newEvent = calendar.createEvent(originalTitle, newStartTime, newEndTime, {
@@ -5922,19 +6133,6 @@ function rescheduleLesson(eventId, newDateTime, reason, studentId) {
     // Log the action (log both old and new event IDs)
     logLessonAction(studentId, eventId, 'reschedule', oldStartTime.toISOString(), newStartTime.toISOString(), reason);
     logLessonAction(studentId, newEvent.getId(), 'reschedule_new', oldStartTime.toISOString(), newStartTime.toISOString(), 'New event created from reschedule');
-    
-    // Write-through updates to MonthlySchedule
-    updateMonthlyScheduleStatus_(eventId, 'rescheduled', rescheduledTitle, oldStartTime, oldEndTime);
-    upsertMonthlyScheduleRow_({
-      eventId: newEvent.getId(),
-      title: originalTitle,
-      startTime: newStartTime,
-      endTime: newEndTime,
-      status: 'scheduled',
-      studentName: originalTitle, // fallback
-      isKidsLesson: isKidsLesson,
-      teacherName: ''
-    });
     
     Logger.log('Lesson rescheduled successfully. Original event: ' + eventId + ', New event: ' + newEvent.getId());
     return { 
@@ -5975,24 +6173,11 @@ function removeLesson(eventId, reason, studentId) {
       return { success: false, error: 'Event not found' };
     }
     
-    // Capture start time before deletion for logging/cache updates
-    var startTime = event.getStartTime();
-    
     // Log the action before deletion
-    logLessonAction(studentId, eventId, 'remove', startTime.toISOString(), null, reason);
-    
-    // Determine if it's a kids lesson before deletion (title may contain 子)
-    var originalTitle = event.getTitle() || '';
-    var isKidsLesson = originalTitle.indexOf('子') !== -1;
+    logLessonAction(studentId, eventId, 'remove', event.getStartTime().toISOString(), null, reason);
     
     // Delete the event
     event.deleteEvent();
-
-    // Update availability cache (decrement the slot for the removed lesson)
-    updateAvailabilityForTimeSlot(startTime, false, isKidsLesson);
-
-    // Write-through to MonthlySchedule
-    removeMonthlyScheduleRow_(eventId);
     
     Logger.log('Lesson removed successfully: ' + eventId);
     return { success: true, message: 'Lesson removed successfully' };
@@ -6095,7 +6280,7 @@ function getLessonEventDetails(eventId) {
  * @param {string} notes - Additional notes
  * @returns {Object} Success/failure status
  */
-function bookLesson(studentId, dateTime, duration, lessonType, notes, teacherName) {
+function bookLesson(studentId, dateTime, duration, lessonType, notes, teacherName, totalLessons) {
   try {
     Logger.log('Booking lesson for student: ' + studentId);
     
@@ -6110,17 +6295,7 @@ function bookLesson(studentId, dateTime, duration, lessonType, notes, teacherNam
     var startTime = new Date(dateTime);
     var endTime = new Date(startTime.getTime() + (50 * 60 * 1000)); // Fixed 50 minutes duration
     
-    // Validate: Lessons must be booked at least 1 hour in advance
-    var now = new Date();
-    var oneHourFromNow = new Date(now.getTime() + (60 * 60 * 1000)); // 1 hour in milliseconds
-    if (startTime < oneHourFromNow) {
-      Logger.log('BLOCKED: Lesson time is less than 1 hour away');
-      var timeUntilLesson = Math.round((startTime.getTime() - now.getTime()) / (60 * 1000)); // minutes
-      return { 
-        success: false, 
-        error: 'Lessons must be booked at least 1 hour in advance. Selected time is only ' + timeUntilLesson + ' minutes away.' 
-      };
-    }
+    // Note: 1-hour advance restriction removed per admin request.
     
     // Check if student is a child
     var isChildStudent = !!(student['子'] === '子' || student.child === true || student.child === '子');
@@ -6185,8 +6360,11 @@ function bookLesson(studentId, dateTime, duration, lessonType, notes, teacherNam
     
     // Create event title (add 子 marker if child)
     var studentName = student.Name || student.name || 'Unknown Student';
-    // Build title: child marker as prefix, lesson type suffix
-    var title = (isChildStudent ? '子 ' : '') + studentName + ' (' + lessonType + ')';
+    var title = studentName;
+    if (isChildStudent) {
+      title = title + '子';
+    }
+    title = title + ' (' + lessonType + ')';
     
     // Create event description
     var description = 'Booked by: ' + getCurrentStaffName() + '\n';
@@ -6211,17 +6389,18 @@ function bookLesson(studentId, dateTime, duration, lessonType, notes, teacherNam
     // Update availability cache
     updateAvailabilityForTimeSlot(startTime, true, isChildStudent);
     
-    // Write-through to MonthlySchedule (avoid full refresh)
-    upsertMonthlyScheduleRow_({
-      eventId: event.getId(),
-      title: title,
-      startTime: startTime,
-      endTime: endTime,
-      status: 'scheduled',
-      studentName: studentName,
-      isKidsLesson: isChildStudent,
-      teacherName: teacherName && teacherName.trim() ? teacherName.trim() : ''
-    });
+    // Refresh only the relevant month cache to keep this fast
+    var targetMonthStr = toYYYYMM(startTime);
+    var currentMonthStr = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM');
+    var nextMonthDate = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 1);
+    var nextMonthStr = Utilities.formatDate(nextMonthDate, Session.getScriptTimeZone(), 'yyyy-MM');
+    var cacheSheetName = (targetMonthStr === nextMonthStr) ? 'NextMonthSchedule' : 'MonthlySchedule';
+    cacheEventsToSheet(targetMonthStr, cacheSheetName);
+    
+    // Store total lessons for the month in Lessons sheet (if provided)
+    if (totalLessons) {
+      upsertLessonTotal(studentId, targetMonthStr, totalLessons);
+    }
     
     return { 
       success: true, 
@@ -6264,17 +6443,7 @@ function bookReservedLesson(studentId, dateTime, duration, lessonType, notes, to
     var startTime = new Date(dateTime);
     var endTime = new Date(startTime.getTime() + (50 * 60 * 1000)); // Fixed 50 minutes duration
     
-    // Validate: Lessons must be booked at least 1 hour in advance
-    var now = new Date();
-    var oneHourFromNow = new Date(now.getTime() + (60 * 60 * 1000)); // 1 hour in milliseconds
-    if (startTime < oneHourFromNow) {
-      Logger.log('BLOCKED: Reserved lesson time is less than 1 hour away');
-      var timeUntilLesson = Math.round((startTime.getTime() - now.getTime()) / (60 * 1000)); // minutes
-      return { 
-        success: false, 
-        error: 'Lessons must be booked at least 1 hour in advance. Selected time is only ' + timeUntilLesson + ' minutes away.' 
-      };
-    }
+    // Note: 1-hour advance restriction removed per admin request.
     
     // Check if student is a child
     var isChildStudent = !!(student['子'] === '子' || student.child === true || student.child === '子');
@@ -6339,8 +6508,11 @@ function bookReservedLesson(studentId, dateTime, duration, lessonType, notes, to
     
     // Create event title (add 子 marker if child, and "placeholder" for reserved)
     var studentName = student.Name || student.name || 'Unknown Student';
-    // Build title: child marker as prefix, lesson type suffix
-    var title = (isChildStudent ? '子 ' : '') + studentName + ' (' + lessonType + ') [placeholder]';
+    var title = studentName;
+    if (isChildStudent) {
+      title = title + '子';
+    }
+    title = title + ' (' + lessonType + ') [placeholder]';
     
     // Create event description
     var description = 'Reserved booking\n';
@@ -6372,17 +6544,18 @@ function bookReservedLesson(studentId, dateTime, duration, lessonType, notes, to
     // Update availability cache
     updateAvailabilityForTimeSlot(startTime, true, isChildStudent);
     
-    // Write-through to MonthlySchedule (avoid full refresh)
-    upsertMonthlyScheduleRow_({
-      eventId: event.getId(),
-      title: title,
-      startTime: startTime,
-      endTime: endTime,
-      status: 'scheduled',
-      studentName: studentName,
-      isKidsLesson: isChildStudent,
-      teacherName: teacherName && teacherName.trim() ? teacherName.trim() : ''
-    });
+    // Refresh only the relevant month cache to keep this fast
+    var targetMonthStr = toYYYYMM(startTime);
+    var currentMonthStr = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM');
+    var nextMonthDate = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 1);
+    var nextMonthStr = Utilities.formatDate(nextMonthDate, Session.getScriptTimeZone(), 'yyyy-MM');
+    var cacheSheetName = (targetMonthStr === nextMonthStr) ? 'NextMonthSchedule' : 'MonthlySchedule';
+    cacheEventsToSheet(targetMonthStr, cacheSheetName);
+
+    // Store total lessons for the month in Lessons sheet
+    if (totalLessons) {
+      upsertLessonTotal(studentId, targetMonthStr, totalLessons);
+    }
     
     return { 
       success: true, 

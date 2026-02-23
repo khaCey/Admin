@@ -34,6 +34,10 @@ A comprehensive web-based student management system built with Google Apps Scrip
 - Update those docs whenever functions or schema change.
 - After code changes (non-doc-only), run `clasp push` to deploy.
 
+## 🔧 Feature Flags
+- Feature flags live in `Code.js` under `FEATURE_FLAGS`.
+- `lessonActions` controls Cancel/Reschedule/Remove in Lesson Details (enabled).
+
 ### Project Structure
 
 ```

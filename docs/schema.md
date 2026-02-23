@@ -39,6 +39,7 @@ Key: `Student ID` + `Month` (YYYY-MM).
 ## MonthlySchedule (events) (sheet: `MonthlySchedule`)
 - EventID
 - Title
+- Date
 - Start
 - End
 - Status

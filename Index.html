@@ -622,6 +622,10 @@
           <i data-lucide="calendar-x" class="w-4 h-4"></i>
           <span>未定</span>
         </button>
+        <button id="todaysLessonsBtn" class="px-4 py-2 border border-white text-white rounded-lg hover:bg-white hover:text-green-600 transition-colors flex items-center space-x-2">
+          <i data-lucide="calendar-days" class="w-4 h-4"></i>
+          <span>Today's Lessons</span>
+        </button>
         <div class="relative notification-wrapper">
           <button id="notifBtn" type="button" class="px-4 py-2 border border-white text-white rounded-lg hover:bg-white hover:text-green-600 transition-colors flex items-center space-x-2" onclick="toggleNotifications()">
             <i data-lucide="bell" class="w-4 h-4"></i>
@@ -785,6 +789,12 @@
   <?!= include('ListScripts'); ?>
 
   <script>
+    // Disable console logging
+    console.log = function() {};
+    console.debug = function() {};
+    console.info = function() {};
+    console.warn = function() {};
+
     // Minimal showStudents() to render the Students include into mainContent
     function showStudents() { 
       google.script.run.withSuccessHandler(function(html) {
@@ -842,6 +852,344 @@
           if (window.lucide && lucide.createIcons) lucide.createIcons();
           // Load unscheduled students data
           loadUnscheduledStudents();
+        });
+      }
+
+      // Today's Lessons modal functionality
+      const todaysLessonsBtn = document.getElementById('todaysLessonsBtn');
+      const todaysLessonsModal = document.getElementById('todaysLessonsModal');
+      const todaysLessonsClose = document.getElementById('todaysLessonsClose');
+      const todaysLessonsCancel = document.getElementById('todaysLessonsCancel');
+      const todaysLessonsRefresh = document.getElementById('todaysLessonsRefresh');
+
+      function openTodaysLessonsModal() {
+        if (!todaysLessonsModal) return;
+        todaysLessonsModal.classList.remove('hidden');
+        setTodaysLessonsDate();
+        loadTodaysLessons();
+        if (window.lucide && lucide.createIcons) lucide.createIcons();
+      }
+
+      function closeTodaysLessonsModal() {
+        if (!todaysLessonsModal) return;
+        todaysLessonsModal.classList.add('hidden');
+      }
+
+      function setTodaysLessonsDate() {
+        const dateEl = document.getElementById('todaysLessonsDate');
+        if (!dateEl) return;
+        const today = new Date();
+        dateEl.textContent = today.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+      }
+
+      function parseLessonDateTime(value) {
+        if (!value) return null;
+        if (value instanceof Date) return value;
+        if (typeof value === 'string') {
+          const parts = value.trim().split(/\s+/);
+          if (parts.length >= 2) {
+            const datePart = parts[0];
+            const timePart = parts[1];
+            const [year, month, day] = datePart.split('-').map(Number);
+            const [hour, minute] = timePart.split(':').map(Number);
+            if (!Number.isNaN(year) && !Number.isNaN(month) && !Number.isNaN(day)) {
+              return new Date(year, month - 1, day, hour || 0, minute || 0, 0);
+            }
+          }
+          const parsed = new Date(value);
+          if (!Number.isNaN(parsed.getTime())) return parsed;
+        }
+        return null;
+      }
+
+      function formatLessonTime(value) {
+        const dt = parseLessonDateTime(value);
+        if (!dt) return value ? String(value) : '';
+        return dt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+      }
+
+      function getCurrentMonthText() {
+        return new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' });
+      }
+
+      function splitStudentNames(rawNames) {
+        if (!rawNames) return [];
+        return rawNames
+          .split(/\s+and\s+|,\s*|&/i)
+          .map(name => name.trim())
+          .filter(Boolean);
+      }
+
+      function buildStudentNameMap() {
+        const map = {};
+        if (!window._headers || !Array.isArray(window._rows)) return map;
+        const nameIdx = window._headers.indexOf('Name');
+        const idIdx = window._headers.indexOf('ID');
+        if (nameIdx === -1 || idIdx === -1) return map;
+        window._rows.forEach((row) => {
+          const name = (row[nameIdx] || '').toString().trim();
+          const id = (row[idIdx] || '').toString().trim();
+          if (name && id && !map[name]) {
+            map[name] = id;
+          }
+        });
+        return map;
+      }
+
+      function resolveStudentCandidates(names, nameMap) {
+        return names.map(name => ({ name, id: nameMap[name] || '' }));
+      }
+
+      function openSelectStudentModal(candidates, onSelect, onCancel) {
+        const valid = candidates.filter(c => c.id);
+        if (valid.length === 0) {
+          if (onCancel) onCancel();
+          return;
+        }
+        if (valid.length === 1) {
+          onSelect(valid[0]);
+          return;
+        }
+        const modal = document.getElementById('selectStudentModal');
+        const container = document.getElementById('selectStudentModalCards');
+        const closeBtn = document.getElementById('selectStudentModalClose');
+        const cancelBtn = document.getElementById('selectStudentModalCancel');
+        if (!modal || !container) return;
+
+        container.innerHTML = '';
+        valid.forEach((c) => {
+          const card = document.createElement('button');
+          card.type = 'button';
+          card.className = 'select-student-card';
+          card.innerHTML = '<span class="select-student-card__name">' + (c.name || 'Student') + '</span>';
+          card.addEventListener('click', () => {
+            modal.classList.add('hidden');
+            onSelect(c);
+          });
+          container.appendChild(card);
+        });
+
+        let backdropHandler;
+        const doClose = () => {
+          modal.classList.add('hidden');
+          if (backdropHandler) modal.removeEventListener('click', backdropHandler);
+          if (onCancel) onCancel();
+        };
+        backdropHandler = (e) => {
+          if (e.target.hasAttribute('data-select-student-backdrop')) doClose();
+        };
+        modal.addEventListener('click', backdropHandler);
+        closeBtn.onclick = doClose;
+        cancelBtn.onclick = doClose;
+        modal.classList.remove('hidden');
+        if (window.lucide && lucide.createIcons) lucide.createIcons();
+      }
+
+      function fetchStudentStatuses(studentIds, monthText, onDone) {
+        const unique = Array.from(new Set(studentIds.filter(Boolean)));
+        const results = {};
+        if (unique.length === 0) {
+          onDone(results);
+          return;
+        }
+        let remaining = unique.length;
+        unique.forEach((id) => {
+          google.script.run
+            .withSuccessHandler(function(status) {
+              results[id] = status;
+              remaining -= 1;
+              if (remaining === 0) onDone(results);
+            })
+            .withFailureHandler(function() {
+              results[id] = null;
+              remaining -= 1;
+              if (remaining === 0) onDone(results);
+            })
+            .getStudentLessonStatusForMonth(id, monthText);
+        });
+      }
+
+      function getStatusLabel(status) {
+        const s = (status || '').toString().trim().toLowerCase();
+        if (s === 'cancelled' || s === 'canceled') return { text: 'Cancelled', className: 'status-cancelled' };
+        if (s === 'complete' || s === 'completed') return { text: 'Completed', className: 'status-completed' };
+        return { text: 'Scheduled', className: 'status-scheduled' };
+      }
+
+      function renderTodaysLessons(lessons) {
+        const listEl = document.getElementById('todaysLessonsList');
+        const emptyEl = document.getElementById('todaysLessonsEmpty');
+        const countEl = document.getElementById('todaysLessonsCount');
+        if (!listEl || !emptyEl || !countEl) return;
+
+        listEl.innerHTML = '';
+        const isArrayPayload = Array.isArray(lessons);
+        const payload = isArrayPayload ? { rows: lessons } : (lessons || {});
+        const rows = Array.isArray(payload.rows) ? payload.rows : [];
+        const nameMap = buildStudentNameMap();
+
+        if (rows.length === 0) {
+          emptyEl.classList.remove('hidden');
+          countEl.textContent = '0';
+          return;
+        }
+
+        emptyEl.classList.add('hidden');
+
+        const parseStartTime = (row) => {
+          const v = row.Start || row.startTime || row.EventStart || row.start || '';
+          if (!v) return 0;
+          const d = new Date(v);
+          return isNaN(d.getTime()) ? 0 : d.getTime();
+        };
+        const sortedRows = rows.slice().sort((a, b) => parseStartTime(a) - parseStartTime(b));
+
+        const renderCards = (unpaidIds) => {
+          const unpaidSet = new Set((unpaidIds || []).map(String).filter(Boolean));
+          listEl.innerHTML = '';
+          const fragment = document.createDocumentFragment();
+          sortedRows.forEach((row) => {
+            const eventName = row.eventName || row.EventName || row.Title || row.eventTitle || 'Lesson';
+            const studentNames = row.studentNames || row.StudentNames || row.studentName || row.StudentName || '';
+            const startValue = row.Start || row.startTime || row.EventStart || row.start || '';
+            const endValue = row.End || row.endTime || row.EventEnd || row.end || '';
+            const timeLabel = [formatLessonTime(startValue), formatLessonTime(endValue)].filter(Boolean).join(' - ');
+            const status = row.lessonHistory ? 'history' : (row.evaluationReady ? 'complete' : '');
+            const nameList = splitStudentNames(studentNames);
+            const rowIds = row.studentIds || (row.studentId ? [row.studentId] : []);
+            const resolvedIds = Array.isArray(rowIds) && rowIds.length ? rowIds.map(String).filter(Boolean) : [];
+            const candidates = resolvedIds.length
+              ? resolvedIds.map((id, i) => ({ name: nameList[i] || '', id }))
+              : resolveStudentCandidates(nameList, nameMap);
+            const effectiveIds = resolvedIds.length ? resolvedIds : candidates.filter(c => c.id).map(c => c.id);
+
+            const card = document.createElement('div');
+            card.className = `todays-lesson-card ${status ? `todays-lesson-card--${status}` : ''}`.trim();
+            if (effectiveIds.length) {
+              card.dataset.studentIds = effectiveIds.join(',');
+              const anyOnUnpaidList = effectiveIds.some(id => unpaidSet.has(String(id)));
+              if (anyOnUnpaidList) {
+                card.classList.add('todays-lesson-card--unpaid');
+              } else {
+                card.classList.add('todays-lesson-card--paid');
+              }
+            }
+
+            const header = document.createElement('div');
+            header.className = 'todays-lesson-card__header';
+
+            const titleWrap = document.createElement('div');
+            const title = document.createElement('div');
+            title.className = 'todays-lesson-card__title';
+            title.textContent = eventName;
+            titleWrap.appendChild(title);
+
+            if (studentNames) {
+              const names = document.createElement('div');
+              names.className = 'todays-lesson-card__meta';
+              names.textContent = studentNames;
+              titleWrap.appendChild(names);
+            }
+
+            header.appendChild(titleWrap);
+
+            if (timeLabel) {
+              const time = document.createElement('div');
+              time.className = 'todays-lesson-card__time';
+              time.textContent = timeLabel;
+              header.appendChild(time);
+            }
+
+            card.appendChild(header);
+
+            card.addEventListener('click', () => {
+              if (typeof openStudentDetails !== 'function') {
+                showToast('Student details modal is not available.', 'error');
+                return;
+              }
+              const valid = candidates.filter(c => c.id);
+              if (valid.length === 0) {
+                showToast('Student ID not found for this lesson.', 'warning');
+                return;
+              }
+              openSelectStudentModal(candidates, (selected) => {
+                openStudentDetails(selected.id);
+              });
+            });
+
+            fragment.appendChild(card);
+          });
+          listEl.appendChild(fragment);
+          countEl.textContent = String(rows.length);
+        };
+
+        google.script.run
+          .withSuccessHandler(function(ids) {
+            renderCards(ids || []);
+          })
+          .withFailureHandler(function() {
+            renderCards([]);
+          })
+          .getUnpaidStudentIds();
+      }
+
+      function loadTodaysLessons() {
+        const loadingEl = document.getElementById('todaysLessonsLoading');
+        if (loadingEl) loadingEl.classList.remove('hidden');
+
+        google.script.run
+          .withSuccessHandler(function(access) {
+            if (loadingEl) loadingEl.classList.add('hidden');
+            const payload = access || {};
+            if (!payload.rows && !payload.debug && !payload.ok) {
+              renderTodaysLessons({
+                debug: {
+                  error: 'No response payload received from server.'
+                },
+                rows: []
+              });
+              return;
+            }
+            payload.debug = payload.debug || {
+              ok: !!payload.ok,
+              sheetId: payload.sheetId,
+              sheetName: payload.sheetName,
+              rowCount: payload.rowCount,
+              headers: payload.headers,
+              error: payload.error
+            };
+            renderTodaysLessons(payload);
+          })
+          .withFailureHandler(function(error) {
+            if (loadingEl) loadingEl.classList.add('hidden');
+            showToast('Failed to check sheet access.', 'error');
+            renderTodaysLessons({
+              debug: {
+                error: (error && (error.message || error.toString())) || 'Unknown error'
+              },
+              rows: []
+            });
+          })
+          .getLessonsTodayForAdmin();
+      }
+
+      if (todaysLessonsBtn) {
+        todaysLessonsBtn.addEventListener('click', openTodaysLessonsModal);
+      }
+      if (todaysLessonsClose) {
+        todaysLessonsClose.addEventListener('click', closeTodaysLessonsModal);
+      }
+      if (todaysLessonsCancel) {
+        todaysLessonsCancel.addEventListener('click', closeTodaysLessonsModal);
+      }
+      if (todaysLessonsRefresh) {
+        todaysLessonsRefresh.addEventListener('click', loadTodaysLessons);
+      }
+      if (todaysLessonsModal) {
+        todaysLessonsModal.addEventListener('click', function(e) {
+          if (e.target === todaysLessonsModal) {
+            closeTodaysLessonsModal();
+          }
         });
       }
       
@@ -985,7 +1333,7 @@
         // Show loading state
         tableBody.innerHTML = `
           <tr>
-            <td class="px-3 py-2 text-center text-gray-500">
+            <td colspan="2" class="px-3 py-2 text-center text-gray-500">
               <div class="flex justify-center items-center">
                 <div class="animate-spin rounded-full h-6 w-6 border-b-2 border-green-600"></div>
                 <span class="ml-2 text-gray-600">Loading unpaid students...</span>
@@ -995,48 +1343,49 @@
         `;
         if (window.lucide && lucide.createIcons) lucide.createIcons();
         
-        // Fetch data using getUnpaidStudentsThisMonth with selected month/year
+        // Fetch data from Unpaid sheet (name + resolved Student ID); show "Not found" when ID missing
         google.script.run
           .withSuccessHandler(function(data) {
             if (data && data.length > 0) {
-              // Clear loading state
               tableBody.innerHTML = '';
-              
-              // Populate table with student names
-              data.forEach(function(student) {
+              data.forEach(function(item) {
                 const row = document.createElement('tr');
-                row.className = 'hover:bg-gray-50 cursor-pointer';
-                row.setAttribute('data-student-id', student.id);
-                
-                row.innerHTML = `
-                  <td class="px-3 py-2 text-left text-sm text-gray-900">
-                    ${student.name || 'Unknown'}
-                  </td>
-                `;
-                
-                // Add click handler to open student details
-                row.addEventListener('click', function() {
-                  const studentId = this.getAttribute('data-student-id');
-                  if (studentId && typeof openStudentDetails === 'function') {
-                    openStudentDetails(studentId);
-                    // Don't close the parent modal - keep it open so user can access other students
-                  }
-                });
-                
+                const hasId = item.id != null && String(item.id).trim() !== '';
+                if (hasId) row.className = 'hover:bg-gray-50 cursor-pointer';
+                row.setAttribute('data-student-id', hasId ? item.id : '');
+                row.innerHTML =
+                  '<td class="px-3 py-2 text-left text-sm text-gray-900">' + (item.name || '') + '</td>' +
+                  '<td class="px-3 py-2 text-left text-sm">' +
+                    (hasId
+                      ? '<a href="#" class="text-blue-600 underline hover:text-blue-800" data-student-id="' + String(item.id) + '">' + String(item.id) + '</a>'
+                      : '<span class="inline-flex items-center gap-1 text-red-600"><i data-lucide="x-circle" class="w-4 h-4 flex-shrink-0"></i>Not found</span>'
+                    ) +
+                  '</td>';
+                if (hasId) {
+                  row.addEventListener('click', function(e) {
+                    var id = this.getAttribute('data-student-id');
+                    if (id && typeof openStudentDetails === 'function') {
+                      e.preventDefault();
+                      openStudentDetails(id);
+                    }
+                  });
+                  row.querySelector('a').addEventListener('click', function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (typeof openStudentDetails === 'function') openStudentDetails(this.getAttribute('data-student-id'));
+                  });
+                }
                 tableBody.appendChild(row);
               });
-              
-              // Update count
               if (countElement) countElement.textContent = data.length;
               if (countContainer) countContainer.classList.remove('hidden');
             } else {
-              // No unpaid students found
               tableBody.innerHTML = `
                 <tr>
-                  <td class="px-3 py-2 text-center text-gray-500">
+                  <td colspan="2" class="px-3 py-2 text-center text-gray-500">
                     <div class="flex justify-center items-center">
                       <i data-lucide="check-circle" class="w-4 h-4 text-green-500"></i>
-                      <span class="ml-2">All students are up to date with payments!</span>
+                      <span class="ml-2">No unpaid entries in the Unpaid sheet.</span>
                     </div>
                   </td>
                 </tr>
@@ -1044,15 +1393,13 @@
               if (countElement) countElement.textContent = '0';
               if (countContainer) countContainer.classList.remove('hidden');
             }
-            
-            // Re-initialize icons
             if (window.lucide && lucide.createIcons) lucide.createIcons();
           })
           .withFailureHandler(function(error) {
             console.error('Error loading unpaid students:', error);
             tableBody.innerHTML = `
               <tr>
-                <td class="px-3 py-2 text-center text-red-500">
+                <td colspan="2" class="px-3 py-2 text-center text-red-500">
                   <div class="flex justify-center items-center">
                     <i data-lucide="alert-circle" class="w-4 h-4"></i>
                     <span class="ml-2">Error loading data. Please try again.</span>
@@ -1062,7 +1409,7 @@
             `;
             if (window.lucide && lucide.createIcons) lucide.createIcons();
           })
-          .getUnpaidStudentsThisMonth(selectedMonth, selectedYear);
+          .getUnpaidStudentsForDisplay();
       }
       
       // Function to load unscheduled students from LessonsMonth sheet
@@ -1103,27 +1450,24 @@
               // Clear loading state
               tableBody.innerHTML = '';
               
-              // Populate table with student names
+              // Populate table with student names (accept id/name or 'Student ID'/'Student Name')
               data.forEach(function(student) {
+                const studentId = student.id || student['Student ID'] || '';
+                const studentName = student.name || student['Student Name'] || '';
                 const row = document.createElement('tr');
                 row.className = 'hover:bg-gray-50 cursor-pointer';
-                row.setAttribute('data-student-id', student.id);
-                
+                row.setAttribute('data-student-id', studentId);
                 row.innerHTML = `
                   <td class="px-3 py-2 text-left text-sm text-gray-900">
-                    ${student.name || 'Unknown'}
+                    ${studentName || 'Unknown'}
                   </td>
                 `;
-                
-                // Add click handler to open student details
                 row.addEventListener('click', function() {
-                  const studentId = this.getAttribute('data-student-id');
-                  if (studentId && typeof openStudentDetails === 'function') {
-                    openStudentDetails(studentId);
-                    // Don't close the parent modal - keep it open so user can access other students
+                  const id = this.getAttribute('data-student-id');
+                  if (id && typeof openStudentDetails === 'function') {
+                    openStudentDetails(id);
                   }
                 });
-                
                 tableBody.appendChild(row);
               });
               
@@ -1134,7 +1478,7 @@
               // No unscheduled students found
               tableBody.innerHTML = `
                 <tr>
-                  <td class="px-3 py-2 text-center text-gray-500">
+                  <td colspan="2" class="px-3 py-2 text-center text-gray-500">
                     <div class="flex justify-center items-center">
                       <i data-lucide="check-circle" class="w-4 h-4 text-green-500"></i>
                       <span class="ml-2">All students have scheduled lessons!</span>
@@ -1153,7 +1497,7 @@
             console.error('Error loading unscheduled students:', error);
             tableBody.innerHTML = `
               <tr>
-                <td class="px-3 py-2 text-center text-red-500">
+                <td colspan="2" class="px-3 py-2 text-center text-red-500">
                   <div class="flex justify-center items-center">
                     <i data-lucide="alert-circle" class="w-4 h-4"></i>
                     <span class="ml-2">Error loading data. Please try again.</span>
@@ -1434,7 +1778,19 @@
   <div id="bookLessonModal" class="fixed inset-0 z-[1500] hidden">
     <div class="absolute inset-0 bg-black/50"></div>
     <div class="absolute inset-0 flex items-center justify-center p-4 sm:p-8 overflow-auto">
-      <div class="w-full max-w-6xl max-h-[90vh] rounded-2xl bg-white modal-card ring-1 ring-black/5 flex flex-col overflow-hidden">
+      <div class="w-full max-w-6xl max-h-[90vh] rounded-2xl bg-white modal-card ring-1 ring-black/5 flex flex-col overflow-hidden relative">
+        <div id="bookingCalendarLoadingOverlayOld" class="fixed inset-0 z-[2000] hidden bg-white/80 flex items-center justify-center pointer-events-auto cursor-wait">
+          <div class="flex flex-col items-center gap-3">
+            <div class="relative">
+              <div class="animate-spin rounded-full h-12 w-12 border-4 border-gray-200"></div>
+              <div class="animate-spin rounded-full h-12 w-12 border-4 border-green-600 border-t-transparent absolute top-0 left-0"></div>
+            </div>
+            <div class="text-center">
+              <p class="text-base font-medium text-gray-900">Loading Availability</p>
+              <p class="text-sm text-gray-500 mt-1">Checking teacher schedules...</p>
+            </div>
+          </div>
+        </div>
         <header class="flex items-center justify-between px-5 py-3 border-b border-gray-200">
           <div>
             <h3 id="bookLessonTitle" class="text-lg font-semibold text-gray-900 leading-tight">Book a New Lesson</h3>
@@ -1507,7 +1863,7 @@
                 </div>
               </div>
               
-              <div id="calendarGrid" class="grid grid-cols-8" style="grid-auto-rows: 48px; min-height: 528px; margin: 0; padding-top: 2px; padding-bottom: 8px;">
+              <div id="calendarGrid" class="grid grid-cols-8" style="grid-auto-rows: 60px; min-height: 528px; margin: 0; padding-top: 2px; padding-bottom: 8px;">
                 <!-- Time slots will be generated by JavaScript -->
               </div>
             </div>
@@ -1528,7 +1884,19 @@
   <div id="bookLessonModalNew" class="fixed inset-0 z-[1500] hidden" style="display: none !important;">
     <div class="absolute inset-0 bg-black/50"></div>
     <div class="absolute inset-0 flex items-center justify-center p-4 sm:p-8 overflow-auto">
-      <div class="w-full max-w-6xl max-h-[90vh] rounded-2xl bg-white modal-card ring-1 ring-black/5 flex flex-col overflow-hidden">
+      <div class="w-full max-w-6xl max-h-[90vh] rounded-2xl bg-white modal-card ring-1 ring-black/5 flex flex-col overflow-hidden relative">
+        <div id="bookingCalendarLoadingOverlay" class="fixed inset-0 z-[2000] hidden bg-white/80 flex items-center justify-center pointer-events-auto cursor-wait">
+          <div class="flex flex-col items-center gap-3">
+            <div class="relative">
+              <div class="animate-spin rounded-full h-12 w-12 border-4 border-gray-200"></div>
+              <div class="animate-spin rounded-full h-12 w-12 border-4 border-green-600 border-t-transparent absolute top-0 left-0"></div>
+            </div>
+            <div class="text-center">
+              <p class="text-base font-medium text-gray-900">Loading Availability</p>
+              <p class="text-sm text-gray-500 mt-1">Checking teacher schedules...</p>
+            </div>
+          </div>
+        </div>
         <header class="flex items-center justify-between px-6 py-4 border-b border-gray-200">
           <div>
             <h3 id="bookLessonTitleNew" class="text-xl font-semibold text-gray-900">Book a New Lesson</h3>
@@ -1591,7 +1959,7 @@
                 </div>
               </div>
               
-              <div id="calendarGridNew" class="grid grid-cols-8" style="grid-auto-rows: 48px; min-height: 528px; margin: 0; padding-top: 2px; padding-bottom: 8px;">
+              <div id="calendarGridNew" class="grid grid-cols-8" style="grid-auto-rows: 60px; min-height: 528px; margin: 0; padding-top: 2px; padding-bottom: 8px;">
                 <!-- Availability slots will be generated by JavaScript -->
               </div>
             </div>
@@ -1865,11 +2233,12 @@
               <thead class="sticky top-0 bg-green-600 text-white shadow">
                 <tr>
                   <th class="px-3 py-2 text-left font-semibold">Student Name</th>
+                  <th class="px-3 py-2 text-left font-semibold">Student ID</th>
                 </tr>
               </thead>
               <tbody id="unpaidStudentsTableBody">
                 <tr>
-                  <td class="px-3 py-2 text-center text-gray-500">
+                  <td colspan="2" class="px-3 py-2 text-center text-gray-500">
                     <div class="flex justify-center items-center">
                       <div class="animate-spin rounded-full h-6 w-6 border-b-2 border-green-600"></div>
                       <span class="ml-2 text-gray-600">Loading unpaid students...</span>
@@ -1887,6 +2256,86 @@
         </div>
         <footer class="flex items-center justify-end gap-2 px-4 py-3 bg-gray-50 border-t border-gray-200">
           <button type="button" id="newFeatureCancel" class="rounded-md border border-gray-300 bg-white px-4 py-1.5 text-sm font-semibold text-gray-700 hover:bg-gray-50">Close</button>
+        </footer>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Today's Lessons Modal ===== -->
+  <div id="todaysLessonsModal" class="fixed inset-0 z-[60] hidden">
+    <div class="absolute inset-0 bg-black/50"></div>
+    <div class="absolute inset-0 flex items-center justify-center p-4 sm:p-8 overflow-auto">
+      <div class="todays-lessons-modal-card w-full max-w-4xl max-h-[90vh] rounded-2xl bg-white modal-card ring-1 ring-black/5 flex flex-col">
+        <header class="flex-shrink-0 flex items-center justify-between px-4 py-3 bg-green-600 text-white">
+          <div>
+            <h3 class="text-lg font-semibold">Today's Lessons</h3>
+            <p id="todaysLessonsDate" class="text-sm text-white/80"></p>
+          </div>
+          <button type="button" id="todaysLessonsClose" class="rounded-md border border-white/30 bg-white/10 px-2.5 py-1 text-xs font-medium hover:bg-white/20">Close</button>
+        </header>
+        <div class="p-6 flex-1 min-h-0 flex flex-col overflow-hidden">
+          <div class="flex-shrink-0 flex items-center justify-between mb-4">
+            <div class="flex items-center space-x-3">
+              <div class="flex-shrink-0">
+                <div class="w-10 h-10 bg-emerald-100 rounded-lg flex items-center justify-center">
+                  <i data-lucide="calendar-days" class="w-5 h-5 text-emerald-600"></i>
+                </div>
+              </div>
+              <div>
+                <h4 class="text-lg font-medium text-gray-900">Lessons scheduled today</h4>
+                <p class="text-sm text-gray-500">Click a lesson to open student details</p>
+              </div>
+            </div>
+            <div class="flex items-center space-x-3">
+              <span class="text-sm text-gray-600">Total: <span id="todaysLessonsCount" class="font-semibold">0</span></span>
+              <button id="todaysLessonsRefresh" class="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium hover:bg-gray-50">
+                <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+                Refresh
+              </button>
+            </div>
+          </div>
+
+          <div id="todaysLessonsLoading" class="hidden flex-shrink-0">
+            <div class="flex justify-center items-center py-6">
+              <div class="animate-spin rounded-full h-6 w-6 border-b-2 border-green-600"></div>
+              <span class="ml-2 text-gray-600">Loading today's lessons...</span>
+            </div>
+          </div>
+
+          <div id="todaysLessonsEmpty" class="hidden flex-shrink-0">
+            <div class="rounded-xl border border-dashed border-gray-300 bg-gray-50 px-6 py-10 text-center text-gray-500">
+              No lessons scheduled for today.
+            </div>
+          </div>
+
+          <div class="todays-lessons-list-scroll flex-1 min-h-0 overflow-y-auto">
+            <div id="todaysLessonsList" class="todays-lessons-list"></div>
+          </div>
+        </div>
+        <footer class="flex-shrink-0 flex items-center justify-end gap-2 px-4 py-3 bg-gray-50 border-t border-gray-200">
+          <button type="button" id="todaysLessonsCancel" class="rounded-md border border-gray-300 bg-white px-4 py-1.5 text-sm font-semibold text-gray-700 hover:bg-gray-50">Close</button>
+        </footer>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Select Student Modal (group lessons) ===== -->
+  <div id="selectStudentModal" class="fixed inset-0 z-[70] hidden">
+    <div class="absolute inset-0 bg-black/50" data-select-student-backdrop></div>
+    <div class="absolute inset-0 flex items-center justify-center p-4 sm:p-8 overflow-auto">
+      <div class="w-full max-w-md rounded-2xl bg-white modal-card ring-1 ring-black/5 shadow-xl">
+        <header class="flex items-center justify-between px-4 py-3 bg-green-600 text-white rounded-t-2xl">
+          <h3 class="text-lg font-semibold">Select a student</h3>
+          <button type="button" id="selectStudentModalClose" class="rounded-md border border-white/30 bg-white/10 px-2.5 py-1 text-xs font-medium hover:bg-white/20">Close</button>
+        </header>
+        <div class="p-4">
+          <p class="text-sm text-gray-600 mb-4">This lesson has more than one student. Choose who to open:</p>
+          <div id="selectStudentModalCards" class="select-student-cards grid gap-3">
+            <!-- Cards injected by JS -->
+          </div>
+        </div>
+        <footer class="flex items-center justify-end gap-2 px-4 py-3 bg-gray-50 border-t border-gray-200 rounded-b-2xl">
+          <button type="button" id="selectStudentModalCancel" class="rounded-md border border-gray-300 bg-white px-4 py-1.5 text-sm font-semibold text-gray-700 hover:bg-gray-50">Cancel</button>
         </footer>
       </div>
     </div>
@@ -3309,7 +3758,7 @@
           console.error('Error booking lesson:', error);
           showToast('Error booking lesson. Please try again.', 'error');
         })
-        .bookLesson(lessonData.studentId, dateTime.toISOString(), lessonData.duration, lessonData.type, lessonData.notes, ''); // teacherName - empty for old modal (no teacher selection)
+        .bookLesson(lessonData.studentId, dateTime.toISOString(), lessonData.duration, lessonData.type, lessonData.notes, '', totalLessons); // teacherName - empty for old modal (no teacher selection)
     }
 
     function openBookLessonModal({ student=null, onClose=()=>{} }={}){
@@ -3362,6 +3811,12 @@
           .getStudentLessonTotal(studentId, currentMonth);
       }
       
+      function setBookingCalendarLoadingOld(isLoading) {
+        const overlay = document.getElementById('bookingCalendarLoadingOverlayOld');
+        if (!overlay) return;
+        overlay.classList.toggle('hidden', !isLoading);
+      }
+
       // Initialize calendar (no need for default values since we're using the time slot modal)
 
       // Initialize calendar - start from Monday of current week
@@ -4221,6 +4676,7 @@
           return;
         }
         window.calendarGenerating = true;
+        setBookingCalendarLoadingOld(true);
         
         // Debug: Check if calendar grid element exists
         console.log('generateCalendarGrid called with weekStart:', weekStart);
@@ -4238,19 +4694,8 @@
         const endDate = new Date(weekStart);
         endDate.setDate(weekStart.getDate() + 7);
         
-        // Show loading spinner
-        bookLessonEls.calendarGrid.innerHTML = `
-          <div class="col-span-8 flex flex-col items-center justify-center min-h-[400px] w-full bg-gray-50 rounded-lg p-8">
-            <div class="relative">
-              <div class="animate-spin rounded-full h-12 w-12 border-4 border-gray-200"></div>
-              <div class="animate-spin rounded-full h-12 w-12 border-4 border-blue-600 border-t-transparent absolute top-0 left-0"></div>
-            </div>
-            <div class="mt-4 text-center">
-              <p class="text-lg font-medium text-gray-900">Loading Lessons</p>
-              <p class="text-sm text-gray-500 mt-1">Fetching schedule data...</p>
-            </div>
-          </div>
-        `;
+        // Clear grid while loading
+        bookLessonEls.calendarGrid.innerHTML = '';
         
         try {
           // Fetch both lessons and teacher shifts in parallel
@@ -4313,15 +4758,18 @@
             // Generate calendar with both lessons and teacher shifts
             generateCalendarWithLessonCards(weekStart, lessonsByDay, teacherShiftsByDay);
             window.calendarGenerating = false;
+            setBookingCalendarLoadingOld(false);
           }).catch(function(error) {
             console.error('Error fetching calendar data:', error);
             generateFallbackCalendar(weekStart);
             window.calendarGenerating = false;
+            setBookingCalendarLoadingOld(false);
           });
         } catch (error) {
           console.error('Error calling calendar functions:', error);
           generateFallbackCalendar(weekStart);
           window.calendarGenerating = false;
+          setBookingCalendarLoadingOld(false);
         }
       }
 
@@ -4553,8 +5001,15 @@
         id: studentId,
         isChild: isChildStudent
       };
+      let isInitialLoad = true;
 
-      function generateAvailabilityCalendar(weekStart, availabilityData, existingLessons) {
+      function setBookingCalendarLoading(isLoading) {
+        const overlay = document.getElementById('bookingCalendarLoadingOverlay');
+        if (!overlay) return;
+        overlay.classList.toggle('hidden', !isLoading);
+      }
+
+      function generateAvailabilityCalendar(weekStart, availabilityData) {
         bookLessonElsNew.calendarGrid.innerHTML = '';
 
         const timeSlots = [];
@@ -4600,45 +5055,33 @@
             // Get availability data for this time slot
             const availability = availabilityData[dateStr] && availabilityData[dateStr][slotTime];
             
-            // Check if this slot has adult lessons (for child students)
-            let hasAdultLesson = false;
-            if (isChildStudent && existingLessons && existingLessons[dateStr] && existingLessons[dateStr][slotTime]) {
-              const lessons = existingLessons[dateStr][slotTime];
-              if (Array.isArray(lessons) && lessons.length > 0) {
-                // Check if any lesson is NOT a kids lesson (i.e., is an adult lesson)
-                hasAdultLesson = lessons.some(lesson => {
-                  const isKidsLesson = lesson.isKidsLesson === true || lesson.isKidsLesson === '子';
-                  return !isKidsLesson;
-                });
-              }
-            }
-            
-            // Check if slot is at least 1 hour in the future
+            // Check if slot is in the past or too soon to book
             const slotDateTime = new Date(dayDate);
             const [hours, minutes] = slotTime.split(':').map(Number);
             slotDateTime.setHours(hours, minutes, 0, 0);
             const now = new Date();
-            const oneHourFromNow = new Date(now.getTime() + (60 * 60 * 1000)); // 1 hour in milliseconds
-            const isTooSoon = slotDateTime < oneHourFromNow;
+            const isPast = slotDateTime < now;
             
-            console.log(`Checking ${dateStr} ${slotTime}:`, availability, 'hasAdultLesson:', hasAdultLesson, 'isTooSoon:', isTooSoon);
+            console.log(`Checking ${dateStr} ${slotTime}:`, availability, 'isPast:', isPast);
+            
+            if (isPast) {
+              slotCell.className += ' bg-gray-50 text-gray-300 cursor-not-allowed';
+              slotCell.textContent = '';
+              slotCell.title = 'Past time';
+              bookLessonElsNew.calendarGrid.appendChild(slotCell);
+              continue;
+            }
             
             if (!availability) {
               // No data - show as unknown/loading
               slotCell.className += ' bg-yellow-50 text-yellow-700 cursor-help';
               slotCell.textContent = '?';
               slotCell.title = 'Availability data not available - teacher schedules may need to be cached';
-            } else if (!availability.available || hasAdultLesson || isTooSoon) {
-              // Not available - gray out (either no availability OR has adult lessons for child student OR too soon)
+            } else if (!availability.available) {
+              // Not available - gray out
               slotCell.className += ' bg-gray-100 text-gray-400 cursor-not-allowed';
               slotCell.textContent = '';
-              if (isTooSoon) {
-                slotCell.title = 'Lessons must be booked at least 1 hour in advance';
-              } else if (hasAdultLesson) {
-                slotCell.title = 'Slot contains adult lessons - kids cannot be booked here';
-              } else {
-                slotCell.title = `No availability (${availability.teacherCount} teachers, ${availability.lessonCount} lessons)`;
-              }
+              slotCell.title = `No availability (${availability.teacherCount} teachers, ${availability.lessonCount} lessons)`;
             } else {
               // Available - show availability card
               const availableSlots = availability.availableSlots;
@@ -4673,6 +5116,90 @@
         });
       }
 
+      let bookingWeekRequestId = 0;
+
+      function renderEmptyWeekGrid(weekStart) {
+        bookLessonElsNew.calendarGrid.innerHTML = '';
+        const timeSlots = [];
+        for (let hour = 10; hour <= 20; hour++) {
+          timeSlots.push(String(hour).padStart(2, '0') + ':00');
+        }
+        const cellHeight = 60;
+
+        timeSlots.forEach((slotTime) => {
+          const timeCell = document.createElement('div');
+          timeCell.className = 'px-2 text-sm text-gray-600 border-r border-gray-200 bg-gray-50 flex items-center relative';
+          timeCell.style.height = `${cellHeight}px`;
+          timeCell.textContent = slotTime;
+
+          const horizontalLine = document.createElement('div');
+          horizontalLine.className = 'absolute top-0 left-0 h-px bg-gray-300';
+          horizontalLine.style.width = 'calc(100% * 8)';
+          horizontalLine.style.zIndex = '10';
+          timeCell.appendChild(horizontalLine);
+
+          bookLessonElsNew.calendarGrid.appendChild(timeCell);
+
+          for (let day = 0; day < 7; day++) {
+            const slotCell = document.createElement('div');
+            slotCell.className = 'px-1 text-sm border-r border-gray-200 transition-colors flex flex-col justify-start relative';
+            slotCell.style.height = `${cellHeight}px`;
+            bookLessonElsNew.calendarGrid.appendChild(slotCell);
+          }
+        });
+      }
+
+      function prefetchAvailabilityForWeek(weekStart, studentId) {
+        const weekKey = new Date(weekStart);
+        weekKey.setHours(0, 0, 0, 0);
+        const cacheKey = weekKey.toISOString();
+
+        if (window.bookingAvailabilityCache && window.bookingAvailabilityCache[cacheKey]) return;
+
+        try {
+          google.script.run
+            .withSuccessHandler(function(result) {
+              let availabilityData = {};
+              if (typeof result === 'string') {
+                try {
+                  availabilityData = JSON.parse(result);
+                } catch (e) {
+                  availabilityData = {};
+                }
+              } else {
+                availabilityData = result || {};
+              }
+
+              if (!window.bookingAvailabilityCache) {
+                window.bookingAvailabilityCache = {};
+              }
+              window.bookingAvailabilityCache[cacheKey] = availabilityData;
+            })
+            .withFailureHandler(function() {
+              if (!window.bookingAvailabilityCache) {
+                window.bookingAvailabilityCache = {};
+              }
+              window.bookingAvailabilityCache[cacheKey] = {};
+            })
+            .getWeekAvailability(weekStart.toISOString(), studentId);
+        } catch (error) {
+          if (!window.bookingAvailabilityCache) {
+            window.bookingAvailabilityCache = {};
+          }
+          window.bookingAvailabilityCache[cacheKey] = {};
+        }
+      }
+
+      function prefetchAdjacentWeeks(currentWeek, studentId) {
+        const next = new Date(currentWeek);
+        next.setDate(currentWeek.getDate() + 7);
+        prefetchAvailabilityForWeek(next, studentId);
+
+        const prev = new Date(currentWeek);
+        prev.setDate(currentWeek.getDate() - 7);
+        prefetchAvailabilityForWeek(prev, studentId);
+      }
+
       function generateCalendarGridNew(weekStart) {
         // Normalize week start to Monday at midnight for cache key
         const weekKey = new Date(weekStart);
@@ -4682,187 +5209,45 @@
         
         // Check if data is already cached (pre-loaded when student details opened)
         const cachedAvailability = window.bookingAvailabilityCache && window.bookingAvailabilityCache[cacheKey];
-        const cachedLessons = window.bookingExistingLessonsCache && window.bookingExistingLessonsCache[cacheKey];
         
         // Debug logging
         console.log('Calendar cache check:', {
           cacheKey: cacheKey,
           hasAvailabilityCache: !!cachedAvailability,
-          hasLessonsCache: !!cachedLessons,
-          availabilityCacheKeys: window.bookingAvailabilityCache ? Object.keys(window.bookingAvailabilityCache) : [],
-          lessonsCacheKeys: window.bookingExistingLessonsCache ? Object.keys(window.bookingExistingLessonsCache) : []
+          availabilityCacheKeys: window.bookingAvailabilityCache ? Object.keys(window.bookingAvailabilityCache) : []
         });
         
-        // If we have availability cached, use it immediately (lessons can be empty initially)
+        // Always render immediately (cached availability or empty grid)
         if (cachedAvailability) {
           console.log('Using pre-loaded cached data for week:', cacheKey);
-          generateAvailabilityCalendar(weekStart, cachedAvailability, cachedLessons || {});
-          
-          // If lessons are missing, fetch them in background and update
-          if (!cachedLessons) {
-            console.log('Lessons cache missing, fetching in background...');
-            try {
-              google.script.run
-                .withSuccessHandler(function(result) {
-                  let existingLessons = {};
-                  if (typeof result === 'string') {
-                    try {
-                      existingLessons = JSON.parse(result);
-                    } catch (e) {
-                      console.error('Failed to parse existing lessons:', e);
-                      existingLessons = {};
-                    }
-                  } else {
-                    existingLessons = result || {};
-                  }
-                  
-                  if (!window.bookingExistingLessonsCache) {
-                    window.bookingExistingLessonsCache = {};
-                  }
-                  window.bookingExistingLessonsCache[cacheKey] = existingLessons;
-                  
-                  // Re-render with updated lessons data
-                  generateAvailabilityCalendar(weekStart, cachedAvailability, existingLessons);
-                })
-                .withFailureHandler(function(error) {
-                  console.error('Error getting existing lessons:', error);
-                })
-                .getExistingLessonsFromSheet(weekStart.toISOString());
-            } catch (error) {
-              console.error('Error calling getExistingLessonsFromSheet:', error);
-            }
+          generateAvailabilityCalendar(weekStart, cachedAvailability);
+          if (isInitialLoad) {
+            setBookingCalendarLoading(false);
+            isInitialLoad = false;
           }
-          return; // Exit early - no loading spinner needed
+        } else {
+          renderEmptyWeekGrid(weekStart);
+          if (isInitialLoad) {
+            setBookingCalendarLoading(true);
+          }
         }
-        
-        // Only show loading spinner if NO cache exists at all
-        console.log('No cache found, fetching data...');
-        bookLessonElsNew.calendarGrid.innerHTML = `
-          <div class="col-span-8 flex flex-col items-center justify-center min-h-[400px] w-full bg-gray-50 rounded-lg p-8">
-            <div class="relative">
-              <div class="animate-spin rounded-full h-12 w-12 border-4 border-gray-200"></div>
-              <div class="animate-spin rounded-full h-12 w-12 border-4 border-green-600 border-t-transparent absolute top-0 left-0"></div>
-            </div>
-            <div class="mt-4 text-center">
-              <p class="text-lg font-medium text-gray-900">Loading Availability</p>
-              <p class="text-sm text-gray-500 mt-1">Checking teacher schedules...</p>
-            </div>
-          </div>
-        `;
 
-        // Fetch both availability and existing lessons in parallel
-        Promise.all([
-          new Promise((resolve, reject) => {
-            // Fetch availability from server
-            try {
-              google.script.run
-                .withSuccessHandler(function(result) {
-                  let availabilityData = {};
-                  if (typeof result === 'string') {
-                    try {
-                      availabilityData = JSON.parse(result);
-                    } catch (e) {
-                      console.error('Failed to parse availability data:', e);
-                      availabilityData = {};
-                    }
-                  } else {
-                    availabilityData = result || {};
-                  }
-
-                  // Cache the data
-                  if (!window.bookingAvailabilityCache) {
-                    window.bookingAvailabilityCache = {};
-                  }
-                  window.bookingAvailabilityCache[cacheKey] = availabilityData;
-                  console.log('Cached availability data for week:', cacheKey);
-                  resolve(availabilityData);
-                })
-                .withFailureHandler(function(error) {
-                  console.error('Error getting availability:', error);
-                  resolve({}); // Resolve with empty instead of rejecting
-                })
-                .getWeekAvailability(weekStart.toISOString(), studentId);
-            } catch (error) {
-              resolve({}); // Resolve with empty on error
+        // Fetch in background and update only if still the latest request
+        const requestId = ++bookingWeekRequestId;
+        prefetchAvailabilityForWeek(weekStart, studentId);
+        setTimeout(() => {
+          const latest = window.bookingAvailabilityCache && window.bookingAvailabilityCache[cacheKey];
+          if (latest && requestId === bookingWeekRequestId) {
+            generateAvailabilityCalendar(weekStart, latest);
+            if (isInitialLoad) {
+              setBookingCalendarLoading(false);
+              isInitialLoad = false;
             }
-          }),
-          new Promise((resolve, reject) => {
-            // Check cache first for existing lessons
-            if (cachedLessons) {
-              console.log('Using cached existing lessons for week:', cacheKey);
-              resolve(cachedLessons);
-              return;
-            }
-            
-            // Fetch existing lessons
-            try {
-              google.script.run
-                .withSuccessHandler(function(result) {
-                  let existingLessons = {};
-                  if (typeof result === 'string') {
-                    try {
-                      existingLessons = JSON.parse(result);
-                    } catch (e) {
-                      console.error('Failed to parse existing lessons:', e);
-                      existingLessons = {};
-                    }
-                  } else {
-                    existingLessons = result || {};
-                  }
-                  
-                  // Cache the data
-                  if (!window.bookingExistingLessonsCache) {
-                    window.bookingExistingLessonsCache = {};
-                  }
-                  window.bookingExistingLessonsCache[cacheKey] = existingLessons;
-                  resolve(existingLessons);
-                })
-                .withFailureHandler(function(error) {
-                  console.error('Error getting existing lessons:', error);
-                  resolve({}); // Resolve with empty object instead of rejecting
-                })
-                .getExistingLessonsFromSheet(weekStart.toISOString());
-            } catch (error) {
-              resolve({}); // Resolve with empty object on error
-            }
-          })
-        ]).then(([availabilityData, existingLessons]) => {
-          // Check if we have any data
-          const dateKeys = Object.keys(availabilityData);
-          console.log('Availability dates found:', dateKeys.length);
-          if (dateKeys.length === 0) {
-            console.warn('No availability data returned - teacher schedules may need to be cached');
-            showToast('No availability data found. Please ensure teacher schedules are cached.', 'warning');
           }
-
-          generateAvailabilityCalendar(weekStart, availabilityData, existingLessons);
-        }).catch((error) => {
-          console.error('Error loading calendar data:', error);
-          showToast('Error loading availability data: ' + error, 'error');
-          bookLessonElsNew.calendarGrid.innerHTML = `
-            <div class="col-span-8 p-8 text-center">
-              <p class="text-gray-500 mb-2">Error loading availability</p>
-              <p class="text-sm text-gray-400">${error}</p>
-              <p class="text-sm text-gray-400 mt-2">Please ensure teacher schedules are cached.</p>
-            </div>
-          `;
-        });
+        }, 0);
       }
 
       function selectTimeSlotNew(cell, date, time) {
-        // Check if slot is at least 1 hour in the future
-        const slotDateTime = new Date(date);
-        const [hours, minutes] = time.split(':').map(Number);
-        slotDateTime.setHours(hours, minutes, 0, 0);
-        const now = new Date();
-        const oneHourFromNow = new Date(now.getTime() + (60 * 60 * 1000)); // 1 hour in milliseconds
-        
-        if (slotDateTime < oneHourFromNow) {
-          const timeUntilLesson = Math.round((slotDateTime.getTime() - now.getTime()) / (60 * 1000));
-          showToast('Lessons must be booked at least 1 hour in advance. Selected time is only ' + timeUntilLesson + ' minutes away.', 'error');
-          return;
-        }
-        
         openTimeSlotModalNew({
           date: date,
           time: time,
@@ -4899,91 +5284,8 @@
         updateWeekDisplayNew(currentWeek);
         generateCalendarGridNew(currentWeek);
         
-        // Pre-load the next week in the navigation direction for smooth navigation
         const studentId = window.currentBookingStudent ? window.currentBookingStudent.id : '';
-        const nextWeekToLoad = new Date(currentWeek);
-        nextWeekToLoad.setDate(currentWeek.getDate() + (direction * 7));
-        nextWeekToLoad.setHours(0, 0, 0, 0);
-        const nextWeekKey = nextWeekToLoad.toISOString();
-        
-        // Pre-load if not already cached
-        if (!window.bookingAvailabilityCache || !window.bookingAvailabilityCache[nextWeekKey]) {
-          // Pre-load availability
-          try {
-            google.script.run
-              .withSuccessHandler(function(result) {
-                let availabilityData = {};
-                if (typeof result === 'string') {
-                  try {
-                    availabilityData = JSON.parse(result);
-                  } catch (e) {
-                    console.error('Failed to parse availability data:', e);
-                    availabilityData = {};
-                  }
-                } else {
-                  availabilityData = result || {};
-                }
-                
-                if (!window.bookingAvailabilityCache) {
-                  window.bookingAvailabilityCache = {};
-                }
-                window.bookingAvailabilityCache[nextWeekKey] = availabilityData;
-                console.log('Pre-loaded availability for week (navigation):', nextWeekKey);
-              })
-              .withFailureHandler(function(error) {
-                console.error('Error pre-loading availability for week', nextWeekKey, ':', error);
-                if (!window.bookingAvailabilityCache) {
-                  window.bookingAvailabilityCache = {};
-                }
-                window.bookingAvailabilityCache[nextWeekKey] = {};
-              })
-              .getWeekAvailability(nextWeekToLoad.toISOString(), studentId);
-          } catch (error) {
-            console.error('Error calling getWeekAvailability for pre-load (navigation):', error);
-            if (!window.bookingAvailabilityCache) {
-              window.bookingAvailabilityCache = {};
-            }
-            window.bookingAvailabilityCache[nextWeekKey] = {};
-          }
-          
-          // Pre-load existing lessons
-          try {
-            google.script.run
-              .withSuccessHandler(function(result) {
-                let existingLessons = {};
-                if (typeof result === 'string') {
-                  try {
-                    existingLessons = JSON.parse(result);
-                  } catch (e) {
-                    console.error('Failed to parse existing lessons:', e);
-                    existingLessons = {};
-                  }
-                } else {
-                  existingLessons = result || {};
-                }
-                
-                if (!window.bookingExistingLessonsCache) {
-                  window.bookingExistingLessonsCache = {};
-                }
-                window.bookingExistingLessonsCache[nextWeekKey] = existingLessons;
-                console.log('Pre-loaded existing lessons for week (navigation):', nextWeekKey);
-              })
-              .withFailureHandler(function(error) {
-                console.error('Error pre-loading existing lessons for week', nextWeekKey, ':', error);
-                if (!window.bookingExistingLessonsCache) {
-                  window.bookingExistingLessonsCache = {};
-                }
-                window.bookingExistingLessonsCache[nextWeekKey] = {};
-              })
-              .getExistingLessonsFromSheet(nextWeekToLoad.toISOString());
-          } catch (error) {
-            console.error('Error calling getExistingLessonsFromSheet for pre-load (navigation):', error);
-            if (!window.bookingExistingLessonsCache) {
-              window.bookingExistingLessonsCache = {};
-            }
-            window.bookingExistingLessonsCache[nextWeekKey] = {};
-          }
-        }
+        prefetchAdjacentWeeks(currentWeek, studentId);
       }
 
       const doClose = () => { onClose(); cleanup(); };
@@ -4998,7 +5300,9 @@
 
       // Initialize calendar
       updateWeekDisplayNew(currentWeek);
+      setBookingCalendarLoading(true);
       generateCalendarGridNew(currentWeek);
+      prefetchAdjacentWeeks(currentWeek, window.currentBookingStudent?.id || '');
 
       // Add event listeners
       bookLessonElsNew.close.addEventListener('click', doClose);
@@ -6281,50 +6585,50 @@
                   student.payments[index] = normalizedResult;
                   renderPaymentsTable();
                 }
+                
+                showToast('Payment added successfully!', 'success');
 
-                // Auto-add a note confirming payment for the month (add-mode only)
-                if (mode === 'add') {
-                  const today = new Date();
-                  const isoDate = today.toISOString().slice(0,10);
-                  const staffName = payEls.staff.value || '';
-                  const noteObj = {
-                    // Sheet-aligned keys
-                    StudentID: student.id || student.ID || '',
-                    'StudentID': student.id || student.ID || '',
-                    Date: isoDate,
-                    Note: '今月お支払いはお済みです。',
-                    Staff: staffName,
-                    // UI-friendly keys
-                    date: isoDate,
-                    staff: staffName,
-                    text: '今月お支払いはお済みです。'
-                  };
-                  // Optimistically update UI
-                  if (!student.notes) student.notes = [];
-                  student.notes.push(noteObj);
-                  renderNotes();
-                  updateStudentCache(student.id, 'note', noteObj);
-                  // Persist to backend
-                  if (window.google && google.script && google.script.run) {
-                    google.script.run
-                      .withSuccessHandler(function(savedNote) {
-                        if (savedNote) {
-                          updateStudentCache(student.id, 'note', savedNote);
-                        }
-                      })
-                      .withFailureHandler(function(err) {
-                        console.error('Failed to add auto payment note:', err);
-                        // Queue for retry
-                        OfflineQueue.addOperation({
-                          type: 'note',
-                          method: 'addNote',
-                          params: [noteObj],
-                          studentId: student.id,
-                          data: noteObj
-                        });
-                      })
-                      .addNote(noteObj);
-                  }
+                // Auto-add a note confirming payment for the month
+                const today = new Date();
+                const isoDate = today.toISOString().slice(0,10);
+                const staffName = payEls.staff.value || '';
+                const noteObj = {
+                  // Sheet-aligned keys
+                  StudentID: student.id || student.ID || '',
+                  'StudentID': student.id || student.ID || '',
+                  Date: isoDate,
+                  Note: '今月分のお支払いはお済みです。',
+                  Staff: staffName,
+                  // UI-friendly keys
+                  date: isoDate,
+                  staff: staffName,
+                  text: '今月分のお支払いはお済みです。'
+                };
+                // Optimistically update UI
+                if (!student.notes) student.notes = [];
+                student.notes.push(noteObj);
+                renderNotes();
+                updateStudentCache(student.id, 'note', noteObj);
+                // Persist to backend
+                if (window.google && google.script && google.script.run) {
+                  google.script.run
+                    .withSuccessHandler(function(savedNote) {
+                      if (savedNote) {
+                        updateStudentCache(student.id, 'note', savedNote);
+                      }
+                    })
+                    .withFailureHandler(function(err) {
+                      console.error('Failed to add auto payment note:', err);
+                      // Queue for retry
+                      OfflineQueue.addOperation({
+                        type: 'note',
+                        method: 'addNote',
+                        params: [noteObj],
+                        studentId: student.id,
+                        data: noteObj
+                      });
+                    })
+                    .addNote(noteObj);
                 }
               })
               .withFailureHandler(function(error) {
@@ -7134,10 +7438,6 @@
         if (day && day !== '--') {
           // Remove leading zero and add 日
           day = parseInt(day).toString() + '日';
-          // Add day of week if available
-          if (dayOfWeek) {
-            day = day + ' （' + dayOfWeek + '）';
-          }
         }
         
         // Convert time to Japanese format (e.g., "15:00" -> "15：00")
@@ -7153,9 +7453,9 @@
             data-idx="${idx}" data-month="${month}" data-status="${l.status}" aria-label="Lesson ${day} ${time} (${title})" title="${title}">
             <span class="absolute left-0 top-0 h-full w-1.5 rounded-l-xl ${styles.accent}"></span>
             <span class="mt-0.5 flex-1">
-              <span class="block font-semibold tabular-nums text-gray-900 leading-tight">${day || '--'}</span>
-              <span class="block text-xs text-gray-600 mt-0.5 tabular-nums">${time || '--'}</span>
-              <span class="mt-1 inline-flex items-center text-[11px] text-gray-600">
+              <span class="block lr-date">${day || '--'}<span class="lr-dow">${dayOfWeek ? ' ' + dayOfWeek : ''}</span></span>
+              <span class="block lr-time tabular-nums">${time || '--'}</span>
+              <span class="lr-status inline-flex items-center">
                 <span class="mr-1 h-2 w-2 rounded-full ${styles.dot}"></span>${title}
               </span>
             </span>
@@ -7668,44 +7968,6 @@
           window.bookingAvailabilityCache[key] = {};
         }
         
-        // Also pre-load existing lessons for the week
-        try {
-          google.script.run
-            .withSuccessHandler(function(result) {
-              let existingLessons = {};
-              if (typeof result === 'string') {
-                try {
-                  existingLessons = JSON.parse(result);
-                } catch (e) {
-                  console.error('Failed to parse existing lessons:', e);
-                  existingLessons = {};
-                }
-              } else {
-                existingLessons = result || {};
-              }
-              
-              // Cache existing lessons with a separate key
-              if (!window.bookingExistingLessonsCache) {
-                window.bookingExistingLessonsCache = {};
-              }
-              window.bookingExistingLessonsCache[key] = existingLessons;
-              console.log('Pre-loaded existing lessons for week:', key);
-            })
-            .withFailureHandler(function(error) {
-              console.error('Error pre-loading existing lessons for week', key, ':', error);
-              if (!window.bookingExistingLessonsCache) {
-                window.bookingExistingLessonsCache = {};
-              }
-              window.bookingExistingLessonsCache[key] = {};
-            })
-            .getExistingLessonsFromSheet(week.toISOString());
-        } catch (error) {
-          console.error('Error calling getExistingLessonsFromSheet for pre-load:', error);
-          if (!window.bookingExistingLessonsCache) {
-            window.bookingExistingLessonsCache = {};
-          }
-          window.bookingExistingLessonsCache[key] = {};
-        }
       });
     }
     window.loadStudent = loadStudent;
@@ -7924,6 +8186,7 @@
                       google.script.run
                         .withSuccessHandler(function(result) {
                           // Cache already updated, no additional action needed
+                          showToast('Payment deleted successfully!', 'success');
                         })
                         .withFailureHandler(function(error) {
                           console.error('Failed to delete payment:', error);
