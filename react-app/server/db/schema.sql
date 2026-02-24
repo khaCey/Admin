@@ -58,19 +58,24 @@ CREATE TABLE IF NOT EXISTS lessons (
 
 CREATE INDEX IF NOT EXISTS idx_lessons_student ON lessons(student_id);
 
--- Monthly schedule (cached events)
+-- Monthly schedule (cached events). Composite PK allows group lessons: one row per student per event.
 CREATE TABLE IF NOT EXISTS monthly_schedule (
-  event_id VARCHAR(255) PRIMARY KEY,
+  event_id VARCHAR(255) NOT NULL,
   title VARCHAR(500),
   date DATE,
   start TIMESTAMPTZ,
   "end" TIMESTAMPTZ,
   status VARCHAR(50),
-  student_name VARCHAR(255),
+  student_name VARCHAR(255) NOT NULL,
   is_kids_lesson BOOLEAN DEFAULT FALSE,
   teacher_name VARCHAR(255),
-  created_at TIMESTAMPTZ DEFAULT NOW()
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  PRIMARY KEY (event_id, student_name)
 );
+
+-- Migrate existing table from single-column PK to composite (idempotent)
+ALTER TABLE monthly_schedule DROP CONSTRAINT IF EXISTS monthly_schedule_pkey;
+ALTER TABLE monthly_schedule ADD CONSTRAINT monthly_schedule_pkey PRIMARY KEY (event_id, student_name);
 
 CREATE INDEX IF NOT EXISTS idx_monthly_schedule_date ON monthly_schedule(date);
 
@@ -88,6 +93,15 @@ CREATE TABLE IF NOT EXISTS teacher_schedules (
   start_time TIME,
   end_time TIME,
   PRIMARY KEY (date, teacher_name, start_time)
+);
+
+-- Teacher shift extensions: up to 2 hours before/after base shift (minutes, max 120 each)
+CREATE TABLE IF NOT EXISTS teacher_shift_extensions (
+  date DATE NOT NULL,
+  teacher_name VARCHAR(255) NOT NULL,
+  extend_before_minutes INTEGER DEFAULT 0 CHECK (extend_before_minutes >= 0 AND extend_before_minutes <= 120),
+  extend_after_minutes INTEGER DEFAULT 0 CHECK (extend_after_minutes >= 0 AND extend_after_minutes <= 120),
+  PRIMARY KEY (date, teacher_name)
 );
 
 -- Teacher calendars

@@ -122,7 +122,7 @@ export default function NoteModal({ studentId, mode = 'add', note = null, onSave
                 type="button"
                 onClick={handleDelete}
                 disabled={deleting}
-                className="rounded-md bg-rose-600 text-white px-3 py-1.5 text-sm font-semibold hover:bg-rose-700 disabled:opacity-50"
+                className="rounded-md bg-rose-600 text-white px-3 py-1.5 text-sm font-semibold hover:bg-rose-700 disabled:opacity-50 cursor-pointer"
               >
                 {deleting ? 'Deleting...' : 'Delete'}
               </button>
@@ -131,7 +131,7 @@ export default function NoteModal({ studentId, mode = 'add', note = null, onSave
           <button
             type="submit"
             disabled={submitting}
-            className="rounded-md bg-green-600 text-white px-4 py-1.5 text-sm font-semibold hover:bg-green-700 disabled:opacity-50"
+            className="rounded-md bg-green-600 text-white px-4 py-1.5 text-sm font-semibold hover:bg-green-700 disabled:opacity-50 cursor-pointer"
           >
             {submitting ? 'Saving...' : 'Save'}
           </button>

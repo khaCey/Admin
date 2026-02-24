@@ -1,13 +1,17 @@
 const API_BASE = '/api';
 
 async function fetchApi(path, options = {}) {
-  const res = await fetch(`${API_BASE}${path}`, {
+  await new Promise((r) => setTimeout(r, 500)); // 0.5s delay for CRUD
+  const url = `${API_BASE}${path}`;
+  const res = await fetch(url, {
     headers: { 'Content-Type': 'application/json', ...options.headers },
     ...options,
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(err.error || res.statusText);
+    const msg = err.error || res.statusText;
+    const pathHint = err.path ? ` (${err.path})` : '';
+    throw new Error(msg + pathHint);
   }
   return res.json();
 }
@@ -31,4 +35,40 @@ export const api = {
   deleteNote: (id) => fetchApi(`/notes/${id}`, { method: 'DELETE' }),
 
   getFeatureFlags: () => fetchApi('/config/feature-flags'),
+
+  getUnpaidStudents: (month) =>
+    fetchApi(month ? `/dashboard/unpaid?month=${encodeURIComponent(month)}` : '/dashboard/unpaid'),
+  getUnscheduledLessonsStudents: () => fetchApi('/dashboard/unscheduled-lessons'),
+
+  getWeekSchedule: (weekStart) =>
+    fetchApi(`/schedule/week?week_start=${encodeURIComponent(weekStart)}`),
+  getBookingWarning: (date, time, studentId) => {
+    const params = new URLSearchParams({ date, time });
+    if (studentId) params.set('student_id', studentId);
+    return fetchApi(`/schedule/booking-warning?${params.toString()}`);
+  },
+  bookLesson: (body) =>
+    fetchApi('/schedule/book', { method: 'POST', body: JSON.stringify(body) }),
+  cancelScheduleEvent: (eventId) =>
+    fetchApi(`/schedule/${encodeURIComponent(eventId)}/cancel`, { method: 'PATCH' }),
+  uncancelScheduleEvent: (eventId) =>
+    fetchApi(`/schedule/${encodeURIComponent(eventId)}/uncancel`, { method: 'PATCH' }),
+  rescheduleScheduleEvent: (eventId, body) =>
+    fetchApi(`/schedule/${encodeURIComponent(eventId)}/reschedule`, { method: 'PATCH', body: JSON.stringify(body) }),
+  removeScheduleEvent: (eventId) =>
+    fetchApi(`/schedule/${encodeURIComponent(eventId)}`, { method: 'DELETE' }),
+
+  getScheduleTeachers: (date) =>
+    fetchApi(`/schedule/teachers?date=${encodeURIComponent(date)}`),
+  getScheduleExtend: (date, teacherName) =>
+    fetchApi(`/schedule/extend?date=${encodeURIComponent(date)}&teacher_name=${encodeURIComponent(teacherName)}`),
+  updateScheduleExtend: (body) =>
+    fetchApi('/schedule/extend', { method: 'PUT', body: JSON.stringify(body) }),
+
+  getCalendarEvents: (timeMin, timeMax) => {
+    const params = new URLSearchParams();
+    if (timeMin) params.set('timeMin', timeMin);
+    if (timeMax) params.set('timeMax', timeMax);
+    return fetchApi(`/calendar/events?${params.toString()}`);
+  },
 };

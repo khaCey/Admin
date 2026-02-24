@@ -1,12 +1,13 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Component } from 'react'
 import { createPortal } from 'react-dom'
-import { X, Plus } from 'lucide-react'
+import { X, Plus, Calendar } from 'lucide-react'
 import { api } from '../api'
 import { formatMonth, formatNumber, formatDate } from '../utils/format'
 import PaymentModal from './PaymentModal'
 import NoteModal from './NoteModal'
 import EditStudentModal from './EditStudentModal'
 import LessonsThisMonth from './LessonsThisMonth'
+import BookLessonModal from './BookLessonModal'
 
 function StatusBadge({ status }) {
   const cls =
@@ -18,7 +19,24 @@ function StatusBadge({ status }) {
   return <span className={`badge ${cls}`}>{status || 'Active'}</span>
 }
 
-export default function StudentDetailsModal({ studentId, onClose, onStudentDeleted }) {
+class ModalErrorBoundary extends Component {
+  state = { hasError: false, error: null }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error }
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="p-6 text-red-600">
+          Something went wrong loading this view. {this.state.error?.message || ''}
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
+
+export default function StudentDetailsModal({ studentId, onClose, onStudentDeleted, onStudentUpdated }) {
   const [student, setStudent] = useState(null)
   const [payments, setPayments] = useState([])
   const [notes, setNotes] = useState([])
@@ -27,6 +45,7 @@ export default function StudentDetailsModal({ studentId, onClose, onStudentDelet
   const [paymentModal, setPaymentModal] = useState(null)
   const [noteModal, setNoteModal] = useState(null)
   const [editStudentModal, setEditStudentModal] = useState(false)
+  const [bookLessonModal, setBookLessonModal] = useState(false)
   const [noteSearch, setNoteSearch] = useState('')
 
   const fetchData = () => {
@@ -88,7 +107,14 @@ export default function StudentDetailsModal({ studentId, onClose, onStudentDelet
           </div>
         )}
 
+        {!loading && !error && !student && (
+          <div className="p-6 text-slate-600">
+            Student not found or data could not be loaded.
+          </div>
+        )}
+
         {!loading && !error && student && (
+          <ModalErrorBoundary>
           <>
             <div className="flex items-start justify-between bg-green-600 text-white px-6 py-4 flex-shrink-0">
               <div className="min-w-0 pr-4">
@@ -117,11 +143,19 @@ export default function StudentDetailsModal({ studentId, onClose, onStudentDelet
               </div>
             </div>
 
-            <div className="p-4 sm:p-6 flex-1 overflow-y-auto">
-              <div className="grid grid-cols-1 xl:grid-cols-[576px_1fr] gap-6">
+            <div className="p-4 sm:p-6 flex-1 min-h-0 overflow-hidden flex flex-col">
+              <div className="grid grid-cols-1 xl:grid-cols-[576px_1fr] gap-6 flex-shrink-0">
                 <section className="hidden xl:flex rounded-xl border border-gray-200 bg-white shadow-card h-[300px] flex-col overflow-hidden w-[576px]">
                   <header className="flex items-center justify-between px-4 py-3 border-b border-gray-200 flex-shrink-0">
                     <h3 className="font-semibold">Lessons This Month</h3>
+                    <button
+                      type="button"
+                      onClick={() => setBookLessonModal(true)}
+                      className="inline-flex items-center gap-2 rounded-lg bg-blue-600 text-white px-3 py-1.5 text-sm font-semibold hover:bg-blue-700 cursor-pointer"
+                    >
+                      <Calendar className="w-4 h-4" />
+                      Book lesson
+                    </button>
                   </header>
                   <LessonsThisMonth studentId={studentId} student={student} />
                 </section>
@@ -182,7 +216,7 @@ export default function StudentDetailsModal({ studentId, onClose, onStudentDelet
                 </section>
               </div>
 
-              <section className="mt-5 rounded-xl border border-gray-200 bg-white shadow h-[300px] flex flex-col overflow-hidden">
+              <section className="mt-5 rounded-xl border border-gray-200 bg-white shadow flex-1 min-h-0 flex flex-col overflow-hidden">
                 <header className="flex items-center justify-between px-4 py-3 border-b border-gray-200 flex-shrink-0">
                   <h3 className="font-semibold">All Notes</h3>
                   <div className="flex items-center gap-2">
@@ -204,12 +238,17 @@ export default function StudentDetailsModal({ studentId, onClose, onStudentDelet
                   </div>
                 </header>
                 <div className="flex-1 overflow-y-auto min-h-0">
-                  <table className="min-w-full text-sm">
+                  <table className="min-w-full text-sm table-fixed">
+                    <colgroup>
+                      <col className="w-28" />
+                      <col className="min-w-0" />
+                      <col className="w-24" />
+                    </colgroup>
                     <thead className="sticky top-0 bg-green-600 text-white z-10">
                       <tr>
-                        <th className="min-w-[7rem] px-3 py-2 text-left whitespace-nowrap">Date</th>
+                        <th className="px-3 py-2 text-left whitespace-nowrap">Date</th>
                         <th className="px-3 py-2 text-left">Note</th>
-                        <th className="px-3 py-2 text-left">Staff</th>
+                        <th className="px-3 py-2 text-left whitespace-nowrap">Staff</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
@@ -232,9 +271,9 @@ export default function StudentDetailsModal({ studentId, onClose, onStudentDelet
                               className="cursor-pointer hover:bg-gray-100"
                               onClick={() => setNoteModal({ mode: 'edit', note: n })}
                             >
-                              <td className="min-w-[7rem] px-3 py-2 whitespace-nowrap">{formatDate(n.Date)}</td>
-                              <td className="px-3 py-2">{n.Note}</td>
-                              <td className="px-3 py-2">{n.Staff}</td>
+                              <td className="px-3 py-2 whitespace-nowrap">{formatDate(n.Date)}</td>
+                              <td className="px-3 py-2 break-words align-top">{n.Note}</td>
+                              <td className="px-3 py-2 whitespace-nowrap">{n.Staff}</td>
                             </tr>
                           ))
                         )
@@ -248,6 +287,14 @@ export default function StudentDetailsModal({ studentId, onClose, onStudentDelet
             <div className="flex items-center justify-between px-4 sm:px-6 py-4 bg-gray-50 border-t border-gray-200 flex-shrink-0">
               <div />
               <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setBookLessonModal(true)}
+                  className="inline-flex items-center gap-2 rounded-lg bg-blue-600 text-white px-4 py-2 text-sm font-semibold hover:bg-blue-700 cursor-pointer"
+                >
+                  <Calendar className="w-4 h-4" />
+                  Book lesson
+                </button>
                 <button
                   onClick={() => setEditStudentModal(true)}
                   className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold hover:bg-gray-50 cursor-pointer"
@@ -263,6 +310,7 @@ export default function StudentDetailsModal({ studentId, onClose, onStudentDelet
               </div>
             </div>
           </>
+          </ModalErrorBoundary>
         )}
       </div>
     </div>
@@ -290,12 +338,23 @@ export default function StudentDetailsModal({ studentId, onClose, onStudentDelet
       <EditStudentModal
         studentId={studentId}
         student={student}
-        onSave={fetchData}
+        onSave={() => {
+          fetchData()
+          onStudentUpdated?.()
+        }}
         onDeleted={() => {
           onStudentDeleted?.()
           onClose()
         }}
         onClose={() => setEditStudentModal(false)}
+      />
+    )}
+    {bookLessonModal && (
+      <BookLessonModal
+        studentId={studentId}
+        student={student}
+        onClose={() => setBookLessonModal(false)}
+        onBooked={fetchData}
       />
     )}
     </>,

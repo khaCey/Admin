@@ -68,7 +68,8 @@ export default function EditStudentModal({ studentId, student, onSave, onDeleted
         Status: form.Status,
         Payment: form.Payment,
         当日: form.当日,
-        子: form.子 ? '子' : undefined,
+        子: form.子 ? '子' : '',
+        is_child: form.子,
         Group: form.Group,
         人数: form.Group === 'Group' ? form.人数 : undefined,
       })
@@ -321,7 +322,7 @@ export default function EditStudentModal({ studentId, student, onSave, onDeleted
             <button
               type="submit"
               disabled={submitting}
-              className="rounded-md bg-green-600 text-white px-4 py-1.5 text-sm font-semibold hover:bg-green-700 disabled:opacity-50 cursor-pointer"
+              className="rounded-md bg-green-600 text-white px-4 py-1.5 text-sm font-semibold hover:bg-green-700 disabled:opacity-50 cursor-pointer transition-colors"
             >
               {submitting ? 'Saving…' : 'Save'}
             </button>

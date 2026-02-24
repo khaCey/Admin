@@ -86,6 +86,10 @@ router.put('/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const body = req.body;
+    let isChildParam = undefined;
+    if (typeof body.is_child === 'boolean') isChildParam = body.is_child;
+    else if (body.子 === '子') isChildParam = true;
+    else if (body.子 === '') isChildParam = false;
     await query(
       `UPDATE students SET
         name = COALESCE($2, name),
@@ -113,7 +117,7 @@ router.put('/:id', async (req, res) => {
         body.Payment ?? body.payment,
         body.Group ?? body.group_type,
         body.人数 ?? body.group_size,
-        body.子 === '子' || body.is_child,
+        isChildParam,
       ]
     );
     res.json({ ok: true });

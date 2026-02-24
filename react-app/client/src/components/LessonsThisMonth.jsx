@@ -36,7 +36,7 @@ function LessonCard({ lesson, year, monthIndex, onClick }) {
       <span className="mt-0.5 flex-1 min-w-0">
         <span className="block lr-date text-[0.9rem] font-semibold leading-none">
           {dayStr}
-          {dow && <span className="lr-dow text-[0.7rem] font-semibold text-gray-500 ml-0.5">{dow}</span>}
+          {dow && <span className="lr-dow text-[0.7rem] font-semibold text-gray-500 ml-1.5">{dow}</span>}
         </span>
         <span className="block lr-time text-[0.75rem] leading-tight text-gray-500 mt-0.5 tabular-nums">{timeStr}</span>
         <span className="lr-status inline-flex items-center text-[0.7rem] text-gray-500 mt-1">
@@ -48,14 +48,13 @@ function LessonCard({ lesson, year, monthIndex, onClick }) {
   )
 }
 
-export default function LessonsThisMonth({ studentId, student }) {
+function useLatestByMonth(studentId) {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [activeMonth, setActiveMonth] = useState(null)
-  const [selectedLesson, setSelectedLesson] = useState(null)
 
-  useEffect(() => {
+  const fetchData = () => {
     if (!studentId) return
     setLoading(true)
     setError(null)
@@ -67,15 +66,55 @@ export default function LessonsThisMonth({ studentId, student }) {
         const thisYyyyMm = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
         const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1)
         const nextYyyyMm = `${nextMonth.getFullYear()}-${String(nextMonth.getMonth() + 1).padStart(2, '0')}`
-        const allowed = new Set([thisYyyyMm, nextYyyyMm])
         const ordered = [thisYyyyMm, nextYyyyMm].filter((k) => k in latest)
         const filtered = Object.fromEntries(ordered.map((k) => [k, latest[k]]))
         setData(filtered)
-        setActiveMonth(thisYyyyMm)
+        setActiveMonth((prev) => (prev == null ? thisYyyyMm : prev))
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false))
+  }
+
+  useEffect(() => {
+    if (!studentId) return
+    fetchData()
   }, [studentId])
+
+  return { data, loading, error, activeMonth, setActiveMonth, refetch: fetchData }
+}
+
+export default function LessonsThisMonth({ studentId, student }) {
+  const { data, loading, error, activeMonth, setActiveMonth, refetch } = useLatestByMonth(studentId)
+  const [selectedLesson, setSelectedLesson] = useState(null)
+  const [actionError, setActionError] = useState(null)
+
+  const handleCancel = (lesson) => {
+    if ((lesson?.eventID || '').startsWith('unscheduled-')) return
+    setActionError(null)
+    api.cancelScheduleEvent(lesson.eventID).then(refetch).catch((e) => setActionError(e.message))
+  }
+  const handleUncancel = (lesson) => {
+    if ((lesson?.eventID || '').startsWith('unscheduled-')) return
+    setActionError(null)
+    api.uncancelScheduleEvent(lesson.eventID).then(refetch).catch((e) => setActionError(e.message))
+  }
+  const handleReschedule = (lesson) => {
+    if ((lesson?.eventID || '').startsWith('unscheduled-')) return
+    setActionError(null)
+    // Reschedule requires new date/time – for now just open a simple prompt; could be a proper modal later
+    const newDate = prompt('New date (YYYY-MM-DD):')
+    if (!newDate) return
+    api.rescheduleScheduleEvent(lesson.eventID, { date: newDate }).then(refetch).catch((e) => setActionError(e.message))
+  }
+  const handleRemove = (lesson) => {
+    if ((lesson?.eventID || '').startsWith('unscheduled-')) {
+      setActionError('Cannot remove an unscheduled placeholder.')
+      return
+    }
+    setActionError(null)
+    if (!window.confirm('Remove this lesson from the schedule?')) return
+    api.removeScheduleEvent(lesson.eventID).then(refetch).catch((e) => setActionError(e.message))
+  }
 
   if (loading) {
     return (
@@ -116,7 +155,7 @@ export default function LessonsThisMonth({ studentId, student }) {
 
   return (
     <div className="flex flex-1 flex-col min-h-0">
-      <div className="flex gap-1 border-b border-gray-200 px-2 pb-2">
+      <div className="flex items-center gap-1 border-b border-gray-200 px-2 py-3">
         {monthKeys.map((key) => (
           <button
             key={key}
@@ -134,6 +173,11 @@ export default function LessonsThisMonth({ studentId, student }) {
       </div>
 
       <div className="mt-2 flex flex-col gap-2 overflow-y-auto flex-1 min-h-0 px-2">
+        {actionError && (
+          <div className="text-red-600 text-sm" role="alert">
+            {actionError}
+          </div>
+        )}
         <div className="flex items-center gap-2 text-sm">
           <span className="text-gray-600">Payment:</span>
           <span
@@ -169,7 +213,11 @@ export default function LessonsThisMonth({ studentId, student }) {
         <LessonDetailsModal
           lesson={selectedLesson}
           student={student}
-          onClose={() => setSelectedLesson(null)}
+          onClose={() => { setSelectedLesson(null); setActionError(null) }}
+          onCancel={handleCancel}
+          onUncancel={handleUncancel}
+          onReschedule={handleReschedule}
+          onRemove={handleRemove}
         />
       )}
     </div>

@@ -288,12 +288,14 @@ async function importMonthlySchedule() {
         const e = new Date(endVal);
         if (!isNaN(e.getTime())) endTs = e.toISOString();
       }
+      const studentName = (r.StudentName || r.student_name || '').trim();
+      if (!studentName) continue;
       await pool.query(
         `INSERT INTO monthly_schedule (event_id, title, date, start, "end", status, student_name, is_kids_lesson, teacher_name)
          VALUES ($1, $2, $3::date, $4::timestamptz, $5::timestamptz, $6, $7, $8, $9)
-         ON CONFLICT (event_id) DO UPDATE SET
+         ON CONFLICT (event_id, student_name) DO UPDATE SET
            title = EXCLUDED.title, date = EXCLUDED.date, start = EXCLUDED.start, "end" = EXCLUDED.end,
-           status = EXCLUDED.status, student_name = EXCLUDED.student_name,
+           status = EXCLUDED.status,
            is_kids_lesson = EXCLUDED.is_kids_lesson, teacher_name = EXCLUDED.teacher_name`,
         [
           eventId,
@@ -302,7 +304,7 @@ async function importMonthlySchedule() {
           startTs || null,
           endTs || null,
           r.Status || r.status || 'scheduled',
-          r.StudentName || r.student_name || '',
+          studentName,
           r.IsKidsLesson === 'true' || r.IsKidsLesson === '1' || r.is_kids_lesson === true,
           r.TeacherName || r.teacher_name || '',
         ]

@@ -132,7 +132,7 @@ function AddStudentForm({ navigate }) {
           <button
             type="submit"
             disabled={submitting}
-            className="btn bg-green-600 text-white hover:bg-green-700 disabled:opacity-50"
+            className="btn bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 cursor-pointer transition-colors"
           >
             {submitting ? 'Saving...' : 'Add Student'}
           </button>

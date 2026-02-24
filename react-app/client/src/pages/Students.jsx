@@ -32,6 +32,10 @@ export default function Students() {
       .finally(() => setLoading(false))
   }, [])
 
+  const fetchStudents = () => {
+    api.getStudents().then(setStudents).catch((e) => setError(e.message))
+  }
+
   const filtered = students.filter(
     (s) =>
       !search ||
@@ -103,7 +107,7 @@ export default function Students() {
               >
                 <td className="text-center px-3 py-2">{s.ID}</td>
                 <td className="text-left px-3 py-2">
-                  <span className="text-green-700 hover:underline font-medium">
+                  <span className="text-green-700 font-medium">
                     {s.Name}
                   </span>
                 </td>
@@ -135,6 +139,7 @@ export default function Students() {
           studentId={selectedStudentId}
           onClose={() => setSelectedStudentId(null)}
           onStudentDeleted={fetchStudents}
+          onStudentUpdated={fetchStudents}
         />
       )}
     </div>

@@ -5,6 +5,14 @@ import { fileURLToPath } from 'url';
 const __dirnameServer = dirname(fileURLToPath(import.meta.url));
 config({ path: join(__dirnameServer, '..', '.env'), override: true });
 
+// Keep server running on unhandled errors (log instead of exit)
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught exception:', err);
+});
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled rejection at', promise, 'reason:', reason);
+});
+
 import express from 'express';
 import cors from 'cors';
 import { query } from './db/index.js';
@@ -14,12 +22,22 @@ import notesRouter from './routes/notes.js';
 import lessonsRouter from './routes/lessons.js';
 import dashboardRouter from './routes/dashboard.js';
 import configRouter from './routes/config.js';
+import scheduleRouter from './routes/schedule.js';
+import calendarRouter, { registerWatch } from './routes/calendar.js';
 
 const app = express();
 const PORT = process.env.API_PORT || 3001;
 
 app.use(cors());
 app.use(express.json());
+
+app.get('/', (req, res) => {
+  res.json({
+    message: 'Student Admin API',
+    health: '/api/health',
+    docs: 'Use the React app at http://localhost:5173/ for the UI. API routes are under /api/* (e.g. /api/students).',
+  });
+});
 
 app.get('/api/health', (req, res) => {
   res.json({ ok: true, message: 'Student Admin API' });
@@ -150,6 +168,39 @@ app.use('/api/notes', notesRouter);
 app.use('/api/lessons', lessonsRouter);
 app.use('/api/dashboard', dashboardRouter);
 app.use('/api/config', configRouter);
+app.use('/api/calendar', calendarRouter);
+
+app.get('/api/schedule/week', async (req, res) => {
+  try {
+    const weekStart = req.query.week_start;
+    if (!weekStart || !/^\d{4}-\d{2}-\d{2}$/.test(weekStart)) {
+      return res.status(400).json({ error: 'Query week_start required (YYYY-MM-DD)' });
+    }
+    const result = await query(
+      `SELECT date, start, status FROM monthly_schedule
+       WHERE date >= $1::date AND date < $1::date + interval '7 days'
+       AND (status IS NULL OR status <> 'cancelled')
+       ORDER BY date, start`,
+      [weekStart]
+    );
+    const bySlot = {};
+    for (const r of result.rows) {
+      const dateStr = r.date ? String(r.date).trim().slice(0, 10) : '';
+      const s = r.start ? new Date(r.start) : null;
+      const timeStr = s && !isNaN(s.getTime())
+        ? `${String(s.getHours()).padStart(2, '0')}:${String(s.getMinutes()).padStart(2, '0')}`
+        : '';
+      if (!dateStr || !timeStr) continue;
+      const key = `${dateStr}T${timeStr}`;
+      bySlot[key] = (bySlot[key] || 0) + 1;
+    }
+    res.json({ slots: bySlot });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.use('/api/schedule', scheduleRouter);
 
 app.use('/api', (req, res) => {
   res.status(404).json({ error: 'API route not found', path: req.originalUrl });
@@ -157,4 +208,5 @@ app.use('/api', (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`API running at http://localhost:${PORT}`);
+  registerWatch().catch(() => {});
 });

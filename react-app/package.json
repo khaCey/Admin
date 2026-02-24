@@ -9,7 +9,7 @@
     "migrate:import": "node scripts/migrate.js --import",
     "build": "cd client && npm run build",
     "server": "node server/index.js",
-    "dev": "concurrently \"npm run server\" \"cd client && npm run dev\""
+    "dev": "concurrently --kill-others=false \"npm run server\" \"cd client && npm run dev\""
   },
   "dependencies": {
     "concurrently": "^8.2.2",
@@ -18,6 +18,7 @@
     "dotenv": "^17.3.1",
     "embedded-postgres": "^16.2.0-beta.11",
     "express": "^4.18.2",
+    "googleapis": "^171.4.0",
     "open": "^10.0.0",
     "pg": "^8.11.3"
   },

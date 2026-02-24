@@ -9,11 +9,13 @@ const STATUS_STYLES = {
   unscheduled: { color: 'bg-red-500', text: 'Unscheduled' },
 }
 
-export default function LessonDetailsModal({ lesson, student, onClose }) {
+export default function LessonDetailsModal({ lesson, student, onClose, onCancel, onUncancel, onReschedule, onRemove }) {
   if (!lesson) return null
 
   const status = (lesson.status || 'scheduled').toLowerCase()
   const style = STATUS_STYLES[status] || STATUS_STYLES.scheduled
+  const isUnscheduled = status === 'unscheduled'
+  const isCancelled = status === 'cancelled'
 
   const dayStr = lesson.day && lesson.day !== '--'
     ? `${parseInt(lesson.day)}日`
@@ -24,6 +26,23 @@ export default function LessonDetailsModal({ lesson, student, onClose }) {
 
   const handleBackdropClick = (e) => {
     if (e.target === e.currentTarget) onClose()
+  }
+
+  const handleCancel = () => {
+    onCancel?.(lesson, student)
+    onClose()
+  }
+  const handleReschedule = () => {
+    onReschedule?.(lesson, student)
+    onClose()
+  }
+  const handleUncancel = () => {
+    onUncancel?.(lesson, student)
+    onClose()
+  }
+  const handleRemove = () => {
+    onRemove?.(lesson, student)
+    onClose()
   }
 
   useEffect(() => {
@@ -70,7 +89,43 @@ export default function LessonDetailsModal({ lesson, student, onClose }) {
             </div>
           </div>
         </div>
-        <footer className="flex justify-end px-4 py-3 border-t border-gray-200">
+        <footer className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 border-t border-gray-200">
+          <div className="flex flex-wrap gap-2">
+            {!isCancelled && !isUnscheduled && (
+              <button
+                type="button"
+                onClick={handleCancel}
+                className="rounded-md border border-amber-600 bg-white px-3 py-1.5 text-sm font-medium text-amber-700 hover:bg-amber-50 cursor-pointer"
+              >
+                Cancel
+              </button>
+            )}
+            {isCancelled && (
+              <button
+                type="button"
+                onClick={handleUncancel}
+                className="rounded-md border border-emerald-600 bg-white px-3 py-1.5 text-sm font-medium text-emerald-700 hover:bg-emerald-50 cursor-pointer"
+              >
+                Uncancel
+              </button>
+            )}
+            {!isUnscheduled && (
+              <button
+                type="button"
+                onClick={handleReschedule}
+                className="rounded-md border border-green-600 bg-white px-3 py-1.5 text-sm font-medium text-green-700 hover:bg-green-50 cursor-pointer"
+              >
+                Reschedule
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={handleRemove}
+              className="rounded-md border border-red-600 bg-white px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-50 cursor-pointer"
+            >
+              Remove
+            </button>
+          </div>
           <button
             type="button"
             onClick={onClose}

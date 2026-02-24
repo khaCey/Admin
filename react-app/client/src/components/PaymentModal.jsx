@@ -246,7 +246,7 @@ export default function PaymentModal({ studentId, student, mode = 'add', payment
           <button
             type="submit"
             disabled={submitting}
-            className="rounded-md bg-green-600 text-white px-4 py-1.5 text-sm font-semibold hover:bg-green-700 disabled:opacity-50"
+            className="rounded-md bg-green-600 text-white px-4 py-1.5 text-sm font-semibold hover:bg-green-700 disabled:opacity-50 cursor-pointer"
           >
             {submitting ? 'Saving...' : 'Save'}
           </button>

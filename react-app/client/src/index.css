@@ -95,10 +95,6 @@ table.table thead.bg-green-600 {
 #studentTable tbody tr:nth-child(even) {
   background-color: #ffffff !important;
 }
-#studentTable tbody tr:hover {
-  background-color: #e5e7eb !important;
-}
-
 .navbar.bg-primary {
   background-color: #00994d !important;
 }
