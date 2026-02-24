@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Clock } from 'lucide-react'
 import { api } from '../api'
+import { useCalendarPollingContext } from '../context/CalendarPollingContext'
+import ExtendShiftModal from './ExtendShiftModal'
 
 const TIME_SLOTS = ['10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00']
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
@@ -21,6 +23,7 @@ function formatDateKey(date) {
 }
 
 export default function BookLessonModal({ studentId, student, onClose, onBooked }) {
+  const { lastSynced } = useCalendarPollingContext()
   const [weekStart, setWeekStart] = useState(() => getMonday(new Date()))
   const [slots, setSlots] = useState({})
   const [loading, setLoading] = useState(true)
@@ -28,6 +31,7 @@ export default function BookLessonModal({ studentId, student, onClose, onBooked 
   const [pendingSlot, setPendingSlot] = useState(null)
   const [submitting, setSubmitting] = useState(false)
   const [breakWarning, setBreakWarning] = useState(null)
+  const [extendShiftOpen, setExtendShiftOpen] = useState(false)
 
   const weekStartStr = formatDateKey(weekStart)
 
@@ -39,7 +43,7 @@ export default function BookLessonModal({ studentId, student, onClose, onBooked 
       .then((data) => setSlots(data.slots || {}))
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false))
-  }, [weekStartStr])
+  }, [weekStartStr, lastSynced])
 
   const goWeek = (delta) => {
     const next = new Date(weekStart)
@@ -101,13 +105,23 @@ export default function BookLessonModal({ studentId, student, onClose, onBooked 
                 {studentName} {studentKanji ? `(${studentKanji})` : ''}
               </p>
             </div>
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-md border border-gray-300 bg-white px-3 py-1 text-sm font-medium text-gray-700 hover:bg-gray-50 cursor-pointer"
-            >
-              Close
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setExtendShiftOpen(true)}
+                className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-1 text-sm font-medium text-gray-700 hover:bg-gray-50 cursor-pointer"
+              >
+                <Clock className="w-4 h-4" />
+                Extend shift
+              </button>
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded-md border border-gray-300 bg-white px-3 py-1 text-sm font-medium text-gray-700 hover:bg-gray-50 cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
           </header>
 
           <div className="px-5 pt-4 pb-5 flex-1 overflow-hidden flex flex-col min-h-0">
@@ -241,5 +255,13 @@ export default function BookLessonModal({ studentId, student, onClose, onBooked 
     </div>
   )
 
-  return createPortal(modal, document.body)
+  return createPortal(
+    <>
+      {modal}
+      {extendShiftOpen && (
+        <ExtendShiftModal onClose={() => setExtendShiftOpen(false)} />
+      )}
+    </>,
+    document.body
+  )
 }

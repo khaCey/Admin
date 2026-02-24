@@ -44,7 +44,7 @@ export default function EditStudentModal({ studentId, student, onSave, onDeleted
         phone3: p3 || '',
         Email: student.Email || student.email || '',
         Status: student.Status || student.status || 'Active',
-        Payment: student.Payment || student.payment || 'NEO',
+        Payment: (student.Payment || student.payment || 'NEO') === "Owner's Lesson" ? "Owner's Course" : (student.Payment || student.payment || 'NEO'),
         当日: student.当日 || student.same_day_cancel || '未',
         子: !!(student.子 === '子' || student.is_child),
         Group: student.Group === 'Group' ? 'Group' : 'Single',
@@ -235,7 +235,7 @@ export default function EditStudentModal({ studentId, student, onSave, onDeleted
                 >
                   <option>NEO</option>
                   <option>OLD</option>
-                  <option>Owner&apos;s Lesson</option>
+                  <option>Owner&apos;s Course</option>
                   <option>SHAM</option>
                 </select>
               </div>

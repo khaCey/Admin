@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
-import { Plus } from 'lucide-react'
 import { api } from '../api'
+import { STAFF_OPTIONS } from '../constants/staff'
 import { formatNumber } from '../utils/format'
 import { calculatePrice } from '../../../shared/feeTable.js'
 
@@ -21,7 +21,7 @@ export default function PaymentModal({ studentId, student, mode = 'add', payment
     discount: '0',
     total: '',
     method: 'Card',
-    staff: '',
+    staff: 'Staff',
   })
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState(null)
@@ -58,6 +58,7 @@ export default function PaymentModal({ studentId, student, mode = 'add', payment
         transactionId: generateTransactionId(),
         date: new Date().toISOString().slice(0, 10),
         month: MONTHS[new Date().getMonth()],
+        staff: 'Staff',
         year: String(new Date().getFullYear()),
       }))
     }
@@ -234,11 +235,15 @@ export default function PaymentModal({ studentId, student, mode = 'add', payment
           </div>
           <div>
             <label className="block text-gray-600 mb-1">Staff</label>
-            <input
+            <select
               value={form.staff}
               onChange={(e) => setForm((f) => ({ ...f, staff: e.target.value }))}
               className="w-full rounded-md border border-gray-300 px-3 py-2"
-            />
+            >
+              {(STAFF_OPTIONS.includes(form.staff) ? STAFF_OPTIONS : [...STAFF_OPTIONS, form.staff]).map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
           </div>
         </div>
         {error && <p className="px-4 text-red-600 text-sm">{error}</p>}

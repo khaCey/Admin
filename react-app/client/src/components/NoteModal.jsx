@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react'
 import { api } from '../api'
+import { STAFF_OPTIONS } from '../constants/staff'
 
 export default function NoteModal({ studentId, mode = 'add', note = null, onSave, onClose }) {
   const [date, setDate] = useState('')
-  const [staff, setStaff] = useState('')
+  const [staff, setStaff] = useState('Staff')
   const [noteText, setNoteText] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -17,7 +18,7 @@ export default function NoteModal({ studentId, mode = 'add', note = null, onSave
       setNoteText(note.Note || note.note || '')
     } else {
       setDate(new Date().toISOString().slice(0, 10))
-      setStaff('')
+      setStaff('Staff')
       setNoteText('')
     }
   }, [mode, note])
@@ -98,11 +99,15 @@ export default function NoteModal({ studentId, mode = 'add', note = null, onSave
           </div>
           <div>
             <label className="block text-gray-600 mb-1">Staff</label>
-            <input
+            <select
               value={staff}
               onChange={(e) => setStaff(e.target.value)}
               className="w-full rounded-md border border-gray-300 px-3 py-2"
-            />
+            >
+              {(STAFF_OPTIONS.includes(staff) ? STAFF_OPTIONS : [...STAFF_OPTIONS, staff]).map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
           </div>
           <div className="sm:col-span-2">
             <label className="block text-gray-600 mb-1">Note</label>

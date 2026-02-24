@@ -1,10 +1,14 @@
 const API_BASE = '/api';
+const TOKEN_KEY = 'staff_token';
 
 async function fetchApi(path, options = {}) {
   await new Promise((r) => setTimeout(r, 500)); // 0.5s delay for CRUD
   const url = `${API_BASE}${path}`;
+  const token = localStorage.getItem(TOKEN_KEY);
+  const headers = { 'Content-Type': 'application/json', ...options.headers };
+  if (token) headers.Authorization = `Bearer ${token}`;
   const res = await fetch(url, {
-    headers: { 'Content-Type': 'application/json', ...options.headers },
+    headers,
     ...options,
   });
   if (!res.ok) {
@@ -64,6 +68,9 @@ export const api = {
     fetchApi(`/schedule/extend?date=${encodeURIComponent(date)}&teacher_name=${encodeURIComponent(teacherName)}`),
   updateScheduleExtend: (body) =>
     fetchApi('/schedule/extend', { method: 'PUT', body: JSON.stringify(body) }),
+
+  syncCalendarPoll: (data) =>
+    fetchApi('/calendar-poll/sync', { method: 'POST', body: JSON.stringify({ data }) }),
 
   getCalendarEvents: (timeMin, timeMax) => {
     const params = new URLSearchParams();

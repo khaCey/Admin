@@ -1,17 +1,28 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
 import Layout from './components/Layout'
+import ProtectedRoute from './components/ProtectedRoute'
 import Students from './pages/Students'
 import StudentDetail from './pages/StudentDetail'
+import Login from './pages/Login'
 
 function App() {
   return (
     <Routes>
-      <Route element={<Layout />}>
+      <Route path="login" element={<Login />} />
+      <Route
+        path="/"
+        element={
+          <ProtectedRoute>
+            <Layout />
+          </ProtectedRoute>
+        }
+      >
         <Route index element={<Navigate to="/students" replace />} />
         <Route path="students" element={<Students />} />
         <Route path="students/new" element={<StudentDetail />} />
         <Route path="students/:id" element={<StudentDetail />} />
       </Route>
+      <Route path="*" element={<Navigate to="/students" replace />} />
     </Routes>
   )
 }
