@@ -24,12 +24,21 @@ import dashboardRouter from './routes/dashboard.js';
 import configRouter from './routes/config.js';
 import scheduleRouter from './routes/schedule.js';
 import calendarRouter, { registerWatch } from './routes/calendar.js';
+import authRouter from './routes/auth.js';
+import { requireAuth } from './middleware/auth.js';
 
 const app = express();
 const PORT = process.env.API_PORT || 3001;
 
 app.use(cors());
 app.use(express.json());
+
+app.use('/api/auth', authRouter);
+
+app.use('/api', (req, res, next) => {
+  if (req.path === '/health' || req.originalUrl === '/api/health') return next();
+  return requireAuth(req, res, next);
+});
 
 app.get('/', (req, res) => {
   res.json({
@@ -106,10 +115,12 @@ app.get('/api/students/:id/latest-by-month', async (req, res) => {
 
     for (const yyyyMm of allYyyyMm) {
       const scheduleResult = await query(
-        `SELECT event_id, to_char(date, 'YYYY-MM-DD') as date, start, status FROM monthly_schedule
-         WHERE student_name = $1 AND date IS NOT NULL
-         AND to_char(date, 'YYYY-MM') = $2
-         ORDER BY start ASC`,
+        `SELECT m.event_id, to_char(m.date, 'YYYY-MM-DD') as date, m.start, m.status,
+                (SELECT COUNT(*) FROM monthly_schedule m2 WHERE m2.event_id = m.event_id AND to_char(m2.date, 'YYYY-MM') = $2) AS student_count
+         FROM monthly_schedule m
+         WHERE m.student_name = $1 AND m.date IS NOT NULL
+         AND to_char(m.date, 'YYYY-MM') = $2
+         ORDER BY m.start ASC`,
         [studentName, yyyyMm]
       );
 
@@ -126,6 +137,7 @@ app.get('/api/students/:id/latest-by-month', async (req, res) => {
           time,
           status: (r.status || 'scheduled').toLowerCase(),
           eventID: r.event_id,
+          isGroup: (r.student_count || 0) > 1,
         };
       });
 
@@ -139,6 +151,7 @@ app.get('/api/students/:id/latest-by-month', async (req, res) => {
           time: '--',
           status: 'unscheduled',
           eventID: `unscheduled-${yyyyMm}-${i}`,
+          isGroup: false,
         });
       }
       const [y, mo] = yyyyMm.split('-');
@@ -201,6 +214,84 @@ app.get('/api/schedule/week', async (req, res) => {
 });
 
 app.use('/api/schedule', scheduleRouter);
+
+/** Sync MonthlySchedule from GAS Calendar Webhook polling into PostgreSQL. */
+app.post('/api/calendar-poll/sync', async (req, res) => {
+  try {
+    const { data } = req.body || {};
+    if (!Array.isArray(data)) {
+      return res.status(400).json({ error: 'Body must include { data: MonthlySchedule[] }' });
+    }
+
+    const months = new Set();
+    for (const r of data) {
+      const d = (r.date || '').toString().trim();
+      if (/^\d{4}-\d{2}/.test(d)) months.add(d.slice(0, 7));
+    }
+
+    for (const yyyyMm of months) {
+      await query(
+        "DELETE FROM monthly_schedule WHERE to_char(date, 'YYYY-MM') = $1",
+        [yyyyMm]
+      );
+    }
+
+    let inserted = 0;
+    for (const r of data) {
+      const eventId = (r.eventID || r.event_id || '').toString().trim();
+      const studentName = (r.studentName || r.student_name || '').toString().trim();
+      if (!eventId || !studentName) continue;
+
+      const dateStr = (r.date || '').toString().trim();
+      const date = /^\d{4}-\d{2}-\d{2}$/.test(dateStr) ? dateStr : null;
+
+      let startTs = null;
+      const startVal = r.start || '';
+      if (startVal && date) {
+        const m = String(startVal).trim().match(/^(\d{4})-(\d{2})-(\d{2})\s+(\d{1,2}):(\d{2})/);
+        if (m) startTs = `${m[1]}-${m[2]}-${m[3]}T${m[4].padStart(2, '0')}:${m[5]}:00`;
+        else {
+          const d = new Date(startVal);
+          if (!isNaN(d.getTime())) startTs = d.toISOString();
+        }
+      } else if (startVal) {
+        const d = new Date(startVal);
+        if (!isNaN(d.getTime())) startTs = d.toISOString();
+      }
+
+      let endTs = null;
+      const endVal = r.end || '';
+      if (endVal && date) {
+        const m = String(endVal).trim().match(/^(\d{4})-(\d{2})-(\d{2})\s+(\d{1,2}):(\d{2})/);
+        if (m) endTs = `${m[1]}-${m[2]}-${m[3]}T${m[4].padStart(2, '0')}:${m[5]}:00`;
+        else {
+          const d = new Date(endVal);
+          if (!isNaN(d.getTime())) endTs = d.toISOString();
+        }
+      } else if (endVal) {
+        const d = new Date(endVal);
+        if (!isNaN(d.getTime())) endTs = d.toISOString();
+      }
+
+      const status = (r.status || 'scheduled').toString().trim() || 'scheduled';
+      const isKids = (r.isKidsLesson || r.is_kids_lesson || '') === '子' ||
+        r.isKidsLesson === true || r.is_kids_lesson === true;
+      const title = (r.title || '').toString().trim();
+      const teacherName = (r.teacherName || r.teacher_name || '').toString().trim();
+
+      await query(
+        `INSERT INTO monthly_schedule (event_id, title, date, start, "end", status, student_name, is_kids_lesson, teacher_name)
+         VALUES ($1, $2, $3::date, $4::timestamptz, $5::timestamptz, $6, $7, $8, $9)`,
+        [eventId, title, date, startTs, endTs, status, studentName, isKids, teacherName]
+      );
+      inserted++;
+    }
+
+    res.json({ ok: true, inserted, months: Array.from(months) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 app.use('/api', (req, res) => {
   res.status(404).json({ error: 'API route not found', path: req.originalUrl });

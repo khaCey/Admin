@@ -122,6 +122,7 @@ table.table thead.bg-green-600 {
 .badge-pay-old { background-color: #475569; color: white; }
 .badge-group-individual { background-color: #059669; color: white; }
 .badge-group-group { background-color: #7c3aed; color: white; }
+.badge-child { background-color: #0ea5e9; color: white; }
 
 .badge {
   display: inline-flex;

@@ -23,6 +23,7 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { parse } from 'csv-parse/sync';
 import pg from 'pg';
+import bcrypt from 'bcrypt';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const rootDir = join(__dirname, '..');
@@ -66,6 +67,25 @@ async function runSchema() {
   const schema = readFileSync(schemaPath, 'utf-8');
   await pool.query(schema);
   console.log('Schema applied.');
+}
+
+const DEFAULT_STAFF = ['Rie', 'May', 'Haruka', 'Manna', 'Fumika', 'Sham', 'Ana', 'Admin'];
+const DEFAULT_PASSWORD = 'staff123';
+
+async function seedStaff() {
+  const r = await pool.query('SELECT COUNT(*) FROM staff');
+  if (parseInt(r.rows[0].count, 10) > 0) {
+    console.log('Staff already seeded.');
+    return;
+  }
+  const hash = await bcrypt.hash(DEFAULT_PASSWORD, 10);
+  for (const name of DEFAULT_STAFF) {
+    await pool.query(
+      'INSERT INTO staff (name, password_hash) VALUES ($1, $2) ON CONFLICT (name) DO NOTHING',
+      [name, hash]
+    );
+  }
+  console.log(`Seeded ${DEFAULT_STAFF.length} staff. Default password: ${DEFAULT_PASSWORD}`);
 }
 
 function findCsv(name) {
@@ -363,6 +383,7 @@ async function main() {
   const client = await pool.connect();
   try {
     await runSchema();
+    await seedStaff();
     if (doImport) {
       if (!existsSync(dataDir)) {
         console.log(`Creating ${dataDir} - add your CSV exports there and run again.`);

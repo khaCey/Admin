@@ -28,9 +28,12 @@ export const feeTable = {
     },
   },
   "Owner's Lesson": 9350,
+  "Owner's Course": 9350,
 };
 
 export function calculatePrice(lessonsCount, paymentType = 'Neo', groupType = 'Single', groupSize = 2, frequency = '4x') {
+  const ownerPayment = paymentType === "Owner's Lesson" || paymentType === "Owner's Course";
+  if (ownerPayment) return feeTable["Owner's Lesson"];
   const payment = paymentType === 'OLD' ? feeTable.OLD : feeTable.Neo;
   if (lessonsCount === 1 && paymentType === 'Neo') {
     return feeTable["Owner's Lesson"];

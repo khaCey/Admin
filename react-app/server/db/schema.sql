@@ -201,3 +201,13 @@ ON CONFLICT (name) DO NOTHING;
 -- Seed config
 INSERT INTO config (key, value) VALUES ('staff', 'Staff')
 ON CONFLICT (key) DO NOTHING;
+
+-- Staff (for login when starting shift)
+CREATE TABLE IF NOT EXISTS staff (
+  id SERIAL PRIMARY KEY,
+  name VARCHAR(255) NOT NULL UNIQUE,
+  password_hash VARCHAR(255) NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_staff_name ON staff(name);

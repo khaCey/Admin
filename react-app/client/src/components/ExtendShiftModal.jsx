@@ -75,7 +75,7 @@ export default function ExtendShiftModal({ onClose }) {
   const uniqueTeachers = [...new Map(teachers.map((t) => [t.teacher_name, t])).values()]
 
   return (
-    <div className="fixed inset-0 z-[9998]" role="dialog" aria-modal="true" aria-labelledby="extendShiftTitle">
+    <div className="fixed inset-0 z-[10000]" role="dialog" aria-modal="true" aria-labelledby="extendShiftTitle">
       <div className="absolute inset-0 bg-black/50" onClick={onClose} aria-hidden="true" />
       <div className="absolute inset-0 flex items-center justify-center p-4 overflow-auto">
         <div className="w-full max-w-2xl rounded-2xl bg-white shadow-xl ring-1 ring-black/5 flex flex-col max-h-[90vh] overflow-hidden">

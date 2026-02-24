@@ -116,13 +116,12 @@ export default function StudentDetailsModal({ studentId, onClose, onStudentDelet
         {!loading && !error && student && (
           <ModalErrorBoundary>
           <>
-            <div className="flex items-start justify-between bg-green-600 text-white px-6 py-4 flex-shrink-0">
+            <div className="flex items-start justify-between bg-green-600 text-white px-4 py-2 flex-shrink-0">
               <div className="min-w-0 pr-4">
-                <h2 className="text-xl sm:text-2xl font-semibold truncate">
+                <h2 className="text-lg sm:text-xl font-semibold truncate">
                   {student.Name}
-                  {student.子 && <span className="badge-child ml-2">子</span>}
                 </h2>
-                <p className="text-white/90 text-sm sm:text-base truncate">
+                <p className="text-white/90 text-xs sm:text-sm truncate mt-0.5">
                   <span>{student.漢字}</span>
                   <span className="ml-2 text-white/80 text-xs sm:text-sm">
                     <span>{student.Email}</span>
@@ -131,42 +130,37 @@ export default function StudentDetailsModal({ studentId, onClose, onStudentDelet
                   </span>
                 </p>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 shrink-0">
+                {student.Group === 'Group' && <span className="badge bg-purple-600 text-white">Group</span>}
+                {(student.Payment || '').toLowerCase().includes('owner') && <span className="badge bg-black text-white">Owner</span>}
                 <StatusBadge status={student.Status} />
+                {student.子 && <span className="badge badge-child">子</span>}
                 <button
                   onClick={onClose}
                   className="p-1 rounded hover:bg-white/20 cursor-pointer"
                   aria-label="Close"
                 >
-                  <X className="w-6 h-6" />
+                  <X className="w-5 h-5" />
                 </button>
               </div>
             </div>
 
             <div className="p-4 sm:p-6 flex-1 min-h-0 overflow-hidden flex flex-col">
               <div className="grid grid-cols-1 xl:grid-cols-[576px_1fr] gap-6 flex-shrink-0">
-                <section className="hidden xl:flex rounded-xl border border-gray-200 bg-white shadow-card h-[300px] flex-col overflow-hidden w-[576px]">
-                  <header className="flex items-center justify-between px-4 py-3 border-b border-gray-200 flex-shrink-0">
-                    <h3 className="font-semibold">Lessons This Month</h3>
-                    <button
-                      type="button"
-                      onClick={() => setBookLessonModal(true)}
-                      className="inline-flex items-center gap-2 rounded-lg bg-blue-600 text-white px-3 py-1.5 text-sm font-semibold hover:bg-blue-700 cursor-pointer"
-                    >
-                      <Calendar className="w-4 h-4" />
-                      Book lesson
-                    </button>
-                  </header>
-                  <LessonsThisMonth studentId={studentId} student={student} />
-                </section>
+                <LessonsThisMonth
+                  studentId={studentId}
+                  student={student}
+                  onBookLesson={() => setBookLessonModal(true)}
+                  sectionClassName="hidden xl:flex rounded-xl border border-gray-200 bg-white shadow-card h-[200px] flex-col overflow-hidden w-[576px]"
+                />
 
-                <section className="rounded-xl border border-gray-200 bg-white shadow h-[300px] flex flex-col overflow-hidden">
-                  <header className="flex items-center justify-between px-4 py-3 border-b border-gray-200 flex-shrink-0">
-                    <h3 className="font-semibold">All Payments</h3>
+                <section className="rounded-xl border border-gray-200 bg-white shadow h-[200px] flex flex-col overflow-hidden">
+                  <header className="flex items-center justify-between px-3 py-2 border-b border-gray-200 flex-shrink-0">
+                    <h3 className="font-semibold text-sm">All Payments</h3>
                     <button
                       type="button"
                       onClick={() => setPaymentModal({ mode: 'add' })}
-                      className="inline-flex items-center gap-2 rounded-lg bg-green-600 text-white px-3 py-1.5 text-sm font-semibold hover:bg-green-700 cursor-pointer"
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-green-600 text-white px-2.5 py-1 text-xs font-semibold hover:bg-green-700 cursor-pointer"
                     >
                       <Plus className="w-4 h-4" />
                       Add Payment
@@ -216,21 +210,21 @@ export default function StudentDetailsModal({ studentId, onClose, onStudentDelet
                 </section>
               </div>
 
-              <section className="mt-5 rounded-xl border border-gray-200 bg-white shadow flex-1 min-h-0 flex flex-col overflow-hidden">
-                <header className="flex items-center justify-between px-4 py-3 border-b border-gray-200 flex-shrink-0">
-                  <h3 className="font-semibold">All Notes</h3>
+              <section className="mt-5 rounded-xl border border-gray-200 bg-white shadow flex-1 min-h-[280px] flex flex-col overflow-hidden">
+                <header className="flex items-center justify-between px-3 py-2 border-b border-gray-200 flex-shrink-0">
+                  <h3 className="font-semibold text-sm">All Notes</h3>
                   <div className="flex items-center gap-2">
                     <input
                       type="search"
                       placeholder="Search notes"
                       value={noteSearch}
                       onChange={(e) => setNoteSearch(e.target.value)}
-                      className="hidden sm:block w-60 rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                      className="hidden sm:block w-48 rounded-lg border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-green-500"
                     />
                     <button
                       type="button"
                       onClick={() => setNoteModal({ mode: 'add' })}
-                      className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium hover:bg-gray-50 cursor-pointer"
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-2.5 py-1 text-xs font-medium hover:bg-gray-50 cursor-pointer"
                     >
                       <Plus className="w-4 h-4" />
                       Add Note
@@ -284,26 +278,26 @@ export default function StudentDetailsModal({ studentId, onClose, onStudentDelet
               </section>
             </div>
 
-            <div className="flex items-center justify-between px-4 sm:px-6 py-4 bg-gray-50 border-t border-gray-200 flex-shrink-0">
+            <div className="flex items-center justify-between px-4 sm:px-6 py-2 bg-gray-50 border-t border-gray-200 flex-shrink-0">
               <div />
               <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={() => setBookLessonModal(true)}
-                  className="inline-flex items-center gap-2 rounded-lg bg-blue-600 text-white px-4 py-2 text-sm font-semibold hover:bg-blue-700 cursor-pointer"
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 text-white px-3 py-1.5 text-sm font-semibold hover:bg-blue-700 cursor-pointer"
                 >
                   <Calendar className="w-4 h-4" />
                   Book lesson
                 </button>
                 <button
                   onClick={() => setEditStudentModal(true)}
-                  className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold hover:bg-gray-50 cursor-pointer"
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-semibold hover:bg-gray-50 cursor-pointer"
                 >
                   Edit
                 </button>
                 <button
                   onClick={onClose}
-                  className="inline-flex items-center gap-2 rounded-lg bg-gray-800 text-white px-4 py-2 text-sm font-semibold hover:bg-black cursor-pointer"
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-gray-800 text-white px-3 py-1.5 text-sm font-semibold hover:bg-black cursor-pointer"
                 >
                   Close
                 </button>
