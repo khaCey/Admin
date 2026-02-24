@@ -6,3 +6,6 @@
 /react-app/client/node_modules
 /react-app/data
 /react-app/.env
+
+# Migration data (CSV) – keep local only, do not push
+/react-app/migration-data/*.csv
