@@ -222,6 +222,7 @@ app.post('/api/calendar-poll/sync', async (req, res) => {
     if (!Array.isArray(data)) {
       return res.status(400).json({ error: 'Body must include { data: MonthlySchedule[] }' });
     }
+    console.log('[calendar-poll/sync] received', data.length, 'rows');
 
     const months = new Set();
     for (const r of data) {
@@ -287,8 +288,10 @@ app.post('/api/calendar-poll/sync', async (req, res) => {
       inserted++;
     }
 
+    console.log('[calendar-poll/sync] inserted', inserted, 'rows for months', Array.from(months).sort().join(', '));
     res.json({ ok: true, inserted, months: Array.from(months) });
   } catch (err) {
+    console.error('[calendar-poll/sync] error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });

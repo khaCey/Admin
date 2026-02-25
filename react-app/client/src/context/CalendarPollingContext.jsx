@@ -15,16 +15,18 @@ export function useCalendarPollingContext() {
   return ctx ?? { data: [], loading: false, error: null, lastSynced: null, refetch: () => {}, isConfigured: false }
 }
 
-export function CalendarPollingProvider({ children, intervalMs = 3000 }) {
+export function CalendarPollingProvider({ children, intervalMs = 45000 }) {
   const [lastSynced, setLastSynced] = useState(null)
   const syncInProgressRef = useRef(false)
 
   const syncToServer = useCallback(async (data) => {
     if (syncInProgressRef.current) return
+    if (!data || data.length === 0) return
     syncInProgressRef.current = true
     try {
       await api.syncCalendarPoll(data)
       setLastSynced(Date.now())
+      console.debug('[CalendarPolling] Synced', data.length, 'rows to server')
     } catch (err) {
       console.warn('[CalendarPolling] Sync failed:', err.message)
     } finally {

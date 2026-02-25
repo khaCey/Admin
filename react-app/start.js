@@ -16,7 +16,20 @@ const rootDir = join(__dirname);
 // Use existing PostgreSQL if DATABASE_URL is set (e.g. docker or local install)
 const useExistingDb = !!process.env.DATABASE_URL;
 
+function printDbInstructions() {
+  console.error('Embedded PostgreSQL failed (common on Windows). Use Docker instead:');
+  console.error('  1. Run: docker-compose up -d');
+  console.error('  2. Run: set DATABASE_URL=postgresql://postgres:postgres@localhost:5432/postgres');
+  console.error('  3. Run: npm start');
+  console.error('');
+  console.error('Or use local PostgreSQL and set DATABASE_URL.');
+}
+
 async function startEmbeddedPostgres() {
+  if (process.platform === 'win32') {
+    printDbInstructions();
+    throw new Error('Use DATABASE_URL with Docker or local PostgreSQL on Windows.');
+  }
   try {
     const EmbeddedPostgres = (await import('embedded-postgres')).default;
     const dataDir = join(rootDir, 'data', 'db');
@@ -36,12 +49,7 @@ async function startEmbeddedPostgres() {
     process.env.DATABASE_URL = `postgresql://postgres:postgres@localhost:5433/postgres`;
     return pg;
   } catch (err) {
-    console.error('Embedded PostgreSQL failed (common on Windows). Use Docker instead:');
-    console.error('  1. Run: docker-compose up -d');
-    console.error('  2. Run: set DATABASE_URL=postgresql://postgres:postgres@localhost:5432/postgres');
-    console.error('  3. Run: npm start');
-    console.error('');
-    console.error('Or use local PostgreSQL and set DATABASE_URL.');
+    printDbInstructions();
     throw err;
   }
 }

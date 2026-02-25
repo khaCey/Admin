@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { api } from '../api'
 import StudentDetailsModal from '../components/StudentDetailsModal'
+import AddStudentModal from '../components/AddStudentModal'
 
 function StatusBadge({ status }) {
   const cls =
@@ -18,11 +20,21 @@ function PaymentBadge({ payment }) {
 }
 
 export default function Students() {
+  const location = useLocation()
+  const navigate = useNavigate()
   const [students, setStudents] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [search, setSearch] = useState('')
   const [selectedStudentId, setSelectedStudentId] = useState(null)
+  const [showAddModal, setShowAddModal] = useState(false)
+
+  useEffect(() => {
+    if (location.state?.openAddModal) {
+      setShowAddModal(true)
+      navigate(location.pathname, { replace: true, state: {} })
+    }
+  }, [location.state?.openAddModal, location.pathname, navigate])
 
   useEffect(() => {
     const minDelay = new Promise((r) => setTimeout(r, 1000))
@@ -49,6 +61,13 @@ export default function Students() {
     <>
       <div className="flex justify-between items-center pt-3 pb-2 mb-3 border-b border-gray-200">
         <h2 className="text-2xl font-bold text-gray-900">Student List</h2>
+        <button
+          type="button"
+          onClick={() => setShowAddModal(true)}
+          className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium"
+        >
+          Add Student
+        </button>
       </div>
       <div className="mb-4 search-container">
         <label htmlFor="searchInput" className="sr-only">Search</label>
@@ -158,6 +177,16 @@ export default function Students() {
           onClose={() => setSelectedStudentId(null)}
           onStudentDeleted={fetchStudents}
           onStudentUpdated={fetchStudents}
+        />
+      )}
+      {showAddModal && (
+        <AddStudentModal
+          onClose={() => setShowAddModal(false)}
+          onAdded={(id) => {
+            fetchStudents()
+            setSelectedStudentId(id)
+            setShowAddModal(false)
+          }}
         />
       )}
     </div>

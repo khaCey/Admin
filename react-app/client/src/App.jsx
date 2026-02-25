@@ -20,7 +20,6 @@ function App() {
       >
         <Route index element={<Navigate to="/students" replace />} />
         <Route path="students" element={<Students />} />
-        <Route path="students/new" element={<StudentDetail />} />
         <Route path="students/:id" element={<StudentDetail />} />
         <Route path="staff" element={<Staff />} />
       </Route>

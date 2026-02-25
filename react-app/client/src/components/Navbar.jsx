@@ -43,7 +43,8 @@ export default function Navbar({ onToggleSidebar, onOpenUnpaid, onOpenUnschedule
             </>
           )}
           <Link
-            to="/students/new"
+            to="/students"
+            state={{ openAddModal: true }}
             className="px-4 py-2 border border-white text-white rounded-lg hover:bg-white hover:text-green-600 transition-colors flex items-center space-x-2 cursor-pointer"
           >
             <UserPlus className="w-4 h-4" />

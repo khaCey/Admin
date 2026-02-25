@@ -18,7 +18,7 @@ export default function Sidebar({ collapsed }) {
             <Link
               to="/students"
               className={`flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors cursor-pointer ${
-                path === '/students' || path.startsWith('/students/new') || path.match(/^\/students\/\d+$/)
+                path === '/students' || path.match(/^\/students\/\d+$/)
                   ? 'bg-green-600 text-white'
                   : 'text-gray-700 hover:bg-green-100 hover:text-green-700'
               }`}

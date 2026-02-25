@@ -4,144 +4,6 @@ import { ArrowLeft } from 'lucide-react'
 import { api } from '../api'
 import { formatMonth, formatDate } from '../utils/format'
 
-function AddStudentForm({ navigate }) {
-  const [form, setForm] = useState({
-    Name: '', 漢字: '', Email: '', Phone: '', Status: 'Active', Payment: 'NEO',
-    Group: 'Single', 人数: '', 子: false,
-  })
-  const [submitting, setSubmitting] = useState(false)
-  const [err, setErr] = useState(null)
-
-  const handleSubmit = async (e) => {
-    e.preventDefault()
-    setSubmitting(true)
-    setErr(null)
-    try {
-      const { id } = await api.addStudent({
-        ...form,
-        子: form.子 ? '子' : '',
-      })
-      navigate(`/students/${id}`)
-    } catch (e) {
-      setErr(e.message)
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
-  return (
-    <div className="p-4">
-      <Link to="/students" className="flex items-center gap-2 text-green-600 mb-4">
-        <ArrowLeft className="w-4 h-4" />
-        Back to Students
-      </Link>
-      <div className="details-card max-w-xl">
-        <h1 className="text-2xl font-bold mb-4">Add Student</h1>
-        {err && <p className="text-red-600 mb-4">{err}</p>}
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Name</label>
-            <input
-              required
-              className="w-full border rounded px-3 py-2"
-              value={form.Name}
-              onChange={(e) => setForm((f) => ({ ...f, Name: e.target.value }))}
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">漢字</label>
-            <input
-              className="w-full border rounded px-3 py-2"
-              value={form.漢字}
-              onChange={(e) => setForm((f) => ({ ...f, 漢字: e.target.value }))}
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Email</label>
-            <input
-              type="email"
-              className="w-full border rounded px-3 py-2"
-              value={form.Email}
-              onChange={(e) => setForm((f) => ({ ...f, Email: e.target.value }))}
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Phone</label>
-            <input
-              className="w-full border rounded px-3 py-2"
-              value={form.Phone}
-              onChange={(e) => setForm((f) => ({ ...f, Phone: e.target.value }))}
-            />
-          </div>
-          <div className="flex gap-4">
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Status</label>
-              <select
-                className="border rounded px-3 py-2"
-                value={form.Status}
-                onChange={(e) => setForm((f) => ({ ...f, Status: e.target.value }))}
-              >
-                <option value="Active">Active</option>
-                <option value="Dormant">Dormant</option>
-                <option value="DEMO">DEMO</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Payment</label>
-              <select
-                className="border rounded px-3 py-2"
-                value={form.Payment}
-                onChange={(e) => setForm((f) => ({ ...f, Payment: e.target.value }))}
-              >
-                <option value="NEO">NEO</option>
-                <option value="OLD">OLD</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Group</label>
-              <select
-                className="border rounded px-3 py-2"
-                value={form.Group}
-                onChange={(e) => setForm((f) => ({ ...f, Group: e.target.value }))}
-              >
-                <option value="Single">Single</option>
-                <option value="Group">Group</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">人数</label>
-              <input
-                type="number"
-                min="2"
-                max="4"
-                className="w-20 border rounded px-3 py-2"
-                value={form.人数}
-                onChange={(e) => setForm((f) => ({ ...f, 人数: e.target.value }))}
-              />
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="isChild"
-              checked={form.子}
-              onChange={(e) => setForm((f) => ({ ...f, 子: e.target.checked }))}
-            />
-            <label htmlFor="isChild">子 (Child)</label>
-          </div>
-          <button
-            type="submit"
-            disabled={submitting}
-            className="btn bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 cursor-pointer transition-colors"
-          >
-            {submitting ? 'Saving...' : 'Add Student'}
-          </button>
-        </form>
-      </div>
-    </div>
-  )
-}
-
 function StatusBadge({ status }) {
   const cls =
     status === 'Active'
@@ -162,8 +24,13 @@ export default function StudentDetail() {
   const [error, setError] = useState(null)
 
   useEffect(() => {
-    if (!id || id === 'new') {
+    if (!id) {
       setLoading(false)
+      return
+    }
+    if (id === 'new') {
+      setLoading(false)
+      navigate('/students', { replace: true, state: { openAddModal: true } })
       return
     }
     Promise.all([
@@ -178,13 +45,10 @@ export default function StudentDetail() {
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false))
-  }, [id])
+  }, [id, navigate])
 
   if (loading) return <div className="p-4">Loading...</div>
   if (error) return <div className="p-4 text-red-600">Error: {error}</div>
-  if (!id || id === 'new') {
-    return <AddStudentForm navigate={navigate} />
-  }
   if (!student) return <div className="p-4">Student not found</div>
 
   return (
