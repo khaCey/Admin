@@ -25,9 +25,9 @@ export default function Students() {
   const [selectedStudentId, setSelectedStudentId] = useState(null)
 
   useEffect(() => {
-    api
-      .getStudents()
-      .then(setStudents)
+    const minDelay = new Promise((r) => setTimeout(r, 1000))
+    Promise.all([api.getStudents(), minDelay])
+      .then(([data]) => setStudents(data))
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false))
   }, [])
@@ -65,20 +65,38 @@ export default function Students() {
     </>
   );
 
+  if (loading) {
+    return (
+      <div
+        className="fixed inset-0 z-[1100] flex items-center justify-center bg-gray-100"
+        aria-label="Loading"
+      >
+        <div className="relative w-24 h-24 flex items-center justify-center">
+          <div className="students-loading-spinner-ring absolute inset-0 rounded-full border-4 border-gray-200 border-t-green-600" />
+          <span
+            className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-center text-sm font-medium text-gray-700 whitespace-nowrap"
+            style={{ pointerEvents: 'none' }}
+          >
+            Green Square
+          </span>
+        </div>
+      </div>
+    )
+  }
+
   return (
-    <div className="w-full flex flex-col">
+    <div className="w-full flex flex-col h-full min-h-0">
       {headerAndSearch}
-      {loading && <div className="py-8 text-slate-500">Loading...</div>}
       {error && (
-        <div className="py-4 text-red-600">
+        <div className="py-4 text-red-600 flex-shrink-0">
           {/postgres|connection|ECONNREFUSED|28P01|password/i.test(error)
             ? 'Database connection failed. Check PostgreSQL is running and .env has correct DATABASE_URL. Restart the API server.'
             : `Error: ${error}`}
         </div>
       )}
-      {!loading && !error && (
+      {!error && (
       <>
-      <div className="relative overflow-auto max-h-[70vh] w-full rounded-xl border border-black/5 bg-white shadow-sm">
+      <div className="student-table-container relative flex-1 min-h-0 overflow-auto w-full rounded-xl border border-black/5 shadow-sm">
         <table id="studentTable" className="min-w-full border-separate border-spacing-0">
           <thead className="sticky top-0 bg-green-600 text-white shadow">
             <tr>
@@ -129,7 +147,7 @@ export default function Students() {
           </tbody>
         </table>
       </div>
-      <p className="mt-2 text-slate-600 text-sm">
+      <p className="mt-2 text-slate-600 text-sm flex-shrink-0">
         {filtered.length} student{filtered.length !== 1 ? 's' : ''}
       </p>
       </>

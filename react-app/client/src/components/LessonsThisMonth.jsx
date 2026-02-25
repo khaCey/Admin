@@ -37,12 +37,12 @@ function LessonCard({ lesson, year, monthIndex, onClick, size = 'normal' }) {
     <button
       type="button"
       onClick={() => onClick?.(lesson)}
-      className={`lr-card group relative inline-flex items-start gap-1 rounded-lg border border-gray-200 ${styles.bg} ${sz.pad} w-full h-full min-h-0 text-left shadow-sm hover:shadow-md transition transform hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-inset ${styles.hoverRing} cursor-pointer overflow-hidden`}
+      className={`lr-card group relative inline-flex items-center gap-1 rounded-lg border border-gray-200 ${styles.bg} ${sz.pad} w-full h-full min-h-0 text-left shadow-sm hover:shadow-md transition transform hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-inset ${styles.hoverRing} cursor-pointer overflow-hidden`}
       data-status={lesson.status}
       aria-label={`Lesson ${dayStr} ${timeStr} (${title})`}
     >
       <span className={`absolute left-0 top-0 h-full ${sz.accent} rounded-l-lg ${styles.accent}`} />
-      <span className="mt-0 flex-1 min-w-0 overflow-hidden">
+      <span className="flex-1 min-w-0 overflow-hidden py-0.5">
         <span className={`block lr-date ${sz.date} font-semibold leading-tight truncate`}>
           {dayStr}
           {dow && <span className={`lr-dow ${sz.dow} font-semibold text-gray-500 ml-1`}>{dow}</span>}
@@ -207,9 +207,9 @@ export default function LessonsThisMonth({ studentId, student, onBookLesson, sec
 
   const content = (
     <div className="flex flex-1 flex-col min-h-0">
-      <div className="mt-1 flex flex-col gap-1 flex-1 min-h-0 overflow-hidden px-2">
+      <div className="flex flex-col gap-1 flex-1 min-h-0 overflow-hidden px-2 py-1">
         {actionError && (
-          <div className="text-red-600 text-sm" role="alert">
+          <div className="text-red-600 text-sm shrink-0" role="alert">
             {actionError}
           </div>
         )}
@@ -218,18 +218,29 @@ export default function LessonsThisMonth({ studentId, student, onBookLesson, sec
           (() => {
             const count = monthData.lessons.length
             const cardSize = count <= 5 ? 'large' : count <= 10 ? 'normal' : 'compact'
+            const oneRow = count <= 6
+            const twoRows = count >= 7
             return (
-              <div className={`lr-cards grid gap-1 py-1 pr-1 flex-1 min-h-0 overflow-hidden grid-cols-[repeat(auto-fill,minmax(88px,1fr))] [grid-auto-rows:minmax(0,1fr)]`}>
-                {monthData.lessons.map((lesson, i) => (
-                  <LessonCard
-                    key={lesson.eventID || i}
-                    lesson={lesson}
-                    year={year}
-                    monthIndex={monthIndex}
-                    onClick={setSelectedLesson}
-                    size={cardSize}
-                  />
-                ))}
+              <div className="flex flex-1 flex-col justify-center min-h-0 overflow-hidden">
+                <div
+                  className={`flex flex-col min-h-0 overflow-hidden ${oneRow ? 'h-1/2' : 'flex-1'}`}
+                >
+                  <div
+                    className="lr-cards grid gap-1 py-1 pr-1 h-full w-full overflow-hidden grid-cols-[repeat(auto-fill,minmax(88px,1fr))]"
+                    style={twoRows ? { gridTemplateRows: 'repeat(2, 1fr)' } : undefined}
+                  >
+                    {monthData.lessons.map((lesson, i) => (
+                      <LessonCard
+                        key={lesson.eventID || i}
+                        lesson={lesson}
+                        year={year}
+                        monthIndex={monthIndex}
+                        onClick={setSelectedLesson}
+                        size={cardSize}
+                      />
+                    ))}
+                  </div>
+                </div>
               </div>
             )
           })()

@@ -18,12 +18,14 @@ export default function Layout() {
       <Sidebar collapsed={sidebarCollapsed} />
       <main
         id="mainContent"
-        className={`pt-16 h-screen bg-gray-100 transition-all duration-300 w-full sidebar-content flex flex-col ${
+        className={`bg-gray-100 transition-all duration-300 w-full sidebar-content flex flex-col ${
           sidebarCollapsed ? 'ml-0' : 'ml-64'
         }`}
       >
-        <div className="p-6 w-full flex flex-col h-full">
-          <Outlet />
+        <div className="p-6 w-full flex flex-col h-full min-h-0">
+          <div className="flex-1 min-h-0 flex flex-col">
+            <Outlet />
+          </div>
         </div>
       </main>
       {featureModalMode && (

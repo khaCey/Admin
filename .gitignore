@@ -9,3 +9,6 @@
 
 # Migration data (CSV) – keep local only, do not push
 /react-app/migration-data/*.csv
+
+# Local spec (do not commit)
+/react-app/POLLING_API_SPEC.md

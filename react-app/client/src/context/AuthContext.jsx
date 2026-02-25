@@ -49,11 +49,11 @@ export function AuthProvider({ children }) {
     fetchMe()
   }, [fetchMe])
 
-  const login = useCallback(async (name, password) => {
+  const login = useCallback(async (name) => {
     const res = await fetch('/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, password }),
+      body: JSON.stringify({ name }),
     })
     const data = await res.json().catch(() => ({}))
     if (!res.ok) throw new Error(data.error || 'Login failed')
@@ -62,7 +62,18 @@ export function AuthProvider({ children }) {
     setStaff(data.staff)
   }, [])
 
-  const logout = useCallback(() => {
+  const logout = useCallback(async () => {
+    const token = getToken()
+    if (token) {
+      try {
+        await fetch('/api/auth/logout', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+        })
+      } catch {
+        // ignore network errors; still clear local session
+      }
+    }
     localStorage.removeItem(TOKEN_KEY)
     localStorage.removeItem(STAFF_KEY)
     setStaff(null)

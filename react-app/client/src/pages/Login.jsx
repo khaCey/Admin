@@ -1,10 +1,12 @@
 import { useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { STAFF_OPTIONS } from '../constants/staff'
+
+const LOGIN_STAFF = STAFF_OPTIONS.filter((s) => s !== 'Staff')
 
 export default function Login() {
   const [name, setName] = useState('')
-  const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const { login } = useAuth()
@@ -17,7 +19,7 @@ export default function Login() {
     setError('')
     setSubmitting(true)
     try {
-      await login(name.trim(), password)
+      await login(name.trim())
       navigate(from, { replace: true })
     } catch (err) {
       setError(err.message || 'Login failed')
@@ -43,33 +45,24 @@ export default function Login() {
           )}
           <div>
             <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">
-              Name
+              Staff
             </label>
-            <input
+            <select
               id="name"
-              type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. Rie, May"
-              className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-gray-900 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+              className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-gray-900 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent bg-white"
               autoComplete="username"
               autoFocus
               required
-            />
-          </div>
-          <div>
-            <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
-              Password
-            </label>
-            <input
-              id="password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-gray-900 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
-              autoComplete="current-password"
-              required
-            />
+            >
+              <option value="">Staff</option>
+              {LOGIN_STAFF.map((staff) => (
+                <option key={staff} value={staff}>
+                  {staff}
+                </option>
+              ))}
+            </select>
           </div>
           <button
             type="submit"

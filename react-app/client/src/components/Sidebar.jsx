@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom'
-import { Users } from 'lucide-react'
+import { Users, UserCheck } from 'lucide-react'
 
 export default function Sidebar({ collapsed }) {
   const location = useLocation()
@@ -25,6 +25,19 @@ export default function Sidebar({ collapsed }) {
             >
               <Users className="w-5 h-5" />
               <span>Students</span>
+            </Link>
+          </li>
+          <li>
+            <Link
+              to="/staff"
+              className={`flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors cursor-pointer ${
+                path === '/staff'
+                  ? 'bg-green-600 text-white'
+                  : 'text-gray-700 hover:bg-green-100 hover:text-green-700'
+              }`}
+            >
+              <UserCheck className="w-5 h-5" />
+              <span>Staff</span>
             </Link>
           </li>
         </ul>

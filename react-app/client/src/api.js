@@ -39,6 +39,7 @@ export const api = {
   deleteNote: (id) => fetchApi(`/notes/${id}`, { method: 'DELETE' }),
 
   getFeatureFlags: () => fetchApi('/config/feature-flags'),
+  getStaffShifts: () => fetchApi('/auth/shifts'),
 
   getUnpaidStudents: (month) =>
     fetchApi(month ? `/dashboard/unpaid?month=${encodeURIComponent(month)}` : '/dashboard/unpaid'),

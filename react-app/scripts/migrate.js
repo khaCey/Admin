@@ -69,15 +69,11 @@ async function runSchema() {
   console.log('Schema applied.');
 }
 
-const DEFAULT_STAFF = ['Rie', 'May', 'Haruka', 'Manna', 'Fumika', 'Sham', 'Ana', 'Admin'];
+// Must match login dropdown (STAFF_OPTIONS minus 'Staff')
+const DEFAULT_STAFF = ['Ana', 'Ayane', 'Haruka', 'Khacey', 'Manna', 'May', 'Rie', 'Sham'];
 const DEFAULT_PASSWORD = 'staff123';
 
 async function seedStaff() {
-  const r = await pool.query('SELECT COUNT(*) FROM staff');
-  if (parseInt(r.rows[0].count, 10) > 0) {
-    console.log('Staff already seeded.');
-    return;
-  }
   const hash = await bcrypt.hash(DEFAULT_PASSWORD, 10);
   for (const name of DEFAULT_STAFF) {
     await pool.query(
@@ -85,7 +81,7 @@ async function seedStaff() {
       [name, hash]
     );
   }
-  console.log(`Seeded ${DEFAULT_STAFF.length} staff. Default password: ${DEFAULT_PASSWORD}`);
+  console.log(`Seeded staff: ${DEFAULT_STAFF.join(', ')}.`);
 }
 
 function findCsv(name) {

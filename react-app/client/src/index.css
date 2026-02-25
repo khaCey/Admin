@@ -1,5 +1,14 @@
 @import "tailwindcss";
 
+@keyframes students-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.students-loading-spinner-ring {
+  animation: students-spin 1s linear infinite;
+}
+
 /* App styles - ported from Styles.html */
 #loader {
   z-index: 12000;
@@ -20,9 +29,10 @@
 
 #mainContent {
   margin-top: 56px;
+  height: calc(100vh - 56px);
   padding: 1rem;
   box-sizing: border-box;
-  min-height: calc(100vh - 56px);
+  overflow: hidden;
 }
 
 body {
@@ -89,6 +99,26 @@ table.table thead.bg-green-600 {
   color: white !important;
 }
 
+/* Fixed row heights so gradient stripes align with rows and first stripe below table is full height */
+#studentTable thead tr {
+  height: 40px;
+}
+#studentTable tbody tr {
+  height: 40px;
+}
+
+/* Stripes continue in empty area below table (pattern on container only) */
+/* 40px stripe = match typical row height (py-2 + line); 40px offset = match thead height */
+.student-table-container {
+  background: repeating-linear-gradient(
+    to bottom,
+    #ffffff 0px,
+    #ffffff 40px,
+    #f9fafb 40px,
+    #f9fafb 80px
+  ) !important;
+  background-position-y: 40px;
+}
 #studentTable tbody tr:nth-child(odd) {
   background-color: #f9fafb !important;
 }

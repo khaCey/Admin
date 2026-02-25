@@ -1,39 +1,72 @@
 /**
- * Auth routes: login, logout, me
+ * Auth routes: login (shift start), logout (shift end), me
  */
 import { Router } from 'express';
-import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import { query } from '../db/index.js';
+import { requireAuth } from '../middleware/auth.js';
 
 const router = Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'student-admin-secret-change-in-production';
-const JWT_EXPIRY = process.env.JWT_EXPIRY || '8h'; // 8-hour shift
 
 router.post('/login', async (req, res) => {
   try {
-    const { name, password } = req.body || {};
-    if (!name || !password) {
-      return res.status(400).json({ error: 'Name and password required' });
+    const { name } = req.body || {};
+    if (!name) {
+      return res.status(400).json({ error: 'Name required' });
     }
     const result = await query(
-      'SELECT id, name, password_hash FROM staff WHERE name = $1',
+      'SELECT id, name FROM staff WHERE name = $1',
       [String(name).trim()]
     );
     if (result.rows.length === 0) {
-      return res.status(401).json({ error: 'Invalid name or password' });
+      return res.status(401).json({ error: 'Invalid staff' });
     }
     const staff = result.rows[0];
-    const ok = await bcrypt.compare(password, staff.password_hash);
-    if (!ok) {
-      return res.status(401).json({ error: 'Invalid name or password' });
-    }
+    await query(
+      'INSERT INTO staff_shifts (staff_id, started_at) VALUES ($1, NOW())',
+      [staff.id]
+    );
     const token = jwt.sign(
       { id: staff.id, name: staff.name },
-      JWT_SECRET,
-      { expiresIn: JWT_EXPIRY }
+      JWT_SECRET
     );
     res.json({ token, staff: { id: staff.id, name: staff.name } });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/logout', requireAuth, async (req, res) => {
+  try {
+    const staffId = req.staff.id;
+    await query(
+      `UPDATE staff_shifts SET ended_at = NOW()
+       WHERE id = (
+         SELECT id FROM staff_shifts
+         WHERE staff_id = $1 AND ended_at IS NULL
+         ORDER BY started_at DESC
+         LIMIT 1
+       )`,
+      [staffId]
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/** GET /api/auth/shifts - recent staff shift log (for sidebar). Requires auth. */
+router.get('/shifts', requireAuth, async (req, res) => {
+  try {
+    const result = await query(
+      `SELECT s.id, s.staff_id, st.name AS staff_name, s.started_at, s.ended_at
+       FROM staff_shifts s
+       JOIN staff st ON st.id = s.staff_id
+       ORDER BY s.started_at DESC
+       LIMIT 50`
+    );
+    res.json({ shifts: result.rows });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

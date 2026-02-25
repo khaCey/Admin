@@ -3,6 +3,7 @@ import Layout from './components/Layout'
 import ProtectedRoute from './components/ProtectedRoute'
 import Students from './pages/Students'
 import StudentDetail from './pages/StudentDetail'
+import Staff from './pages/Staff'
 import Login from './pages/Login'
 
 function App() {
@@ -21,6 +22,7 @@ function App() {
         <Route path="students" element={<Students />} />
         <Route path="students/new" element={<StudentDetail />} />
         <Route path="students/:id" element={<StudentDetail />} />
+        <Route path="staff" element={<Staff />} />
       </Route>
       <Route path="*" element={<Navigate to="/students" replace />} />
     </Routes>

@@ -211,3 +211,15 @@ CREATE TABLE IF NOT EXISTS staff (
 );
 
 CREATE INDEX IF NOT EXISTS idx_staff_name ON staff(name);
+
+-- Staff shift log: login = shift start, logout = shift end
+CREATE TABLE IF NOT EXISTS staff_shifts (
+  id SERIAL PRIMARY KEY,
+  staff_id INTEGER NOT NULL REFERENCES staff(id),
+  started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  ended_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_staff_shifts_staff_id ON staff_shifts(staff_id);
+CREATE INDEX IF NOT EXISTS idx_staff_shifts_started_at ON staff_shifts(started_at);
