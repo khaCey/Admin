@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { query } from '../db/index.js';
+import { logChange } from '../lib/changeLog.js';
 
 const router = Router();
 
@@ -32,7 +33,7 @@ router.post('/', async (req, res) => {
     const result = await query(
       `INSERT INTO notes (student_id, staff, note, date)
        VALUES ($1, $2, $3, COALESCE($4::timestamptz, NOW()))
-       RETURNING id`,
+       RETURNING *`,
       [
         body['Student ID'] ?? body.student_id,
         body.Staff ?? body.staff ?? '',
@@ -40,7 +41,12 @@ router.post('/', async (req, res) => {
         body.Date ?? body.date ?? null,
       ]
     );
-    res.status(201).json({ id: result.rows[0].id });
+    const newRow = result.rows[0];
+    await logChange(
+      { entityType: 'notes', entityKey: String(newRow.id), action: 'create', oldData: null, newData: newRow },
+      req
+    );
+    res.status(201).json({ id: newRow.id });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -50,15 +56,20 @@ router.put('/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const body = req.body;
+    const oldResult = await query('SELECT * FROM notes WHERE id = $1', [id]);
+    if (oldResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Note not found' });
+    }
+    const oldRow = oldResult.rows[0];
     await query(
       `UPDATE notes SET staff = COALESCE($2, staff), note = COALESCE($3, note), date = COALESCE($4::timestamptz, date)
        WHERE id = $1`,
-      [
-        id,
-        body.Staff ?? body.staff,
-        body.Note ?? body.note,
-        body.Date ?? body.date,
-      ]
+      [id, body.Staff ?? body.staff, body.Note ?? body.note, body.Date ?? body.date]
+    );
+    const newRow = (await query('SELECT * FROM notes WHERE id = $1', [id])).rows[0];
+    await logChange(
+      { entityType: 'notes', entityKey: String(id), action: 'update', oldData: oldRow, newData: newRow },
+      req
     );
     res.json({ ok: true });
   } catch (err) {
@@ -69,7 +80,16 @@ router.put('/:id', async (req, res) => {
 router.delete('/:id', async (req, res) => {
   try {
     const { id } = req.params;
+    const oldResult = await query('SELECT * FROM notes WHERE id = $1', [id]);
+    if (oldResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Note not found' });
+    }
+    const oldRow = oldResult.rows[0];
     await query('DELETE FROM notes WHERE id = $1', [id]);
+    await logChange(
+      { entityType: 'notes', entityKey: String(id), action: 'delete', oldData: oldRow, newData: null },
+      req
+    );
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });

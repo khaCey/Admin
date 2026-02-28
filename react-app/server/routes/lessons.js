@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { query } from '../db/index.js';
+import { logChange } from '../lib/changeLog.js';
 
 const router = Router();
 
@@ -32,15 +33,35 @@ router.get('/', async (req, res) => {
 router.post('/', async (req, res) => {
   try {
     const body = req.body;
+    const studentId = body['Student ID'] ?? body.student_id;
+    const month = body.Month ?? body.month;
+    const lessonsVal = body.Lessons ?? body.lessons ?? 0;
+    const entityKey = `${studentId}_${month}`;
+
+    const oldResult = await query(
+      'SELECT * FROM lessons WHERE student_id = $1 AND month = $2',
+      [studentId, month]
+    );
+    const oldRow = oldResult.rows[0] || null;
+
     await query(
       `INSERT INTO lessons (student_id, month, lessons)
        VALUES ($1, $2, $3)
        ON CONFLICT (student_id, month) DO UPDATE SET lessons = EXCLUDED.lessons`,
-      [
-        body['Student ID'] ?? body.student_id,
-        body.Month ?? body.month,
-        body.Lessons ?? body.lessons ?? 0,
-      ]
+      [studentId, month, lessonsVal]
+    );
+    const newRow = (await query('SELECT * FROM lessons WHERE student_id = $1 AND month = $2', [studentId, month]))
+      .rows[0];
+    const action = oldRow ? 'update' : 'create';
+    await logChange(
+      {
+        entityType: 'lessons',
+        entityKey,
+        action,
+        oldData: oldRow,
+        newData: newRow,
+      },
+      req
     );
     res.status(201).json({ ok: true });
   } catch (err) {

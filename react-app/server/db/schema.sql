@@ -223,3 +223,18 @@ CREATE TABLE IF NOT EXISTS staff_shifts (
 
 CREATE INDEX IF NOT EXISTS idx_staff_shifts_staff_id ON staff_shifts(staff_id);
 CREATE INDEX IF NOT EXISTS idx_staff_shifts_started_at ON staff_shifts(started_at);
+
+-- Change log (audit trail for undo)
+CREATE TABLE IF NOT EXISTS change_log (
+  id SERIAL PRIMARY KEY,
+  entity_type VARCHAR(50) NOT NULL,
+  entity_key VARCHAR(255) NOT NULL,
+  action VARCHAR(20) NOT NULL,
+  old_data JSONB,
+  new_data JSONB,
+  staff_id INTEGER REFERENCES staff(id),
+  staff_name VARCHAR(255),
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_change_log_entity ON change_log(entity_type, entity_key);
+CREATE INDEX IF NOT EXISTS idx_change_log_created ON change_log(created_at DESC);

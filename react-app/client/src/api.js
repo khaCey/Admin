@@ -79,4 +79,16 @@ export const api = {
     if (timeMax) params.set('timeMax', timeMax);
     return fetchApi(`/calendar/events?${params.toString()}`);
   },
+
+  getChangeLog: (params = {}) => {
+    const q = new URLSearchParams();
+    if (params.entity_type) q.set('entity_type', params.entity_type);
+    if (params.entity_key) q.set('entity_key', params.entity_key);
+    if (params.limit) q.set('limit', params.limit);
+    if (params.offset) q.set('offset', params.offset);
+    const query = q.toString();
+    return fetchApi(`/change-log${query ? `?${query}` : ''}`);
+  },
+  undoChange: (id) =>
+    fetchApi(`/change-log/${id}/undo`, { method: 'POST' }),
 };

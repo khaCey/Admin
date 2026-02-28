@@ -32,13 +32,16 @@ export const feeTable = {
 };
 
 export function calculatePrice(lessonsCount, paymentType = 'Neo', groupType = 'Single', groupSize = 2, frequency = '4x') {
-  const ownerPayment = paymentType === "Owner's Lesson" || paymentType === "Owner's Course";
+  const payNorm = String(paymentType || '').trim();
+  const ownerPayment = /owner'?s?\s*(lesson|course)/i.test(payNorm);
   if (ownerPayment) return feeTable["Owner's Lesson"];
-  const payment = paymentType === 'OLD' ? feeTable.OLD : feeTable.Neo;
-  if (lessonsCount === 1 && paymentType === 'Neo') {
+  const payment = payNorm.toUpperCase() === 'OLD' ? feeTable.OLD : feeTable.Neo;
+  if (lessonsCount === 1 && payment === feeTable.Neo) {
     return feeTable["Owner's Lesson"];
   }
-  if (groupType === 'Single') {
+  // "Individual" in students.Group maps to Single rates (Code.js uses same mapping)
+  const isSingle = groupType === 'Single' || groupType === 'Individual';
+  if (isSingle) {
     const freq = lessonsCount <= 2 ? '2x' : lessonsCount <= 4 ? '4x' : '8x';
     return payment.Single[freq] || 0;
   }

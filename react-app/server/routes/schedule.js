@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { query } from '../db/index.js';
+import { logChange } from '../lib/changeLog.js';
 
 const router = Router();
 
@@ -229,9 +230,10 @@ router.post('/book', async (req, res) => {
 
     const eventId = `booked-${Date.now()}-${student_id}`;
     const title = `${studentName}${student.is_child ? ' 子' : ''} (Lesson)`;
-    await query(
+    const insertResult = await query(
       `INSERT INTO monthly_schedule (event_id, title, date, start, "end", status, student_name, is_kids_lesson, teacher_name)
-       VALUES ($1, $2, $3::date, $4::timestamptz, $5::timestamptz, 'scheduled', $6, $7, NULL)`,
+       VALUES ($1, $2, $3::date, $4::timestamptz, $5::timestamptz, 'scheduled', $6, $7, NULL)
+       RETURNING *`,
       [
         eventId,
         title,
@@ -242,6 +244,19 @@ router.post('/book', async (req, res) => {
         !!student.is_child,
       ]
     );
+    const newRow = insertResult.rows[0];
+    if (newRow) {
+      await logChange(
+        {
+          entityType: 'monthly_schedule',
+          entityKey: `${eventId}_${studentName}`,
+          action: 'create',
+          oldData: null,
+          newData: newRow,
+        },
+        req
+      );
+    }
     res.status(201).json({
       ok: true,
       event_id: eventId,
@@ -269,12 +284,25 @@ function getEventIdFromPath(path, suffix) {
 router.patch(/^\/(.+)\/cancel\/?$/, async (req, res) => {
   try {
     const eventId = getEventIdFromPath(req.path, 'cancel') || decodeURIComponent((req.params[0] || req.params[1] || '').trim());
-    const result = await query(
-      `UPDATE monthly_schedule SET status = 'cancelled' WHERE event_id = $1 RETURNING event_id`,
-      [eventId]
-    );
-    if (result.rows.length === 0) {
+    const oldRows = (await query('SELECT * FROM monthly_schedule WHERE event_id = $1', [eventId])).rows;
+    if (oldRows.length === 0) {
       return res.status(404).json({ error: 'Event not found', event_id: eventId });
+    }
+    await query(`UPDATE monthly_schedule SET status = 'cancelled' WHERE event_id = $1`, [eventId]);
+    const newRows = (await query('SELECT * FROM monthly_schedule WHERE event_id = $1', [eventId])).rows;
+    for (let i = 0; i < oldRows.length; i++) {
+      const oldRow = oldRows[i];
+      const newRow = newRows.find((r) => r.student_name === oldRow.student_name) || oldRow;
+      await logChange(
+        {
+          entityType: 'monthly_schedule',
+          entityKey: `${eventId}_${oldRow.student_name}`,
+          action: 'update',
+          oldData: oldRow,
+          newData: newRow,
+        },
+        req
+      );
     }
     res.json({ ok: true, event_id: eventId });
   } catch (err) {
@@ -286,12 +314,25 @@ router.patch(/^\/(.+)\/cancel\/?$/, async (req, res) => {
 router.patch(/^\/(.+)\/uncancel\/?$/, async (req, res) => {
   try {
     const eventId = getEventIdFromPath(req.path, 'uncancel') || decodeURIComponent((req.params[0] || req.params[1] || '').trim());
-    const result = await query(
-      `UPDATE monthly_schedule SET status = 'scheduled' WHERE event_id = $1 RETURNING event_id`,
-      [eventId]
-    );
-    if (result.rows.length === 0) {
+    const oldRows = (await query('SELECT * FROM monthly_schedule WHERE event_id = $1', [eventId])).rows;
+    if (oldRows.length === 0) {
       return res.status(404).json({ error: 'Event not found', event_id: eventId });
+    }
+    await query(`UPDATE monthly_schedule SET status = 'scheduled' WHERE event_id = $1`, [eventId]);
+    const newRows = (await query('SELECT * FROM monthly_schedule WHERE event_id = $1', [eventId])).rows;
+    for (let i = 0; i < oldRows.length; i++) {
+      const oldRow = oldRows[i];
+      const newRow = newRows.find((r) => r.student_name === oldRow.student_name) || oldRow;
+      await logChange(
+        {
+          entityType: 'monthly_schedule',
+          entityKey: `${eventId}_${oldRow.student_name}`,
+          action: 'update',
+          oldData: oldRow,
+          newData: newRow,
+        },
+        req
+      );
     }
     res.json({ ok: true, event_id: eventId });
   } catch (err) {
@@ -304,6 +345,10 @@ router.patch(/^\/(.+)\/reschedule\/?$/, async (req, res) => {
   try {
     const eventId = getEventIdFromPath(req.path, 'reschedule') || decodeURIComponent((req.params[0] || req.params[1] || '').trim());
     const { date, start, end } = req.body || {};
+    const oldRows = (await query('SELECT * FROM monthly_schedule WHERE event_id = $1', [eventId])).rows;
+    if (oldRows.length === 0) {
+      return res.status(404).json({ error: 'Event not found', event_id: eventId });
+    }
     const updates = [];
     const values = [];
     let i = 1;
@@ -326,12 +371,24 @@ router.patch(/^\/(.+)\/reschedule\/?$/, async (req, res) => {
       return res.status(400).json({ error: 'Provide at least one of date, start, end' });
     }
     values.push(eventId);
-    const result = await query(
-      `UPDATE monthly_schedule SET ${updates.join(', ')} WHERE event_id = $${i} RETURNING event_id`,
+    await query(
+      `UPDATE monthly_schedule SET ${updates.join(', ')} WHERE event_id = $${i}`,
       values
     );
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Event not found', event_id: eventId });
+    const newRows = (await query('SELECT * FROM monthly_schedule WHERE event_id = $1', [eventId])).rows;
+    for (let j = 0; j < oldRows.length; j++) {
+      const oldRow = oldRows[j];
+      const newRow = newRows.find((r) => r.student_name === oldRow.student_name) || oldRow;
+      await logChange(
+        {
+          entityType: 'monthly_schedule',
+          entityKey: `${eventId}_${oldRow.student_name}`,
+          action: 'update',
+          oldData: oldRow,
+          newData: newRow,
+        },
+        req
+      );
     }
     res.json({ ok: true, event_id: eventId });
   } catch (err) {
@@ -345,12 +402,22 @@ router.delete(/^\/(.+)\/?$/, async (req, res) => {
     const rawPath = (req.path || req.url || '').replace(/\?.*$/, '');
     const m = rawPath.match(/^\/(.+)\/?$/);
     const eventId = (m ? decodeURIComponent(m[1]).trim() : '') || decodeURIComponent((req.params[0] || req.params[1] || '').trim());
-    const result = await query(
-      'DELETE FROM monthly_schedule WHERE event_id = $1 RETURNING event_id',
-      [eventId]
-    );
-    if (result.rows.length === 0) {
+    const oldRows = (await query('SELECT * FROM monthly_schedule WHERE event_id = $1', [eventId])).rows;
+    if (oldRows.length === 0) {
       return res.status(404).json({ error: 'Event not found', event_id: eventId });
+    }
+    await query('DELETE FROM monthly_schedule WHERE event_id = $1', [eventId]);
+    for (const oldRow of oldRows) {
+      await logChange(
+        {
+          entityType: 'monthly_schedule',
+          entityKey: `${eventId}_${oldRow.student_name}`,
+          action: 'delete',
+          oldData: oldRow,
+          newData: null,
+        },
+        req
+      );
     }
     res.json({ ok: true, event_id: eventId });
   } catch (err) {

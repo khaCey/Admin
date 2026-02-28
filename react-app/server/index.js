@@ -23,6 +23,7 @@ import lessonsRouter from './routes/lessons.js';
 import dashboardRouter from './routes/dashboard.js';
 import configRouter from './routes/config.js';
 import scheduleRouter from './routes/schedule.js';
+import changeLogRouter from './routes/changeLog.js';
 import calendarRouter, { registerWatch } from './routes/calendar.js';
 import authRouter from './routes/auth.js';
 import { requireAuth } from './middleware/auth.js';
@@ -214,6 +215,7 @@ app.get('/api/schedule/week', async (req, res) => {
 });
 
 app.use('/api/schedule', scheduleRouter);
+app.use('/api/change-log', changeLogRouter);
 
 /** Sync MonthlySchedule from GAS Calendar Webhook polling into PostgreSQL. */
 app.post('/api/calendar-poll/sync', async (req, res) => {

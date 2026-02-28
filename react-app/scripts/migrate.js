@@ -213,6 +213,15 @@ async function importNotes() {
   console.log(`Imported ${imported} notes.`);
 }
 
+/** Split group lesson student names: "A and B", "A, B", "A & B" -> ["A", "B"] */
+function splitStudentNames(str) {
+  if (!str || typeof str !== 'string') return [];
+  return str
+    .split(/\s+and\s+|,\s*|\s*&\s*/i)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
 function toMonthKeyYYYYMM(val, yearFallback) {
   const m = String(val || '').trim();
   if (!m) return '';
@@ -304,33 +313,36 @@ async function importMonthlySchedule() {
         const e = new Date(endVal);
         if (!isNaN(e.getTime())) endTs = e.toISOString();
       }
-      const studentName = (r.StudentName || r.student_name || '').trim();
-      if (!studentName) continue;
-      await pool.query(
-        `INSERT INTO monthly_schedule (event_id, title, date, start, "end", status, student_name, is_kids_lesson, teacher_name)
-         VALUES ($1, $2, $3::date, $4::timestamptz, $5::timestamptz, $6, $7, $8, $9)
-         ON CONFLICT (event_id, student_name) DO UPDATE SET
-           title = EXCLUDED.title, date = EXCLUDED.date, start = EXCLUDED.start, "end" = EXCLUDED.end,
-           status = EXCLUDED.status,
-           is_kids_lesson = EXCLUDED.is_kids_lesson, teacher_name = EXCLUDED.teacher_name`,
-        [
-          eventId,
-          r.Title || r.title || '',
-          date || null,
-          startTs || null,
-          endTs || null,
-          r.Status || r.status || 'scheduled',
-          studentName,
-          r.IsKidsLesson === 'true' || r.IsKidsLesson === '1' || r.is_kids_lesson === true,
-          r.TeacherName || r.teacher_name || '',
-        ]
-      );
-      imported++;
+      const rawStudentName = (r.StudentName || r.student_name || '').trim();
+      if (!rawStudentName) continue;
+      const studentNames = splitStudentNames(rawStudentName);
+      for (const studentName of studentNames) {
+        await pool.query(
+          `INSERT INTO monthly_schedule (event_id, title, date, start, "end", status, student_name, is_kids_lesson, teacher_name)
+           VALUES ($1, $2, $3::date, $4::timestamptz, $5::timestamptz, $6, $7, $8, $9)
+           ON CONFLICT (event_id, student_name) DO UPDATE SET
+             title = EXCLUDED.title, date = EXCLUDED.date, start = EXCLUDED.start, "end" = EXCLUDED.end,
+             status = EXCLUDED.status,
+             is_kids_lesson = EXCLUDED.is_kids_lesson, teacher_name = EXCLUDED.teacher_name`,
+          [
+            eventId,
+            r.Title || r.title || '',
+            date || null,
+            startTs || null,
+            endTs || null,
+            r.Status || r.status || 'scheduled',
+            studentName,
+            r.IsKidsLesson === 'true' || r.IsKidsLesson === '1' || r.is_kids_lesson === true,
+            r.TeacherName || r.teacher_name || '',
+          ]
+        );
+        imported++;
+      }
     } catch (err) {
       console.warn('Skipping MonthlySchedule row:', err.message);
     }
   }
-  console.log(`Imported ${imported} MonthlySchedule events.`);
+  console.log(`Imported ${imported} MonthlySchedule rows (group lessons split per student).`);
 }
 
 async function importUnpaid() {

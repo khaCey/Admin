@@ -23,6 +23,8 @@ node scripts/migrate.js --import
 | Unpaid.csv | Unpaid | Student Name, Student ID |
 | Stats.csv | Stats | Month, Lessons, Students |
 
+**Group lessons (MonthlySchedule):** Use `StudentName` = `"Student A and Student B"` (or `,` or `&`). Each name is split and one schedule row is created per student.
+
 **Note:** Lessons This Month uses live Google Calendar data at runtime. For the sample, export `MonthlySchedule` (cached calendar events) as CSV to populate the schedule. Lessons.csv provides monthly totals.
 
 ## Export from Google Sheets
