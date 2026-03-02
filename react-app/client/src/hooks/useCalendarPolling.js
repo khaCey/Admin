@@ -31,7 +31,7 @@ function applyDiff(current, diff) {
 
 export function useCalendarPolling(options = {}) {
   const {
-    intervalMs = 3000,
+    intervalMs = 300000, // 5 minutes
     enabled = true,
     onChanged,
     onError,

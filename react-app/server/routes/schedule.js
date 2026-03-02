@@ -7,22 +7,30 @@ const router = Router();
 /** Test route: GET /api/schedule returns 200 so the mount can be verified */
 router.get('/', (req, res) => res.json({ ok: true, message: 'Schedule API' }));
 
-/** Get scheduled events for a week (for booking calendar busy slots). week_start = YYYY-MM-DD (Monday). */
+/** Get scheduled events and teacher shifts for a week (booking calendar). week_start = YYYY-MM-DD (Monday). */
 router.get('/week', async (req, res) => {
   try {
     const weekStart = req.query.week_start;
     if (!weekStart || !/^\d{4}-\d{2}-\d{2}$/.test(weekStart)) {
       return res.status(400).json({ error: 'Query week_start required (YYYY-MM-DD)' });
     }
-    const result = await query(
-      `SELECT date, start, status FROM monthly_schedule
-       WHERE date >= $1::date AND date < $1::date + interval '7 days'
-       AND (status IS NULL OR status <> 'cancelled')
-       ORDER BY date, start`,
-      [weekStart]
-    );
+    const [scheduleResult, teachersResult] = await Promise.all([
+      query(
+        `SELECT date, start, status FROM monthly_schedule
+         WHERE date >= $1::date AND date < $1::date + interval '7 days'
+         AND (status IS NULL OR status <> 'cancelled')
+         ORDER BY date, start`,
+        [weekStart]
+      ),
+      query(
+        `SELECT date, teacher_name, start_time, end_time FROM teacher_schedules
+         WHERE date >= $1::date AND date < $1::date + interval '7 days'
+         ORDER BY date, teacher_name, start_time`,
+        [weekStart]
+      ),
+    ]);
     const bySlot = {};
-    for (const r of result.rows) {
+    for (const r of scheduleResult.rows) {
       const dateStr = r.date ? String(r.date).trim().slice(0, 10) : '';
       const s = r.start ? new Date(r.start) : null;
       const timeStr = s && !isNaN(s.getTime())
@@ -32,7 +40,26 @@ router.get('/week', async (req, res) => {
       const key = `${dateStr}T${timeStr}`;
       bySlot[key] = (bySlot[key] || 0) + 1;
     }
-    res.json({ slots: bySlot });
+    const teachersBySlot = {};
+    const TIME_SLOTS = ['10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00'];
+    for (const r of teachersResult.rows) {
+      const dateStr = r.date ? String(r.date).trim().slice(0, 10) : '';
+      if (!dateStr) continue;
+      const startT = r.start_time ? String(r.start_time).slice(0, 5) : '';
+      const endT = r.end_time ? String(r.end_time).slice(0, 5) : '';
+      if (!startT || !endT) continue;
+      for (const timeStr of TIME_SLOTS) {
+        if (timeStr >= startT && timeStr < endT) {
+          const key = `${dateStr}T${timeStr}`;
+          if (!teachersBySlot[key]) teachersBySlot[key] = [];
+          teachersBySlot[key].push(r.teacher_name);
+        }
+      }
+    }
+    for (const k of Object.keys(teachersBySlot)) {
+      teachersBySlot[k] = [...new Set(teachersBySlot[k])].sort();
+    }
+    res.json({ slots: bySlot, teachersBySlot });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

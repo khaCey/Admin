@@ -15,7 +15,7 @@ export function useCalendarPollingContext() {
   return ctx ?? { data: [], loading: false, error: null, lastSynced: null, refetch: () => {}, isConfigured: false }
 }
 
-export function CalendarPollingProvider({ children, intervalMs = 45000 }) {
+export function CalendarPollingProvider({ children, intervalMs = 300000 }) {
   const [lastSynced, setLastSynced] = useState(null)
   const syncInProgressRef = useRef(false)
 

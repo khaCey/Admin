@@ -181,10 +181,10 @@ export default function StudentDetailsModal({ studentId, onClose, onStudentDelet
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100">
-                        {payments.map((p) => (
+                        {payments.map((p, i) => (
                           <tr
                             key={p['Transaction ID']}
-                            className="cursor-pointer hover:bg-gray-100"
+                            className={`cursor-pointer hover:bg-gray-200 ${i % 2 === 1 ? 'bg-slate-200' : 'bg-white'}`}
                             onClick={() => setPaymentModal({ mode: 'edit', payment: p })}
                           >
                             <td className="px-3 py-2">{p['Transaction ID']}</td>
@@ -259,10 +259,10 @@ export default function StudentDetailsModal({ studentId, onClose, onStudentDelet
                             </td>
                           </tr>
                         ) : (
-                          filtered.map((n) => (
+                          filtered.map((n, i) => (
                             <tr
                               key={n.ID}
-                              className="cursor-pointer hover:bg-gray-100"
+                              className={`cursor-pointer hover:bg-gray-200 ${i % 2 === 1 ? 'bg-slate-200' : 'bg-white'}`}
                               onClick={() => setNoteModal({ mode: 'edit', note: n })}
                             >
                               <td className="px-3 py-2 whitespace-nowrap">{formatDate(n.Date)}</td>

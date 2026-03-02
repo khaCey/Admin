@@ -46,7 +46,7 @@ export const api = {
   getUnscheduledLessonsStudents: () => fetchApi('/dashboard/unscheduled-lessons'),
 
   getWeekSchedule: (weekStart) =>
-    fetchApi(`/schedule/week?week_start=${encodeURIComponent(weekStart)}`),
+    fetchApi(`/schedule/week?week_start=${encodeURIComponent(weekStart)}`, { cache: 'no-store' }),
   getBookingWarning: (date, time, studentId) => {
     const params = new URLSearchParams({ date, time });
     if (studentId) params.set('student_id', studentId);

@@ -8,6 +8,13 @@ import ExtendShiftModal from './ExtendShiftModal'
 const TIME_SLOTS = ['10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00']
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
+const TEACHER_COLORS = {
+  Sham: 'bg-[#33B679]',
+  Khacey: 'bg-[#F4511E]',
+  Ana: 'bg-[#D50000]',
+}
+const BAR_WIDTH = 6
+
 function getMonday(d) {
   const date = new Date(d)
   const day = date.getDay()
@@ -26,6 +33,7 @@ export default function BookLessonModal({ studentId, student, onClose, onBooked 
   const { lastSynced } = useCalendarPollingContext()
   const [weekStart, setWeekStart] = useState(() => getMonday(new Date()))
   const [slots, setSlots] = useState({})
+  const [teachersBySlot, setTeachersBySlot] = useState({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [pendingSlot, setPendingSlot] = useState(null)
@@ -40,7 +48,10 @@ export default function BookLessonModal({ studentId, student, onClose, onBooked 
     setError(null)
     api
       .getWeekSchedule(weekStartStr)
-      .then((data) => setSlots(data.slots || {}))
+      .then((data) => {
+        setSlots(data.slots || {})
+        setTeachersBySlot(data.teachersBySlot || {})
+      })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false))
   }, [weekStartStr, lastSynced])
@@ -60,6 +71,8 @@ export default function BookLessonModal({ studentId, student, onClose, onBooked 
   const handleSlotClick = (dateStr, timeStr) => {
     const key = `${dateStr}T${timeStr}`
     if (slots[key]) return
+    const teachers = teachersBySlot[key] || []
+    if (teachers.length === 0) return
     setPendingSlot({ date: dateStr, time: timeStr })
   }
 
@@ -153,60 +166,148 @@ export default function BookLessonModal({ studentId, student, onClose, onBooked 
               </button>
             </div>
 
-            {loading ? (
-              <div className="flex flex-col items-center justify-center gap-3 py-16">
-                <div className="relative">
-                  <div className="animate-spin rounded-full h-12 w-12 border-4 border-gray-200" />
-                  <div className="animate-spin rounded-full h-12 w-12 border-4 border-green-600 border-t-transparent absolute top-0 left-0" />
-                </div>
-                <p className="text-base font-medium text-gray-900">Loading Availability</p>
-                <p className="text-sm text-gray-500">Checking schedule...</p>
-              </div>
-            ) : (
-              <div className="bg-white overflow-hidden overflow-y-auto flex-1 min-h-0" style={{ maxHeight: '60vh', minHeight: 320 }}>
-                <div className="sticky top-0 z-10 grid grid-cols-8 bg-green-600 text-white shadow-md">
-                  <div className="px-3 py-2.5 text-sm font-semibold text-center">Time</div>
+            <div className="relative bg-white flex flex-col flex-1 min-h-0 overflow-hidden" style={{ maxHeight: '60vh', minHeight: 320 }}>
+                <div className="flex-shrink-0 flex bg-green-600 text-white shadow-md z-10">
+                  <div className="flex-shrink-0 w-14 px-3 py-2.5 text-sm font-semibold text-center border-r border-white/20">
+                    Time
+                  </div>
                   {weekDates.map((d) => (
-                    <div key={d.getTime()} className="px-3 py-2.5 text-sm font-semibold text-center">
+                    <div key={d.getTime()} className="flex-1 min-w-0 px-3 py-2.5 text-sm font-semibold text-center">
                       <div>{DAY_LABELS[d.getDay() === 0 ? 6 : d.getDay() - 1]}</div>
-                      <div className="text-xs font-normal text-white/90 mt-0.5">{formatDateKey(d)}</div>
+                      <div className="text-xs font-normal text-white/90 mt-0.5">{d.getDate()}</div>
                     </div>
                   ))}
                 </div>
-                <div className="grid grid-cols-8 pt-0.5" style={{ gridAutoRows: '60px', minHeight: 528 }}>
-                  {TIME_SLOTS.map((timeStr) => (
-                    <React.Fragment key={timeStr}>
-                      <div className="px-3 py-2 flex items-center justify-center text-sm font-medium text-gray-700 bg-gray-50 border-b border-r border-gray-100">
+                <div className="flex flex-1 min-h-0 overflow-y-auto pt-0.5">
+                  <div className="flex-shrink-0 w-14 border-r border-gray-100">
+                    {TIME_SLOTS.map((timeStr) => (
+                      <div
+                        key={timeStr}
+                        className="px-3 py-1 flex items-center justify-center text-xs font-medium text-gray-700 bg-gray-50 border-b border-gray-100 min-h-[30px]"
+                      >
                         {timeStr}
                       </div>
-                      {weekDates.map((d) => {
-                        const dateStr = formatDateKey(d)
-                        const key = `${dateStr}T${timeStr}`
-                        const busy = slots[key]
-                        const isPast = new Date(dateStr + 'T' + timeStr) <= new Date()
-                        return (
-                          <button
-                            key={`${dateStr}-${timeStr}`}
-                            type="button"
-                            disabled={!!busy || isPast}
-                            onClick={() => handleSlotClick(dateStr, timeStr)}
-                            className={`px-2 py-1 text-xs font-medium border-b border-r border-gray-100 min-h-[60px] flex items-center justify-center cursor-pointer transition-colors ${
-                              isPast
-                                ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                                : busy
-                                  ? 'bg-amber-50 text-amber-800 cursor-default'
-                                  : 'bg-white hover:bg-green-50 text-gray-800 hover:ring-2 hover:ring-green-500 hover:ring-inset'
-                            }`}
-                          >
-                            {isPast ? 'Past' : busy ? `${busy} lesson${busy > 1 ? 's' : ''}` : 'Book'}
-                          </button>
-                        )
-                      })}
-                    </React.Fragment>
-                  ))}
+                    ))}
+                  </div>
+                  {weekDates.map((d) => {
+                    const dateStr = formatDateKey(d)
+                    const dayTeachers = [...new Set(
+                      TIME_SLOTS.flatMap((t) => teachersBySlot[`${dateStr}T${t}`] || [])
+                    )].sort((a, b) => {
+                      const aLast = Math.max(-1, ...TIME_SLOTS.map((t, i) =>
+                        (teachersBySlot[`${dateStr}T${t}`] || []).includes(a) ? i : -1
+                      ))
+                      const bLast = Math.max(-1, ...TIME_SLOTS.map((t, i) =>
+                        (teachersBySlot[`${dateStr}T${t}`] || []).includes(b) ? i : -1
+                      ))
+                      return (aLast < 0 ? 999 : aLast) - (bLast < 0 ? 999 : bLast)
+                    })
+                    const barAreaWidth = dayTeachers.length * BAR_WIDTH
+                    return (
+                      <div key={d.getTime()} className="flex-1 min-w-0 relative flex flex-col">
+                        {dayTeachers.flatMap((t, i) => {
+                          const shiftSlots = TIME_SLOTS
+                            .map((t2, idx) => ((teachersBySlot[`${dateStr}T${t2}`] || []).includes(t) ? idx : -1))
+                            .filter((idx) => idx >= 0)
+                          if (shiftSlots.length === 0) return []
+                          const runs = []
+                          for (const idx of shiftSlots) {
+                            if (runs.length > 0 && runs[runs.length - 1].end === idx) {
+                              runs[runs.length - 1].end = idx + 1
+                            } else {
+                              runs.push({ start: idx, end: idx + 1 })
+                            }
+                          }
+                          return runs.map((run, ri) => {
+                            const top = run.start * 30
+                            const height = (run.end - run.start) * 30
+                            const shiftRange =
+                              `${TIME_SLOTS[run.start]} – ${TIME_SLOTS[run.end] || TIME_SLOTS[run.end - 1]}`
+                            return (
+                              <div
+                                key={`${t}-${ri}`}
+                                className={`absolute left-0 z-10 cursor-pointer transition-opacity hover:opacity-80 rounded ${TEACHER_COLORS[t] || 'bg-gray-400'}`}
+                                style={{
+                                  width: BAR_WIDTH,
+                                  left: i * BAR_WIDTH,
+                                  top: `${top}px`,
+                                  height: `${height}px`,
+                                }}
+                                title={`${t} (${shiftRange})`}
+                              />
+                            )
+                          })
+                        })}
+                        {TIME_SLOTS.map((timeStr) => {
+                          const key = `${dateStr}T${timeStr}`
+                          const booked = slots[key] || 0
+                          const teachers = teachersBySlot[key] || []
+                          const capacity = teachers.length
+                          const isPast = new Date(dateStr + 'T' + timeStr) <= new Date()
+                          const isFull = capacity > 0 && booked >= capacity
+                          const oneLeft = capacity > 0 && booked === capacity - 1
+                          const isEmpty = capacity > 0 && booked === 0
+                          const statusBead =
+                            !isPast && capacity > 0
+                              ? isFull
+                                ? 'bg-red-500'
+                                : oneLeft
+                                  ? 'bg-orange-500'
+                                  : 'bg-green-500'
+                              : null
+                          const label =
+                            isPast
+                              ? 'Past'
+                              : capacity === 0
+                                ? '—'
+                                : isFull
+                                  ? `${booked} lesson${booked > 1 ? 's' : ''}`
+                                  : booked > 0
+                                    ? `${booked} lesson${booked > 1 ? 's' : ''}`
+                                    : 'Book'
+                          return (
+                            <div
+                              key={timeStr}
+                              className="flex min-h-[30px] border-b border-r border-gray-100"
+                            >
+                              {dayTeachers.length > 0 && <div style={{ width: barAreaWidth }} className="flex-shrink-0" />}
+                              <button
+                                type="button"
+                                disabled={isPast || capacity === 0 || isFull}
+                                onClick={() => handleSlotClick(dateStr, timeStr)}
+                                className={`flex-1 py-0.5 px-2 text-xs font-medium flex items-center justify-center gap-1.5 transition-colors ${
+                                  isPast
+                                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                                    : capacity === 0
+                                      ? 'bg-gray-50 text-gray-400 cursor-not-allowed'
+                                      : isFull
+                                        ? 'bg-amber-50 text-amber-800 cursor-default'
+                                        : 'bg-white hover:bg-green-50 text-gray-800 hover:ring-2 hover:ring-green-500 hover:ring-inset cursor-pointer'
+                                }`}
+                              >
+                                {statusBead && (
+                                  <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${statusBead}`} aria-hidden />
+                                )}
+                                {label}
+                              </button>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )
+                  })}
                 </div>
-              </div>
-            )}
+              {loading && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-white/80 z-20">
+                  <div className="relative">
+                    <div className="animate-spin rounded-full h-12 w-12 border-4 border-gray-200" />
+                    <div className="animate-spin rounded-full h-12 w-12 border-4 border-green-600 border-t-transparent absolute top-0 left-0" />
+                  </div>
+                  <p className="text-base font-medium text-gray-900">Loading Availability</p>
+                  <p className="text-sm text-gray-500">Checking schedule...</p>
+                </div>
+              )}
+            </div>
           </div>
 
           {pendingSlot && (

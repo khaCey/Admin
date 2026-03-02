@@ -114,13 +114,13 @@ table.table thead.bg-green-600 {
     to bottom,
     #ffffff 0px,
     #ffffff 40px,
-    #f9fafb 40px,
-    #f9fafb 80px
+    #e2e8f0 40px,
+    #e2e8f0 80px
   ) !important;
   background-position-y: 40px;
 }
 #studentTable tbody tr:nth-child(odd) {
-  background-color: #f9fafb !important;
+  background-color: #e2e8f0 !important;
 }
 #studentTable tbody tr:nth-child(even) {
   background-color: #ffffff !important;

@@ -210,10 +210,15 @@ function ChangeDetailsModal({ change, onClose, onUndo }) {
             <div>
               <h4 className="text-gray-700 font-medium text-sm mb-3">Summary</h4>
               <div className="space-y-2">
-                {diffs.map((d, i) => (
+                {diffs.map((d, i) => {
+                  const isMemoOrPayment =
+                    change.entity_type === 'notes' || change.entity_type === 'payments'
+                  const stripe =
+                    isMemoOrPayment && i % 2 === 1 ? 'bg-slate-200' : 'bg-gray-50'
+                  return (
                   <div
                     key={i}
-                    className="flex flex-wrap items-center gap-2 py-2.5 px-3 rounded-lg bg-gray-50/80 border border-gray-100"
+                    className={`flex flex-wrap items-center gap-2 py-2.5 px-3 rounded-lg ${stripe} border border-gray-100`}
                   >
                     <span className="text-gray-600 font-medium text-sm shrink-0 w-28">
                       {d.field}
@@ -234,7 +239,8 @@ function ChangeDetailsModal({ change, onClose, onUndo }) {
                       ) : null}
                     </div>
                   </div>
-                ))}
+                  )
+                })}
               </div>
             </div>
           )}

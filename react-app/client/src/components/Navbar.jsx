@@ -1,5 +1,5 @@
 import { Link, useNavigate } from 'react-router-dom'
-import { Menu, UserPlus, AlertCircle, Calendar, LogOut } from 'lucide-react'
+import { Menu, AlertCircle, Calendar, LogOut } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 
 export default function Navbar({ onToggleSidebar, onOpenUnpaid, onOpenUnscheduled }) {
@@ -42,14 +42,6 @@ export default function Navbar({ onToggleSidebar, onOpenUnpaid, onOpenUnschedule
               </button>
             </>
           )}
-          <Link
-            to="/students"
-            state={{ openAddModal: true }}
-            className="px-4 py-2 border border-white text-white rounded-lg hover:bg-white hover:text-green-600 transition-colors flex items-center space-x-2 cursor-pointer"
-          >
-            <UserPlus className="w-4 h-4" />
-            <span>Add Student</span>
-          </Link>
           {onOpenUnpaid && (
             <button
               type="button"

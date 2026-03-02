@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
+import { UserPlus } from 'lucide-react'
 import { api } from '../api'
 import StudentDetailsModal from '../components/StudentDetailsModal'
 import AddStudentModal from '../components/AddStudentModal'
@@ -64,9 +65,10 @@ export default function Students() {
         <button
           type="button"
           onClick={() => setShowAddModal(true)}
-          className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium"
+          className="px-4 py-2 bg-green-600 border border-white text-white rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2 font-medium cursor-pointer"
         >
-          Add Student
+          <UserPlus className="w-4 h-4" />
+          <span>Add Student</span>
         </button>
       </div>
       <div className="mb-4 search-container">

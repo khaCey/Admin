@@ -18,8 +18,8 @@ export default function Layout() {
       <Sidebar collapsed={sidebarCollapsed} />
       <main
         id="mainContent"
-        className={`bg-gray-100 transition-all duration-300 w-full sidebar-content flex flex-col ${
-          sidebarCollapsed ? 'ml-0' : 'ml-64'
+        className={`bg-gray-100 transition-all duration-300 sidebar-content flex flex-col ${
+          sidebarCollapsed ? 'ml-0 w-full' : 'ml-64 w-[calc(100%-16rem)]'
         }`}
       >
         <div className="p-6 w-full flex flex-col h-full min-h-0">
